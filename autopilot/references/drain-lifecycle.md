@@ -16,7 +16,7 @@ Orchestrator-direct work in this step is limited to: reading the tracker, readin
 ### D1.0 — Session lock claim (AP-4)
 
 
-Run `bash ${SKILL_DIR}/scripts/detect_concurrent_drain.sh .autopilot/runbooks/<slug>.tracker.md` as the fast pre-check: exit 2 → another session holds a live lock, refuse the fire (`CronDelete`, exit silently — the other session's cron keeps firing); exit 4 → corrupt lock state, refuse with `STATUS: HUMAN_NEEDED — tracker-lock-unreadable` (fail closed); exit 0 or 3 → proceed to the dispatch table below.
+Run `bash ${SKILL_DIR}/scripts/detect_concurrent_drain.sh .autopilot/runbooks/<slug>.tracker.md` as the fast pre-check: exit 2 → another session holds a live lock, refuse the fire (`CronDelete`, exit silently — the other session's cron keeps firing); exit 4 → corrupt lock state, refuse with `STATUS: HUMAN_NEEDED — tracker-lock-unreadable` (fail closed); exit 64 → the invocation itself is wrong (suspect path), refuse with `STATUS: HUMAN_NEEDED — lock-check-usage-error` (external fault); exit 0 or 3 → proceed to the dispatch table below.
 
 
 Read the tracker's frontmatter. Compute `now_iso = $(date -u +%Y-%m-%dT%H:%M:%SZ)`.
@@ -43,7 +43,7 @@ Runs only when `branching.no_force_push: true`. Otherwise skipped.
 
 
 1. **Migration.** If the tracker was created by an autopilot version prior to v2.3.0 and does not yet contain a `## Pending Tracker Deltas (batched)` section, inject the section header with body `_(empty)_` between `## Drift Notes` and the first Subtask. Idempotent.
-2. **Crash recovery.** If the queue is non-empty at fire start (a prior fire crashed after writing a queue entry but before D7.1a flushed it), append a `delta_kind: crash_recovery` entry with `body:` documenting the recovered queue's SHA-fingerprint. Do NOT remove prior entries — the D7.1a fold on the next successful Subtask PR is the only legitimate flush point.
+2. **Crash recovery.** A non-empty queue at fire start is NORMAL in batched mode (D2 claims, D4 heartbeats, and D7.4 status deltas all wait for the next D7.1a fold) — it is a crash signal only when accompanied by evidence the prior fire did not exit cleanly: this fire reclaimed an expired foreign lock at D1.0, or D1.3's 90-minute heartbeat crash detector fired. Only then append ONE `delta_kind: crash_recovery` entry with `body:` documenting the recovered queue's SHA-fingerprint. Do NOT remove prior entries — the D7.1a fold on the next successful Subtask PR is the only legitimate flush point. (Appending on every non-empty queue would spam a `crash_recovery` entry into every healthy fire and grow the queue without bound.)
 
 
 Full contract, `delta_kind:` catalog, and recovery semantics: `references/tracker-delta-batching.md`.
@@ -96,20 +96,23 @@ If `in_progress.last_heartbeat_at > 90 min old` → treat as crashed; apply RESU
 ### D1.4 — WIP recovery dispatch
 
 
+**Rows are evaluated top-to-bottom; the FIRST matching row wins** (several conditions overlap by construction — e.g. a pushed Subtask has `subtask_id` set AND `awaiting_ci: true` AND a local branch ahead of base; external PR state must be checked before generic CI polling so a merged PR is never mistaken for a hung build).
+
+
 | `in_progress` block in tracker | Action |
 |---|---|
-| Empty / null | Normal — proceed to D2. |
-| `awaiting_ci: true`, `pr_number` set, and `ci.skip_wait: false` | CI-poll mode — run `bash ${SKILL_DIR}/scripts/bitbucket.sh pr-state --num <pr_number>` then `bash ${SKILL_DIR}/scripts/ci_check.sh --sha <in_progress.pushed_sha> --pr <pr_number> --once`; act on result (D7.5). **Hard contract: after D7.5 completes, exit the fire regardless of outcome. Do NOT continue to D2 in the same fire.** |
-| `awaiting_ci: true`, `pr_number` set, and `ci.skip_wait: true` | Skip CI polling entirely. Check PR state via `pr-state --num <pr_number>`; on `MERGED` → move Subtask to Done, then exit the fire (same hard contract as the row above — no D2 in the same fire). On `OPEN` → the PR is still awaiting operator merge; re-arm at `*/30`, exit. On `DECLINED` → treat as ci-block per the standard row below. |
-| `subtask_id` set, branch exists locally with commits ahead of base | RESUME — rebase on base, re-run Step D6 test gate; if green → push + open PR (D7); if red → spawn ONE `general-purpose` quality fix attempt; then push or `[BLOCKED: resume-failed]` (impl). |
-| `subtask_id` set, branch missing or empty | ABANDON — clear `in_progress`, write `[BLOCKED: orphan-resume]` (impl) on that Subtask, continue to D2 with the next Subtask. |
-| `awaiting_ci: true` + Bitbucket PR state = `MERGED` | PR was merged externally — move Subtask to `## Done` with PR URL + merge commit SHA, reset `consecutive_ci_blocks = 0`, clear `in_progress`, re-arm at `*/5`, exit fire. |
-| `awaiting_ci: true` + Bitbucket PR state = `DECLINED` | PR was declined externally — write `[BLOCKED: pr-declined]` (ci) on Subtask citing the PR URL, increment `consecutive_ci_blocks`, clear `in_progress`, re-arm at `*/30`, exit fire. |
-| Local branch `autopilot/<slug>/<subtask-id>` has commits whose author email is not `git config user.email` | Foreign push detected — write `STATUS: HUMAN_NEEDED — foreign-commits-on-branch` listing the offending SHAs, `CronDelete`, exit. (External fault: no counter increment.) |
 | `git symbolic-ref refs/remotes/origin/HEAD` differs from the trunk baked into the runbook | Trunk renamed mid-drain — write `STATUS: HUMAN_NEEDED — trunk-renamed` citing old vs new trunk, `CronDelete`, exit. (External fault: no counter increment.) |
+| Local branch `autopilot/<slug>/<subtask-id>` has commits whose author email is not `git config user.email` | Foreign push detected — write `STATUS: HUMAN_NEEDED — foreign-commits-on-branch` listing the offending SHAs, `CronDelete`, exit. (External fault: no counter increment.) |
+| Empty / null | Normal — proceed to D2. |
+| `awaiting_ci: true`, `pr_number` set, and PR state (`pr-state --num <pr_number>`) = `MERGED` | PR was merged externally — mark Subtask `[x] Done` with PR URL + merge commit SHA, reset both counters to 0, clear `in_progress`, re-arm at `*/5`, exit fire. |
+| `awaiting_ci: true`, `pr_number` set, and PR state = `DECLINED` | PR was declined externally — write `[BLOCKED: pr-declined]` (ci) on Subtask citing the PR URL, increment `consecutive_ci_blocks`, clear `in_progress`, re-arm at `*/30`, exit fire. |
+| `awaiting_ci: true`, `pr_number` set, PR state = `OPEN`, and `ci.skip_wait: false` | CI-poll mode — run `bash ${SKILL_DIR}/scripts/ci_check.sh --sha <in_progress.pushed_sha> --pr <pr_number> --once`; act on result (D7.5). **Hard contract: after D7.5 completes, exit the fire regardless of outcome. Do NOT continue to D2 in the same fire.** |
+| `awaiting_ci: true`, `pr_number` set, PR state = `OPEN`, and `ci.skip_wait: true` | The PR is awaiting operator merge (no CI polling); re-arm at `*/30`, exit. |
+| `subtask_id` set (not awaiting CI), branch exists locally with commits ahead of base | RESUME — rebase on base, re-run Step D6 test gate; if green → push + open PR (D7); if red → spawn ONE `general-purpose` quality fix attempt; then push or `[BLOCKED: resume-failed]` (impl). |
+| `subtask_id` set, branch missing or empty | ABANDON — clear `in_progress`, write `[BLOCKED: orphan-resume]` (impl) on that Subtask, continue to D2 with the next Subtask. |
 
 
-Refuse the fire if `STATUS != ACTIVE`. Cron is preserved; on `STATUS: PAUSED`, no-op until operator flips back to `ACTIVE`.
+Refuse the fire if `STATUS != ACTIVE`. On terminal statuses the cron has already been deleted (Hard Contract §9); if a fire runs anyway (manual invocation, stray cron), no-op WITHOUT re-arming. Recovery from `PAUSED` is exclusively via `/autopilot --resume` — do not hand-flip `STATUS` back to `ACTIVE` (Resume refuses an already-ACTIVE tracker, so a hand-flip strands the drain with no cron and no resume path).
 
 
 External churn > 100 commits since drain start → write `## Drift Notes` warning to tracker; don't auto-restart.
@@ -373,7 +376,7 @@ Run `bash ${SKILL_DIR}/scripts/ci_check.sh --sha <in_progress.pushed_sha> --pr <
 
 | `ci_check.sh --once` result | Action |
 |---|---|
-| exit 0 (VERDICT=GREEN) | Move Subtask to `## Done` with PR URL + commit SHA + `[<JIRA-KEY>]` if any. Reset `consecutive_ci_blocks = 0`. Clear `in_progress`. Re-arm cron at `*/5`. Exit fire. |
+| exit 0 (VERDICT=GREEN) | Mark Subtask `[x] Done` with PR URL + commit SHA + `[<JIRA-KEY>]` if any. Reset both counters to 0 (AP-2: a Done resets impl AND ci). Clear `in_progress`. Re-arm cron at `*/5`. Exit fire. |
 | exit 1 (VERDICT=RED) | Write `[BLOCKED: ci-red]` (ci) on Subtask with the failing check name + log URL. Increment `consecutive_ci_blocks`. Clear `in_progress`. Re-arm cron at `*/30`. Exit fire. **No retry.** |
 | exit 5 (VERDICT=PENDING) + `ci_check_count < 6` | Build in progress or not yet reported. Increment `ci_check_count`. Update `last_heartbeat_at`. Re-arm cron at `*/10`. Exit fire. |
 | exit 5 (VERDICT=PENDING) + `ci_check_count >= 6` | Write `[BLOCKED: ci-stuck-pending]` (ci) citing `LAST_STATE=` (INPROGRESS = a build is hung; UNKNOWN = CI never reported for this SHA). Increment `consecutive_ci_blocks`. Clear `in_progress`. Re-arm cron at `*/30`. Exit fire. |
@@ -475,13 +478,13 @@ Every fire under `branching.no_force_push: false` writes its tracker delta throu
 Under `branching.no_force_push: true` this section does not apply — bookkeeping lands via the AP-23 batched-delta queue, and there is no rolling tracker PR to poll.
 
 
-At the top of D1 (after D1.0/D1.1, before D2), when `branching.no_force_push: false`, check the tracker PR state via `bash ${SKILL_DIR}/scripts/bitbucket.sh pr-state --branch autopilot/<slug>/tracker` (returns the newest PR's state for that source branch, or `NONE`):
+At the top of D1 (after D1.0/D1.1, before D2), when `branching.no_force_push: false`, check the tracker PR state via `bash ${SKILL_DIR}/scripts/bitbucket.sh pr-state --branch autopilot/<slug>/tracker`. The observable states are exactly what the script emits — `OPEN | MERGED | DECLINED | NONE` (mergeability is NOT observable through `pr-state`; a conflicted tracker PR surfaces later as a failed push/merge, not here):
 
 
 | Tracker PR state | Action |
 |---|---|
-| `OPEN` + `MERGEABLE` | Normal — continue. |
-| `OPEN` + `CONFLICTED` | Surface a `## Tracker Notes` warning ("tracker PR currently unmergeable; bookkeeping may stack"); proceed with the fire. |
+| `OPEN` | Normal — continue. |
+| `NONE` | No PR exists for the tracker branch (e.g. a prior fire pushed the branch but crashed before PR creation, or the PR was deleted). If the remote branch exists, open the rolling tracker PR (`pr-open`); if not, branch `autopilot/<slug>/tracker` from `origin/<trunk>`, push, and open it. Add a `## Drift Notes` entry; continue. |
 | `DECLINED` | Write `STATUS: HUMAN_NEEDED — tracker-pr-blocked` citing the tracker PR URL, `CronDelete`, exit. (External fault: no counter increment.) |
 | `MERGED` | Re-open the rolling tracker PR pattern by branching `autopilot/<slug>/tracker` from `origin/<trunk>` and pushing; continue. |
 

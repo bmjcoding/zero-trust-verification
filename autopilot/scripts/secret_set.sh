@@ -49,6 +49,12 @@ unset HISTFILE 2>/dev/null || true
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+# $USER is not guaranteed (containers/CI under set -u): fall back to id.
+# Without this, the storage pipeline's printf died on the unbound expansion
+# and `security -i` saw EOF — the script reported success while storing
+# nothing (caught by self_test T30).
+RUN_USER="${USER:-$(id -un)}"
+
 die() { echo "secret_set.sh: $*" >&2; exit 1; }
 
 SERVICE=""
@@ -126,17 +132,22 @@ probe_ownership() {
   case "$(uname -s)" in
     Darwin)
       command -v security >/dev/null 2>&1 || return 0
-      # Query with -g so we get metadata including comment/account.
-      local meta
-      meta=$(security find-generic-password -s "$KEY_NAME" -g 2>&1 >/dev/null || true)
-      if [[ -z "$meta" ]]; then
-        return 0  # no existing entry
+      # Existence check FIRST, by exit code (44 = item not found). The
+      # previous implementation parsed the -g stderr and treated the
+      # "could not be found" message as an existing entry — every
+      # first-ever secret_set on macOS aborted with exit 5. It also
+      # fetched the stored password (-g prints it) just to read metadata;
+      # the attribute dump (no -g) carries acct/icmt without the secret.
+      local attrs rc
+      attrs=$(security find-generic-password -s "$KEY_NAME" 2>/dev/null); rc=$?
+      if (( rc != 0 )); then
+        return 0  # no existing (readable) entry — nothing to guard
       fi
       local acct icmt
-      acct=$(echo "$meta" | awk -F'"' '/"acct"/ {print $4; exit}')
-      icmt=$(echo "$meta" | awk -F'"' '/"icmt"/ {print $4; exit}')
-      # Autopilot-managed if account matches $USER AND comment includes marker.
-      if [[ "$acct" == "$USER" && "$icmt" == *"autopilot-managed"* ]]; then
+      acct=$(echo "$attrs" | awk -F'"' '/"acct"/ {print $4; exit}')
+      icmt=$(echo "$attrs" | awk -F'"' '/"icmt"/ {print $4; exit}')
+      # Autopilot-managed if account matches the invoking user AND comment includes marker.
+      if [[ "$acct" == "$RUN_USER" && "$icmt" == *"autopilot-managed"* ]]; then
         return 0
       fi
       echo "operator-owned credential detected at ${KEY_NAME} (acct=${acct:-unknown})" >&2
@@ -208,19 +219,23 @@ case "$(uname -s)" in
       unset TOKEN
       exit 4
     fi
-    # -U: update if exists. We use $USER as account and stamp
+    # -U: update if exists. We use the invoking user as account and stamp
     # `autopilot-managed` in the comment so probe_ownership can detect us
     # on the next --force-less run.
-    if ! security add-generic-password \
-        -U \
-        -s "$KEY_NAME" \
-        -a "$USER" \
-        -j "autopilot-managed" \
-        -w "$TOKEN" >/dev/null 2>&1; then
+    #
+    # The command is fed to `security -i` on STDIN — passing the token as
+    # a `-w` argv value would expose it in the process table while
+    # `security` runs, violating "Token NEVER on argv". Backslashes and
+    # double quotes in the token are escaped for security's line parser.
+    TOK_ESC=${TOKEN//\\/\\\\}
+    TOK_ESC=${TOK_ESC//\"/\\\"}
+    if ! printf 'add-generic-password -U -s "%s" -a "%s" -j "autopilot-managed" -w "%s"\n' \
+        "$KEY_NAME" "$RUN_USER" "$TOK_ESC" | security -i >/dev/null 2>&1; then
       echo "keychain-store-failed" >&2
-      unset TOKEN
+      unset TOKEN TOK_ESC
       exit 1
     fi
+    unset TOK_ESC
     ;;
   Linux)
     if ! command -v secret-tool >/dev/null 2>&1; then

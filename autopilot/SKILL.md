@@ -43,7 +43,7 @@ Loop-safety invariants (what the loop may NEVER do, and which mechanism enforces
 |---|---|---|
 | `/autopilot --generate @<doc>...` | GENERATE (default review path) | Extracts work, plans, writes runbook + tracker, exits for review. Does NOT arm any cron. |
 | `/autopilot --generate @<doc>... --yolo` | GENERATE → DRAIN immediately | Same as above, but skips the review step and arms the drain cron. Use when the input is already vetted. |
-| `/autopilot --generate @<doc>... --merge` | GENERATE-merge | Append new work from the new docs to an existing runbook + tracker. Refuses if the existing tracker has zero `## Open` items (loop already drained). After the append, re-runs G4 (topological sort + ownership-overlap detection) over the union of old + new Subtasks; refuses with `[GENERATE-FAILED: dangling-dependency]` if any new Subtask's `depends_on[]` references an unknown ID, and `[GENERATE-FAILED: id-collision]` if any new Subtask reuses an existing Subtask ID. |
+| `/autopilot --generate @<doc>... --merge` | GENERATE-merge | Append new work from the new docs to an existing runbook + tracker. Refuses if the existing tracker has zero open (`[ ]`) Subtasks (loop already drained). After the append, re-runs G4 (topological sort + ownership-overlap detection) over the union of old + new Subtasks; refuses with `[GENERATE-FAILED: dangling-dependency]` if any new Subtask's `depends_on[]` references an unknown ID, and `[GENERATE-FAILED: id-collision]` if any new Subtask reuses an existing Subtask ID. |
 | `/autopilot --generate @<doc>... --overwrite` | GENERATE-overwrite | Replace existing runbook + tracker. Refuses if any `[x] Done` entries exist (history loss). Logged to `## Force Audit` (AP-11). |
 | `/autopilot --generate @<doc>... --jira <PROJ>` | GENERATE + Jira | Same as GENERATE; additionally creates real Jira Story + Subtask tickets via `mcp__dev-tools__activate_jira` and stores keys in the runbook. Shallow integration only — no two-way sync. Implies `enforce_jira_key: true`. |
 | `/autopilot --generate @<doc>... --consolidate=auto` | GENERATE + AP-21 consolidation | Enables G3.6 Subtask consolidation for eligible same-kind config / docs Subtasks. Equivalent to `pack_subtasks: true` in the runbook. |
@@ -58,7 +58,7 @@ Loop-safety invariants (what the loop may NEVER do, and which mechanism enforces
 
 Mode detection: ADR / design-doc / spec markdown → GENERATE. A runbook under `.autopilot/runbooks/` with `--drain` → DRAIN. Same file with `--resume` → RESUME.
 
-The complete flag registry is the table above plus this list — a flag that appears in any reference but not here is a defect (`lint_consistency.sh` L13): `--generate`, `--drain`, `--resume`, `--yolo`, `--merge`, `--overwrite`, `--jira`, `--consolidate=auto`, `--slug`, `--force`, `--reprobe`, `--no-probe`, `--no-auto-seed`.
+The complete flag registry is the table above plus this list — any flag used in an `/autopilot` invocation anywhere in the references but missing here is a defect (`lint_consistency.sh` L13 scans for exactly that): `--generate`, `--drain`, `--resume`, `--yolo`, `--merge`, `--overwrite`, `--jira`, `--consolidate=auto`, `--slug`, `--force`, `--reprobe`, `--no-probe`, `--no-auto-seed`. (Script-level flags such as the probe's `--dry-run`/`--jira-key` belong to each script's usage header, not this registry.)
 
 
 ## When to invoke

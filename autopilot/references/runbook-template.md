@@ -54,9 +54,9 @@ contract_paths: []                       # optional globs marking wire-shape/con
 ci:
   platform: bitbucket-dc                 # AP-13: only legal value
   skip_wait: false                       # AP-23: when true, do not poll for build; treat push as terminal. Auto-flipped true by G1.5 when CI_PRESENT=false.
-  build_states:
-    success: [SUCCESSFUL]
-    failure: [FAILED]
+  build_states:                          # RESERVED (documentation of Bitbucket DC state names).
+    success: [SUCCESSFUL]                # v0 consumers (bitbucket.sh build-status) hardcode these
+    failure: [FAILED]                    # exact names; the field is validated but not yet consumed.
     in_progress: [INPROGRESS]
 branching:
   no_force_push: false                   # AP-23: when true, tracker deltas queue in-tracker and flush at D7.1a; disables rolling tracker-PR pattern. Auto-flipped true by G1.5 when FORCE_PUSH_ALLOWED=false.
@@ -169,7 +169,8 @@ branching:
 enforce_jira_key: <bool>          # G1.5 JIRA_HOOK_ENFORCED or --jira auto-set
 pack_subtasks: <bool>             # AP-21 operator-toggle
 in_progress: null                 # or the claimed Subtask block (subtask_id, started_at,
-                                  #   last_heartbeat_at, pr_number, pushed_sha, awaiting_ci, ci_check_count)
+                                  #   last_heartbeat_at, pr_number, pushed_at, pushed_sha,
+                                  #   awaiting_ci, ci_check_count)
 last_heartbeat_at: <iso8601>      # AP-6: updated every step boundary
 session_lock: null                # AP-4: CLAUDE_SESSION_ID of the lock owner
 session_lock_expires_at: null     # AP-4: now+30min, refreshed every fire

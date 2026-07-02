@@ -58,13 +58,16 @@ churn_mode() {
   local ref
   ref=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@origin/@' || true)
   [[ -n "$ref" ]] && git rev-parse --verify -q "$ref" >/dev/null 2>&1 || ref="HEAD"
+  # awk does the empty-line filter and the top-N cut: under pipefail, a
+  # `grep` with no matches (quiet repo, empty churn window) or a `head`
+  # that closes the pipe early (SIGPIPE 141 on big repos) would turn a
+  # legitimate empty/large result into script exit 1/141.
   git log "$ref" --since="${DAYS}.days" --name-only --pretty=format: 2>/dev/null \
-    | grep -v '^$' \
+    | awk 'NF' \
     | sort \
     | uniq -c \
     | sort -rn \
-    | head -n "$TOP" \
-    | awk '{count=$1; $1=""; sub(/^ /,""); print count "\t" $0}'
+    | awk -v top="$TOP" 'NR<=top {count=$1; $1=""; sub(/^ /,""); print count "\t" $0}'
 }
 
 subtasks_mode() {

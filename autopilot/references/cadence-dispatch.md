@@ -31,7 +31,7 @@ The prompt MUST carry the `/autopilot --drain` invocation — a bare `@file` ref
 ## Counter-aware deferral
 
 
-When `consecutive_impl_blocks` or `consecutive_ci_blocks` hits its cap minus one (caps come from `budget.max_impl_blocks` / `budget.max_ci_blocks`, defaults 3 / 2), the next fire's re-arm should use `*/60` instead of `*/30` to give human triage room to land. The drain still self-escalates at the cap, but slowing the cron by half buys the human a window to intervene without missing fires.
+When `consecutive_impl_blocks` or `consecutive_ci_blocks` hits its cap minus one (caps come from `budget.max_impl_blocks` / `budget.max_ci_blocks`, defaults 3 / 2), the next fire's re-arm should use `*/60` instead of `*/30` to give human triage room to land. **This deferral takes precedence over the `*/30` that the [BLOCKED] rows in the cadence table and D7.5 specify for the same event.** The drain still self-escalates at the cap, but slowing the cron by half buys the human a window to intervene without missing fires.
 
 
 This isn't strictly necessary for correctness (escalation will trip regardless), but it's been observed to reduce wasted compute on drains that are clearly heading toward HUMAN_NEEDED.

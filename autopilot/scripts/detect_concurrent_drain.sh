@@ -57,7 +57,12 @@ if [[ -z "$FM" ]]; then
 fi
 
 get() {
-  echo "$FM" | awk -v k="$1" '$1==k":"{ $1=""; sub(/^ /, ""); print; exit }'
+  # Strips surrounding single/double quotes: `session_lock: "sess-A"` is
+  # valid YAML that an LLM or yq may legitimately write, and unquoted-only
+  # parsing made a quoted OWN lock look foreign (then exit 4 on the quoted
+  # expiry — a fail-closed brick).
+  echo "$FM" | awk -v k="$1" '$1==k":"{ $1=""; sub(/^ /, ""); print; exit }' \
+    | sed -E "s/^[\"']//; s/[\"']\$//"
 }
 
 LOCK_SID=$(get session_lock)

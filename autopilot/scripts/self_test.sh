@@ -85,6 +85,8 @@ class H(http.server.BaseHTTPRequestHandler):
         p = self._strip()
         if p.endswith("/badok/healthz"):
             self._send_raw(b"nope", 200, "text/plain"); return
+        if p.endswith("/notok/healthz"):
+            self._send_raw(b"not ok", 200, "text/plain"); return
         if p.endswith("/healthz"):
             self._send_raw(b"ok", 200, "text/plain"); return
         if p == "/debug/last-merge":
@@ -96,6 +98,22 @@ class H(http.server.BaseHTTPRequestHandler):
                 self._send_json({"id": 55, "state": "DECLINED", "version": 1}); return
             if num == "43":
                 self._send_json({"id": 43, "state": "OPEN", "version": STATE["pr43_version"]}); return
+            if num == "401":
+                self._send_json({"error": "auth", "hint": "token-shaped-error-string-DO-NOT-LOG"}, 401); return
+            if num == "407":
+                self._send_json({"error": "sidecar misconfigured"}, 407); return
+            if num == "44":
+                STATE["pr44_calls"] = STATE.get("pr44_calls", 0) + 1
+                if STATE["pr44_calls"] == 1:
+                    b = json.dumps({"error": "rate"}).encode()
+                    self.send_response(429)
+                    self.send_header("Retry-After", "0")
+                    self.send_header("Content-Type", "application/json")
+                    self.send_header("Content-Length", str(len(b)))
+                    self.end_headers()
+                    self.wfile.write(b)
+                    return
+                self._send_json({"id": 44, "state": "OPEN", "version": 1}); return
             self._send_json({"id": int(num), "state": "OPEN", "version": 3}); return
         if "/pull-requests?" in p:
             if "at=refs/heads/feature-x" in p:
@@ -234,6 +252,21 @@ err=$(bb pr-merge --num 43 --strategy squash 2>&1); rc=$?
 assert_eq T07 "pr-merge succeeds after one 409 retry" "0" "$rc"
 assert_contains T07 "409 retry announced" "retrying with fresh version" "$err"
 
+# T35 — auth-failure bodies are never logged (sidecar-contract rule).
+err=$(bb pr-state --num 401 2>&1 >/dev/null || true)
+assert_not_contains T35 "401 body not logged" "token-shaped-error-string-DO-NOT-LOG" "$err"
+assert_contains T35 "401 failure still classified" "LAST_STATE=pr-state-http-401" "$err"
+
+# T36 — sidecar error-code table: 429 honours Retry-After (1 retry), 407 is
+# sidecar-session-invalid without body logging.
+out=$(bb pr-state --num 44 2>"$SANDBOX/t36.err"); rc=$?
+assert_eq T36 "429 retried once then succeeds" "0" "$rc"
+assert_eq T36 "429 retry returns the real state" "OPEN" "$out"
+assert_contains T36 "429 retry announced" "429 rate-limited; retrying once" "$(cat "$SANDBOX/t36.err")"
+err=$(bb pr-state --num 407 2>&1 >/dev/null || true)
+assert_contains T36 "407 classified as sidecar-session-invalid" "LAST_STATE=sidecar-session-invalid" "$err"
+assert_not_contains T36 "407 body not logged" "sidecar misconfigured" "$err"
+
 echo "== repo_shape_probe_patterns.sh (T08) =="
 
 # T08 — table-driven: realistic Bitbucket DC rejection strings match their
@@ -304,7 +337,8 @@ assert_contains T10 "no jira hook detected" "JIRA_HOOK_ENFORCED=false" "$out"
 impure=$(grep -cvE '^[A-Z_]+=[A-Za-z0-9._/-]+$' <<<"$out" || true)
 assert_eq T11 "probe stdout pure on permissive run too" "0" "$impure"
 
-# T29 — JIRA pre-receive hook → JIRA_HOOK_ENFORCED=true.
+# T29 — JIRA pre-receive hook → JIRA_HOOK_ENFORCED=true (concluded from the
+# force-push probe's own rejection, without a second rejected push).
 make_remote_and_clone jirahook
 cat > "$REMOTE/hooks/pre-receive" <<'HOOKEOF'
 #!/usr/bin/env bash
@@ -320,6 +354,27 @@ HOOKEOF
 chmod +x "$REMOTE/hooks/pre-receive"
 out=$(run_probe "$CLONE")
 assert_contains T29 "jira hook detected" "JIRA_HOOK_ENFORCED=true" "$out"
+assert_contains T29 "force-push verdict honestly unknown without a key" "FORCE_PUSH_ALLOWED=unknown" "$out"
+
+# T37 — --jira-key unblinds the force-push probe on JIRA-enforcing servers.
+out=$( cd "$SANDBOX/jirahook-clone" && bash "$HERE/repo_shape_probe.sh" --jira-key TEST-1 2>/dev/null )
+assert_contains T37 "keyed probe reaches the force-push test" "FORCE_PUSH_ALLOWED=true" "$out"
+assert_contains T37 "keyed probe: jira verdict from its own (unkeyed) push" "JIRA_HOOK_ENFORCED=true" "$out"
+
+# T32 — --dry-run performs NO git-state or network operation (the v2.4.0
+# adversarial round proved ls-remote + remote branch-deletes ran in dry-run).
+tracef="$SANDBOX/dryrun.trace"
+out=$( cd "$SANDBOX/permissive-clone" && GIT_TRACE=1 bash "$HERE/repo_shape_probe.sh" --dry-run 2>"$tracef" )
+assert_contains T32 "dry-run emits unknown force-push" "FORCE_PUSH_ALLOWED=unknown" "$out"
+impure=$(grep -cvE '^[A-Z_]+=[A-Za-z0-9._/-]+$' <<<"$out" || true)
+assert_eq T32 "dry-run stdout stays KEY=VALUE-pure" "0" "$impure"
+assert_contains T32 "dry-run prints the operation plan" "probe[dry-run]: would create + push temp branch" "$(cat "$tracef")"
+mutating=$(grep -cE "built-in: git (push|fetch|ls-remote)" "$tracef" || true)
+assert_eq T32 "dry-run runs no push/fetch/ls-remote" "0" "$mutating"
+
+# T33 — --show-patterns emits intact registry rows (was word-split garbage).
+out=$(bash "$HERE/repo_shape_probe.sh" --show-patterns)
+assert_contains T33 "alternation pattern printed intact" "you are not permitted to (force[- ]push|rewrite history)|FORCE_PUSH_DENIED_BRANCH_PERM" "$out"
 
 # T26 — unmatched rejection surfaces the corpus-growth message (GAPS B4).
 make_remote_and_clone weirdhook
@@ -412,6 +467,28 @@ assert_eq T15 "null lock is clean" "0" "$rc"
 CLAUDE_SESSION_ID=sess-A bash "$DCD" "my-slug" >/dev/null 2>&1; rc=$?
 assert_eq T16 "bare slug argument rejected" "64" "$rc"
 
+# T34 — quoted YAML values are parsed (an LLM/yq legitimately writes
+# `session_lock: "sess-A"`; unquoted-only parsing made an OWN lock look
+# foreign and then bricked on the quoted expiry with exit 4).
+cat > "$TRK" <<EOF
+---
+STATUS: ACTIVE
+session_lock: "sess-A"
+session_lock_expires_at: "2099-01-01T00:00:00Z"
+---
+EOF
+CLAUDE_SESSION_ID=sess-A bash "$DCD" "$TRK" >/dev/null 2>&1; rc=$?
+assert_eq T34 "quoted OWN lock is clean" "0" "$rc"
+cat > "$TRK" <<EOF
+---
+STATUS: ACTIVE
+session_lock: "sess-B"
+session_lock_expires_at: "2099-01-01T00:00:00Z"
+---
+EOF
+CLAUDE_SESSION_ID=sess-A bash "$DCD" "$TRK" >/dev/null 2>&1; rc=$?
+assert_eq T34 "quoted foreign live lock refused" "2" "$rc"
+
 echo "== ci_check.sh (T17-T20) =="
 
 ci() {
@@ -478,6 +555,15 @@ assert_contains T22 "overlap mode flags shared.py at count 2" "2	shared.py" "$ou
 bash "$HFA" >/dev/null 2>&1; rc=$?
 assert_eq T23 "hot_file_audit without mode is usage error" "64" "$rc"
 
+# T31 — an empty churn window is a clean empty result, not exit 1 (quiet
+# repos made G4 look like a script failure under pipefail).
+make_remote_and_clone quiet
+( cd "$CLONE" && GIT_AUTHOR_DATE="2020-01-01T00:00:00Z" GIT_COMMITTER_DATE="2020-01-01T00:00:00Z" \
+  git commit -q --allow-empty --amend --no-edit --date "2020-01-01T00:00:00Z" && git push -qf origin main )
+out=$( cd "$CLONE" && bash "$HFA" --churn --days 30 ); rc=$?
+assert_eq T31 "empty churn window exits 0" "0" "$rc"
+assert_eq T31 "empty churn window prints nothing" "" "$out"
+
 echo "== secret_get.sh (T25) =="
 
 # T25 — candidate list matches the documented resolver conventions
@@ -498,7 +584,7 @@ out=$( AUTOPILOT_SIDECAR_MODE=1 AUTOPILOT_BITBUCKET_TOKEN=should-not-print bash 
 assert_eq T25 "sidecar mode short-circuits with exit 0" "0" "$rc"
 assert_eq T25 "sidecar mode prints nothing" "" "$out"
 
-echo "== sidecar_detect.sh (T28) =="
+echo "== sidecar_detect.sh (T28, T38) =="
 
 out=$( IDENTITY_PROXY_URL="$BASE" IDENTITY_PROXY_PLATFORMS="bitbucketdc" bash "$HERE/sidecar_detect.sh" )
 assert_contains T28 "healthy sidecar detected" "MODE=sidecar" "$out"
@@ -506,6 +592,68 @@ out=$( IDENTITY_PROXY_URL="$BASE/badok" bash "$HERE/sidecar_detect.sh" 2>/dev/nu
 assert_eq T28 "200 without ok body is local mode" "MODE=local" "$out"
 out=$( env -u IDENTITY_PROXY_URL bash "$HERE/sidecar_detect.sh" )
 assert_eq T28 "no proxy url is local mode" "MODE=local" "$out"
+
+# T38 — "not ok" must NOT pass the body check (substring matching did).
+out=$( IDENTITY_PROXY_URL="$BASE/notok" bash "$HERE/sidecar_detect.sh" 2>/dev/null )
+assert_eq T38 "'not ok' body is local mode" "MODE=local" "$out"
+
+echo "== secret_set.sh with keychain shims (T30) =="
+
+# Faithful macOS shims: `uname` -> Darwin; `security` with exit-44-on-missing
+# semantics, attribute dump without -g, and `-i` stdin command mode. The
+# v2.4.0 adversarial round proved (a) the old stderr-parsing probe made every
+# FIRST-EVER macOS secret_set abort exit 5, and (b) `-w "$TOKEN"` put the
+# secret in the process table.
+SHIM2="$SANDBOX/shim2"; mkdir -p "$SHIM2"
+KC_DIR="$SANDBOX/kc"; mkdir -p "$KC_DIR"
+cat > "$SHIM2/uname" <<'EOF'
+#!/usr/bin/env bash
+echo Darwin
+EOF
+cat > "$SHIM2/security" <<'EOF'
+#!/usr/bin/env bash
+printf '%s\n' "$@" >> "${SEC_ARGV_LOG:?}"
+KC="${SEC_KC_DIR:?}"
+if [[ "${1:-}" == "-i" ]]; then
+  while IFS= read -r line; do
+    printf '%s\n' "$line" >> "${SEC_STDIN_LOG:?}"
+    if [[ "$line" =~ -s\ \"([^\"]+)\" ]]; then touch "$KC/${BASH_REMATCH[1]}"; fi
+  done
+  exit 0
+fi
+if [[ "${1:-}" == "find-generic-password" ]]; then
+  shift; name=""; want_pw=0
+  while (( $# )); do
+    case "$1" in -s) name="$2"; shift 2 ;; -w) want_pw=1; shift ;; *) shift ;; esac
+  done
+  if [[ -n "$name" && -f "$KC/$name" ]]; then
+    if (( want_pw )); then echo "stored-password"; else printf '    "acct"<blob>="%s"\n    "icmt"<blob>="autopilot-managed"\n' "$(id -un)"; fi
+    exit 0
+  fi
+  echo "security: SecKeychainSearchCopyNext: The specified item could not be found." >&2
+  exit 44
+fi
+exit 0
+EOF
+chmod +x "$SHIM2/uname" "$SHIM2/security"
+sset() {
+  PATH="$SHIM2:$PATH" SEC_ARGV_LOG="$SANDBOX/sec_argv.log" SEC_STDIN_LOG="$SANDBOX/sec_stdin.log" SEC_KC_DIR="$KC_DIR" \
+    bash "$HERE/secret_set.sh" "$@"
+}
+: > "$SANDBOX/sec_argv.log"; : > "$SANDBOX/sec_stdin.log"
+printf 'tok-abc-123' | sset bitbucket >/dev/null 2>&1; rc=$?
+assert_eq T30 "first-ever macOS secret_set succeeds (was exit 5)" "0" "$rc"
+assert_not_contains T30 "token never on security argv" "tok-abc-123" "$(cat "$SANDBOX/sec_argv.log")"
+assert_contains T30 "token delivered via security -i stdin" "tok-abc-123" "$(cat "$SANDBOX/sec_stdin.log")"
+printf 'tok-abc-456' | sset bitbucket >/dev/null 2>&1; rc=$?
+assert_eq T30 "update of an autopilot-managed entry succeeds" "0" "$rc"
+touch "$KC_DIR/bitbucket-token"
+err=$(printf 'tok-abc-789' | sset bitbucket 2>&1 >/dev/null); rc=$?
+assert_eq T30 "cross-candidate collision aborts exit 5" "5" "$rc"
+assert_contains T30 "collision names the foreign entry" "operator-owned credential detected at bitbucket-token" "$err"
+rm -f "$KC_DIR/bitbucket-token"
+err=$(printf 'tok-abc-000' | sset bitbucket --force 2>&1 >/dev/null); rc=$?
+assert_eq T30 "--force bypasses the aborts" "0" "$rc"
 
 echo "== deterministic-seam chain (T27) =="
 

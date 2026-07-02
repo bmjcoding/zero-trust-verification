@@ -198,7 +198,7 @@ OWASP Top 10 + STRIDE pass on the diff.
 ### CHECKS
 
 
-1. **Secrets in diff.** `grep -E '(?i)(password|secret|token|api[_-]?key)\s*=\s*["'\''][^"'\'']{8,}'` over the diff. Hits → severity: high, blocking. **Special case for autopilot's own scripts:** the patterns `secret_get.sh`, `secret_set.sh`, and any reference to `BITBUCKET_TOKEN` as a variable name (not value) are allow-listed; flag only on literal token VALUES.
+1. **Secrets in diff.** `grep -iE '(password|secret|token|api[_-]?key)\s*=\s*["'\''][^"'\'']{8,}'` over the diff (note: `-i`, not a PCRE `(?i)` group — `grep -E` errors on inline flags). Hits → severity: high, blocking. **Special case for autopilot's own scripts:** the patterns `secret_get.sh`, `secret_set.sh`, and any reference to `BITBUCKET_TOKEN` as a variable name (not value) are allow-listed; flag only on literal token VALUES.
 2. **Hard-coded credentials.** Specifically: AWS access keys, GitHub tokens, JWT secrets, Bitbucket personal access tokens. If found, immediate block.
 3. **Injection sinks.** Subprocess calls with shell=True + interpolated input. SQL strings concatenated with user data. Os.path with user input.
 4. **Auth bypass.** New code paths that conditionally skip authentication checks. Comparison: `if user == "admin"` etc.

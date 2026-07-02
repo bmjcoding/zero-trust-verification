@@ -440,11 +440,13 @@ itself. Direct analog of the audit plugin's "nothing ever executes the code".
 **Acceptance.** `scripts/self_test.sh`: hermetic (mktemp sandbox, local bare repos,
 mock HTTP server, curl argv shim), loopback-only, covers every A/B-class fix, exits
 non-zero on any failure, runs in well under 60 s.
-**Status.** FIXED — 69 assertions, all green; every A/B fix landed with its
-assertion. The harness caught two additional bugs in this session's own fixes
-before they shipped (a dynamic-scoping shadow in `match_rejection`'s outvar, and a
-jq `//`-operator bug treating `enabled: false` as enabled) — both now pinned
-(T08 regression case, T06).
+**Status.** FIXED — 96 assertions, all green; every A/B fix landed with its
+assertion. The harness caught four additional bugs in this session's own fixes
+before they shipped (a dynamic-scoping shadow in `match_rejection`'s outvar; a
+jq `//`-operator bug treating `enabled: false` as enabled; `curl --retry`
+swallowing the 429 path that bb_curl was supposed to own; and `secret_set.sh`
+silently no-op'ing when `$USER` is unset under `set -u`) — all now pinned
+(T08 regression case, T06, T36, T30).
 
 ### M2 — No consistency enforcement across the doc corpus [P0]
 C1–C19 accumulated because 17 markdown files restate each other's contracts with no
@@ -529,8 +531,21 @@ flag scan (red-tested); seven pytest strays replaced with `gates.*` phrasing and
 L15 extended to the class (red-tested); `S+S → M`; D1.0 now actually invokes
 `detect_concurrent_drain.sh` as its fail-closed pre-check (matching SKILL.md's
 index and giving exit 4 a defined route); healthz body requirement added to the
-sidecar contract. A second closure agent's findings were triaged the same way
-(see below if any survived).
+sidecar contract.
+
+**Round 3 (fresh-eyes agent, 30 findings — 7 P1, 11 P2, 12 P3).** The
+independent gap hunt on the revised corpus found defects the register had
+missed entirely, several proven by execution. All P1/P2 findings are fixed
+(see CHANGELOG v2.4.0 §"Adversarial verification rounds" for the list with
+assertion ids — highlights: macOS secret_set unusable-and-leaking (T30),
+auth-body logging + missing 429/502/407 handling (T35/T36), non-dry `--dry-run`
+(T32), JIRA-blinded force-push probe (T29/T37), crash-recovery queue spam,
+undecidable tracker-PR dispatch table, quoted-YAML lock brick (T34), quiet-repo
+churn crash (T31)). P3 nits were fixed where mechanical and documented where
+inherent (Linux `secret-tool search` streams the secret through the ownership
+probe's pipe — noted in-script; `ci.build_states` marked reserved). The
+self-test grew 69 → 96 assertions in the process and caught two bugs in the
+round-3 fixes themselves before they shipped (see M1).
 
 ## Honest residuals (recorded, not hidden)
 

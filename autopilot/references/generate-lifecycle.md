@@ -18,7 +18,7 @@ Read in parallel:
 Refuse if working tree is dirty. Refuse if not on trunk. Refuse if any of the input docs don't exist.
 
 
-Run `bash ${SKILL_DIR}/scripts/detect_concurrent_drain.sh .autopilot/runbooks/<slug>.tracker.md` (the script takes the TRACKER PATH, not a bare slug) — exit 2 means another session holds a live lock: refuse with `STATUS: STOPPED — concurrent drain detected`. Exit 4 (unreadable lock state) is also a refuse — fail closed. Exit 3 (stale lock) may be reclaimed. Operator overrides with `--force` (logged per AP-11).
+Derive `<slug>` now (same derivation G7 uses — from the input doc names, `--slug=` override wins) — it is needed for the tracker path here and for branch naming throughout. Then run `bash ${SKILL_DIR}/scripts/detect_concurrent_drain.sh .autopilot/runbooks/<slug>.tracker.md` (the script takes the TRACKER PATH, not a bare slug) — exit 2 means another session holds a live lock: refuse with `STATUS: STOPPED — concurrent drain detected`. Exit 4 (unreadable lock state) is also a refuse — fail closed. Exit 64 (malformed invocation) is a refuse — fix the call, don't proceed unguarded. Exit 3 (stale lock) may be reclaimed. Operator overrides with `--force` (logged per AP-11).
 
 
 ## Step G1.5 — Repo-shape probe (AP-23)
@@ -65,7 +65,13 @@ Pre-receive hooks are server-side state. A local heuristic on `git config` / rem
 ### `--dry-run` mode
 
 
-`repo_shape_probe.sh --dry-run` prints every probe operation and the temp branch names that WOULD be created, with no network calls. Useful for operators reviewing what the probe will touch before running it against a repo with sensitive pre-receive hooks.
+`repo_shape_probe.sh --dry-run` prints (on stderr — stdout stays KEY=VALUE-pure) every probe operation and the temp branch names that WOULD be created, performs no network or git-state operation of any kind (trunk detection uses only local refs; the cleanup trap is disarmed), and emits `unknown` for every live-probe signal. Useful for operators reviewing what the probe will touch before running it against a repo with sensitive pre-receive hooks.
+
+
+### `--jira-key <KEY>` flag
+
+
+On repos whose pre-receive hook rejects commits without a JIRA key, the force-push probe's own commits get rejected before the rewrite can be tested — the probe then reports `FORCE_PUSH_ALLOWED=unknown` (and concludes `JIRA_HOOK_ENFORCED=true` from that same rejection without a second push). Passing `--jira-key <KEY>` (any valid issue key the operator owns) prefixes probe commit subjects with `[<KEY>]` so the force-push probe can reach its actual test. G1.5 passes the runbook's `jira_key` automatically when one is present.
 
 
 ### `--explain` and `--show-patterns` modes
