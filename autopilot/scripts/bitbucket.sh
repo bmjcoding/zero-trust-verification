@@ -184,43 +184,93 @@ sanitise_utf8() {
 # - Writes the UTF-8-sanitised response body to BODY_OUTFILE.
 # - Sets HTTP_STATUS in the calling shell.
 # - Mutating methods get the XSRF guard header; GET gets --retry 1
-#   (retrying mutating methods risks duplicate submissions on timeout).
+#   (retrying mutating methods on TRANSPORT errors risks duplicate
+#   submissions on timeout).
+# - Sidecar error-code table (sidecar-contract.md): 429 honours Retry-After
+#   (max 1 retry — safe for any method: 429 means the request was not
+#   processed); 502 retries once with backoff; 407 aborts as
+#   sidecar-session-invalid without logging the body.
 # - Transport failure or resolver failure aborts the whole script.
 HTTP_STATUS=0
 bb_curl() {
   local method="$1"; shift
   local url="$1"; shift
   local body_out="$1"; shift
-  prepare_curl_auth
   local -a extra=()
   case "$method" in
     POST|PUT|PATCH|DELETE)
       # XSRF guard required by Bitbucket DC on mutating requests. (AP-23)
       extra+=(-H 'X-Atlassian-Token: no-check')
       ;;
-    GET)
-      extra+=(--retry 1 --retry-delay 2)
-      ;;
   esac
-  local tmp_raw http_code rc=0
-  tmp_raw="$(mktemp)"
-  http_code=$(curl -sS --max-time 30 \
-    -X "$method" \
-    -o "$tmp_raw" \
-    -w '%{http_code}' \
-    "${CURL_AUTH[@]}" \
-    "${extra[@]}" \
-    -H 'Accept: application/json' \
-    "$@" \
-    "$url") || rc=$?
-  cleanup_auth
-  if (( rc != 0 )); then
-    rm -f "$tmp_raw"
-    die_state "curl-transport" "curl-failed: rc=$rc url=$url"
-  fi
-  sanitise_utf8 < "$tmp_raw" > "$body_out"
-  rm -f "$tmp_raw"
-  HTTP_STATUS="$http_code"
+  # Retries are owned HERE, not by curl --retry: curl's built-in retry also
+  # fires on 429/5xx, which would bypass this table's bounded Retry-After
+  # handling (and could double-submit mutating requests on timeout).
+  local attempt tmp_raw tmp_hdr http_code rc
+  for attempt in 1 2; do
+    prepare_curl_auth
+    tmp_raw="$(mktemp)"; tmp_hdr="$(mktemp)"; rc=0
+    http_code=$(curl -sS --max-time 30 \
+      -X "$method" \
+      -o "$tmp_raw" \
+      -D "$tmp_hdr" \
+      -w '%{http_code}' \
+      "${CURL_AUTH[@]}" \
+      "${extra[@]}" \
+      -H 'Accept: application/json' \
+      "$@" \
+      "$url") || rc=$?
+    cleanup_auth
+    if (( rc != 0 )); then
+      rm -f "$tmp_raw" "$tmp_hdr"
+      # Transport-level retry is safe for GET only (a timed-out mutating
+      # request may have been processed).
+      if [[ "$method" == "GET" && $attempt == 1 ]]; then
+        echo "bb_curl: transport failure rc=$rc on GET; retrying once after 2s" >&2
+        sleep 2
+        continue
+      fi
+      die_state "curl-transport" "curl-failed: rc=$rc url=$url"
+    fi
+    if [[ "$http_code" == "429" && $attempt == 1 ]]; then
+      # Honour Retry-After, bounded to 30s; default 2s when absent.
+      local ra
+      ra=$(awk -F': *' 'tolower($1)=="retry-after" {gsub(/\r/,"",$2); print $2; exit}' "$tmp_hdr")
+      [[ "$ra" =~ ^[0-9]+$ ]] || ra=2
+      (( ra > 30 )) && ra=30
+      rm -f "$tmp_raw" "$tmp_hdr"
+      echo "bb_curl: 429 rate-limited; retrying once after ${ra}s" >&2
+      sleep "$ra"
+      continue
+    fi
+    if [[ "$http_code" == "502" && $attempt == 1 ]]; then
+      rm -f "$tmp_raw" "$tmp_hdr"
+      echo "bb_curl: 502 upstream; retrying once after 2s" >&2
+      sleep 2
+      continue
+    fi
+    if [[ "$http_code" == "407" ]]; then
+      # Sidecar misconfigured. Body deliberately NOT logged (contract:
+      # 401/403/407 bodies may contain token-shaped strings).
+      rm -f "$tmp_raw" "$tmp_hdr"
+      die_state "sidecar-session-invalid" "sidecar returned 407 for $method $url"
+    fi
+    sanitise_utf8 < "$tmp_raw" > "$body_out"
+    rm -f "$tmp_raw" "$tmp_hdr"
+    HTTP_STATUS="$http_code"
+    return 0
+  done
+}
+
+# Excerpt a response body for an error message, per sidecar-contract.md:
+# 401/403 bodies are never logged (token-shaped error strings); 407 never
+# reaches here (bb_curl aborts). Credentialed URLs in other bodies are
+# redacted defensively.
+body_excerpt() {
+  case "$HTTP_STATUS" in
+    401|403|407) printf '[body redacted: auth-failure responses may contain token-shaped strings]' ;;
+    *) head -c 200 "$1" | sed -E 's#(https?://)[^/@[:space:]]+@#\1[redacted]@#g' ;;
+  esac
 }
 
 # --- jq helper (minimal, no external dep beyond jq) ---------------------------
@@ -285,13 +335,13 @@ cmd_pr_open() {
   resp_f=$(mktemp)
   bb_curl POST "$url" "$resp_f" -H 'Content-Type: application/json' -d "$payload"
   if (( HTTP_STATUS < 200 || HTTP_STATUS >= 300 )); then
-    local excerpt; excerpt=$(head -c 200 "$resp_f"); rm -f "$resp_f"
+    local excerpt; excerpt=$(body_excerpt "$resp_f"); rm -f "$resp_f"
     die_state "pr-open-http-${HTTP_STATUS}" "pr-open failed: $excerpt"
   fi
   local num
   num=$(jq -r '.id // empty' < "$resp_f")
   if [[ -z "$num" ]]; then
-    local excerpt; excerpt=$(head -c 200 "$resp_f"); rm -f "$resp_f"
+    local excerpt; excerpt=$(body_excerpt "$resp_f"); rm -f "$resp_f"
     die_state "pr-open-no-id" "no PR number in response: $excerpt"
   fi
   rm -f "$resp_f"
@@ -354,7 +404,7 @@ cmd_pr_comment() {
   resp_f=$(mktemp)
   bb_curl POST "$url" "$resp_f" -H 'Content-Type: application/json' -d "$payload"
   if (( HTTP_STATUS < 200 || HTTP_STATUS >= 300 )); then
-    local excerpt; excerpt=$(head -c 200 "$resp_f"); rm -f "$resp_f"
+    local excerpt; excerpt=$(body_excerpt "$resp_f"); rm -f "$resp_f"
     die_state "pr-comment-http-${HTTP_STATUS}" "pr-comment failed: $excerpt"
   fi
   rm -f "$resp_f"
@@ -376,7 +426,7 @@ cmd_pr_approve() {
   resp_f=$(mktemp)
   bb_curl POST "$url" "$resp_f"
   if (( HTTP_STATUS < 200 || HTTP_STATUS >= 300 )); then
-    local excerpt; excerpt=$(head -c 200 "$resp_f"); rm -f "$resp_f"
+    local excerpt; excerpt=$(body_excerpt "$resp_f"); rm -f "$resp_f"
     die_state "pr-approve-http-${HTTP_STATUS}" "pr-approve failed: $excerpt"
   fi
   rm -f "$resp_f"
@@ -410,7 +460,7 @@ cmd_pr_decline() {
   url=$(build_url "/rest/api/1.0/projects/${PROJECT_KEY}/repos/${REPO_SLUG}/pull-requests/${num}/decline?version=${version}")
   bb_curl POST "$url" "$resp_f"
   if (( HTTP_STATUS < 200 || HTTP_STATUS >= 300 )); then
-    local excerpt; excerpt=$(head -c 200 "$resp_f"); rm -f "$resp_f"
+    local excerpt; excerpt=$(body_excerpt "$resp_f"); rm -f "$resp_f"
     die_state "pr-decline-http-${HTTP_STATUS}" "pr-decline failed: $excerpt"
   fi
   rm -f "$resp_f"
@@ -485,7 +535,12 @@ cmd_pr_merge() {
     done
   fi
   # Discovery empty, parse miss, or "merge-commit" sentinel (no restriction
-  # information): fall back to the most-preferred candidate.
+  # information): fall back to the most-preferred candidate. When discovery
+  # DID return a strategy list and none of our candidates is enabled, say so
+  # before attempting anyway (the server will 400 with its own list).
+  if [[ -z "$bb_strategy" && -n "$enabled" && "$enabled" != "merge-commit" ]]; then
+    echo "pr-merge: none of the candidate strategies (${candidates[*]}) is enabled by the repo ($(tr '\n' ' ' <<<"$enabled")); attempting '${candidates[0]}' anyway" >&2
+  fi
   [[ -n "$bb_strategy" ]] || bb_strategy="${candidates[0]}"
   if [[ "$bb_strategy" != "${candidates[0]}" ]]; then
     echo "pr-merge: requested '$strategy' -> '${candidates[0]}' not enabled; using enabled fallback '$bb_strategy'" >&2
@@ -518,7 +573,7 @@ cmd_pr_merge() {
       echo "pr-merge: 409 on attempt 1, retrying with fresh version" >&2
       continue
     fi
-    local excerpt; excerpt=$(head -c 200 "$resp_f"); rm -f "$resp_f"
+    local excerpt; excerpt=$(body_excerpt "$resp_f"); rm -f "$resp_f"
     die_state "pr-merge-http-${HTTP_STATUS}" "pr-merge failed: $excerpt"
   done
 }

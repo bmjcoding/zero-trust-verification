@@ -51,7 +51,11 @@ RESP=$(curl -sS --max-time 4 --connect-timeout 2 --retry 1 --retry-delay 1 \
   -o "$BODY_TMP" -w "%{http_code}" \
   "$HEALTH_URL" 2>/dev/null) || RESP="000"
 BODY_OK=0
-grep -qi 'ok' "$BODY_TMP" 2>/dev/null && BODY_OK=1
+# Body must BE "ok" (case-insensitive, surrounding whitespace/quotes
+# tolerated) — a substring match would accept "not ok" / "broken".
+if [[ "$(tr -d '[:space:]"' < "$BODY_TMP" 2>/dev/null | tr '[:upper:]' '[:lower:]')" == "ok" ]]; then
+  BODY_OK=1
+fi
 rm -f "$BODY_TMP"
 
 if [[ "$RESP" == "200" && "$BODY_OK" == "1" ]]; then

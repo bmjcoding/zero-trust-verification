@@ -219,9 +219,10 @@ case "$OS_KIND" in
     fi
     ;;
   *)
-    # Windows VDIs in v0 use sidecar mode only.
-    echo "unsupported-platform: $(uname -s)" >&2
-    exit 4
+    # No native keychain on this platform. The env tier below is still
+    # reachable — it is the documented CI / Windows-VDI fallback (the
+    # pre-v2.4 code exited 4 here, making the env tier dead on exactly
+    # the platforms that need it).
     ;;
 esac
 
@@ -229,6 +230,11 @@ esac
 if [[ -n "${!ENV_VAR:-}" ]]; then
   printf '%s' "${!ENV_VAR}"
   exit 0
+fi
+
+if [[ "$OS_KIND" == "other" ]]; then
+  echo "unsupported-platform: $(uname -s); set \$${ENV_VAR} or use sidecar mode" >&2
+  exit 4
 fi
 
 echo "no-credential-found: service=${SERVICE} candidates=${#CANDIDATES[@]}" >&2

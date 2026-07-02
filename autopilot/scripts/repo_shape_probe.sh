@@ -29,6 +29,12 @@
 #                Reserved for the dispatcher: accepted and ignored here; the
 #                dispatcher (not this script) applies auto-seed rules to the
 #                runbook.
+#   --jira-key <KEY>
+#                Prefix probe commit subjects with `[<KEY>] ` so the
+#                force-push probe is not rejected by JIRA-enforcing
+#                pre-receive hooks before it can test the rewrite. Without
+#                it, on such repos the force-push probe reports `unknown`
+#                (and the JIRA probe concludes `true` from that rejection).
 #   --temp-prefix <p>
 #                Prefix for temp branches. Default: `autopilot/probe`.
 #
@@ -70,6 +76,11 @@ DRY_RUN=0
 EXPLAIN=0
 NO_AUTO_SEED=0
 TEMP_PREFIX="autopilot/probe"
+PROBE_JIRA_KEY=""     # --jira-key: prefix probe commit subjects so the
+                      # force-push probe survives JIRA-enforcing servers
+FP_JIRA_BLOCKED=0     # set when the FP probe's initial push was rejected by
+                      # a JIRA-hook signal; lets the JIRA probe conclude
+                      # without a second rejected push
 
 explain() {
   (( EXPLAIN == 1 )) && echo "probe: $*" >&2 || true
@@ -84,8 +95,9 @@ while (( $# > 0 )); do
   case "$1" in
     --dry-run)       DRY_RUN=1; shift ;;
     --explain)       EXPLAIN=1; shift ;;
-    --show-patterns) declare -p REJECTION_PATTERNS | tr ' ' '\n'; exit 0 ;;
+    --show-patterns) printf '%s\n' "${REJECTION_PATTERNS[@]}"; exit 0 ;;
     --no-auto-seed)  NO_AUTO_SEED=1; shift ;;
+    --jira-key)      PROBE_JIRA_KEY="$2"; shift 2 ;;
     --temp-prefix)   TEMP_PREFIX="$2"; shift 2 ;;
     -h|--help)
       # Print the header comment block (everything up to the first
@@ -110,6 +122,8 @@ JH_BRANCH="${TEMP_PREFIX}-jira-hook-${PID}"
 
 cleanup() {
   # Best-effort. Never fail the script from cleanup itself.
+  # Under --dry-run nothing was created and NO remote operation may run.
+  (( DRY_RUN == 1 )) && return 0
   # Restore original HEAD first (a temp branch cannot be deleted while
   # checked out).
   if [[ -n "${_PROBE_ORIG_HEAD:-}" ]]; then
@@ -125,22 +139,41 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
+# --dry-run plan: print (to STDERR — stdout stays KEY=VALUE-pure) every
+# operation a live probe would perform and the temp branch names.
+if (( DRY_RUN == 1 )); then
+  {
+    echo "probe[dry-run]: would fetch origin <trunk>"
+    echo "probe[dry-run]: would create + push temp branch $FP_BRANCH (commit A), rewrite to divergent commit B, force-push, then delete local+remote"
+    echo "probe[dry-run]: would create + push temp branch $JH_BRANCH (one commit without a JIRA key), then delete local+remote"
+    echo "probe[dry-run]: would call bitbucket.sh build-status on the trunk tip (CI presence)"
+    echo "probe[dry-run]: no network or git-state operation is performed in this mode"
+  } >&2
+fi
+
 _PROBE_ORIG_HEAD="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
 
 # Emit the always-on corpus-growth message for an unmatched rejection. (GAPS B4)
+# Credentialed URLs are redacted: git error text can embed the origin URL,
+# and `https://user:token@host/...` must never reach the orchestrator context.
 report_unknown_rejection() {
   local logfile="$1"
-  echo "probe: unknown rejection pattern; please add to repo_shape_probe_patterns.sh: $(tr '\n' ' ' < "$logfile" | head -c 500)" >&2
+  echo "probe: unknown rejection pattern; please add to repo_shape_probe_patterns.sh: $(tr '\n' ' ' < "$logfile" | sed -E 's#(https?://)[^/@[:space:]]+@#\1[redacted]@#g' | head -c 500)" >&2
 }
 
 # --- Trunk detection ----------------------------------------------------------
 
 detect_trunk() {
-  # Prefer origin/HEAD symbolic ref if set.
+  # Prefer origin/HEAD symbolic ref if set (local, no network).
   local h
   h=$(git symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null | sed 's|^origin/||' || true)
   if [[ -n "$h" ]]; then
     printf '%s' "$h"
+    return 0
+  fi
+  # Under --dry-run stop here: the remaining strategies are remote calls.
+  if (( DRY_RUN == 1 )); then
+    printf '%s' "main"
     return 0
   fi
   # Ask remote directly.
@@ -245,14 +278,29 @@ detect_force_push() {
     return 0
   fi
 
+  # Probe commit subjects carry the operator-supplied JIRA key when given
+  # (--jira-key), so the probe is not blinded by JIRA-enforcing servers —
+  # exactly the strict repos AP-23 exists for.
+  local subj_prefix=""
+  [[ -n "$PROBE_JIRA_KEY" ]] && subj_prefix="[${PROBE_JIRA_KEY}] "
+
   # Build T+A and push it (fast-forward, no force).
   if ! (
       git checkout --quiet "$FP_BRANCH" &&
-      git commit --allow-empty --quiet -m "autopilot probe: A" &&
+      git commit --allow-empty --quiet -m "${subj_prefix}autopilot probe: A" &&
       git push --quiet origin "$FP_BRANCH:$FP_BRANCH"
   ) >>"$logfile" 2>&1; then
-    # Cannot even push a fresh branch; may indicate strict permissions.
-    explain "FORCE_PUSH_ALLOWED=unknown (initial push failed; may be branch-perm-denied)"
+    # Cannot even push a fresh branch. If the rejection is a JIRA-hook
+    # signal, record that fact — the JIRA probe can conclude from it
+    # without a second rejected push, and the operator learns to re-run
+    # with --jira-key to get a force-push verdict.
+    local pre_signal=""
+    if match_rejection "$logfile" pre_signal && [[ "$pre_signal" == JIRA_HOOK_* ]]; then
+      FP_JIRA_BLOCKED=1
+      explain "FORCE_PUSH_ALLOWED=unknown (initial push rejected by JIRA hook — re-run with --jira-key <KEY> for a force-push verdict)"
+    else
+      explain "FORCE_PUSH_ALLOWED=unknown (initial push failed; may be branch-perm-denied)"
+    fi
     rm -f "$logfile"
     printf 'unknown'
     return 0
@@ -261,7 +309,7 @@ detect_force_push() {
   # Rewrite: rewind to T and commit the divergent sibling B.
   if ! (
       git reset --hard --quiet HEAD~1 &&
-      git commit --allow-empty --quiet -m "autopilot probe: B (rewritten)"
+      git commit --allow-empty --quiet -m "${subj_prefix}autopilot probe: B (rewritten)"
   ) >>"$logfile" 2>&1; then
     explain "FORCE_PUSH_ALLOWED=unknown (local rewrite failed)"
     rm -f "$logfile"
@@ -314,6 +362,14 @@ detect_jira_hook() {
   if (( DRY_RUN == 1 )); then
     explain "JIRA_HOOK_ENFORCED=unknown (dry-run)"
     printf 'unknown'
+    return 0
+  fi
+
+  # The force-push probe's initial push may already have produced the
+  # ground truth (a JIRA-hook rejection); no need for a second push.
+  if (( FP_JIRA_BLOCKED == 1 )); then
+    explain "JIRA_HOOK_ENFORCED=true (force-push probe's initial push was rejected by the JIRA hook)"
+    printf 'true'
     return 0
   fi
 

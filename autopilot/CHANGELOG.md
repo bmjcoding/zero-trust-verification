@@ -8,9 +8,59 @@ All notable changes to the autopilot skill. Format follows Keep a Changelog; ver
 
 Audit release. A ground-truth audit (docs/GAPS_SPEC.md — every mechanical finding reproduced by executing the script against a fixture before registration) found that the deterministic substrate had never been executed: the Bitbucket adapter could not succeed at anything (T01), the force-push probe could not detect a denial (T09), the concurrency guard could not detect a concurrent drain (T13), and the documented CI-poll invocation terminated the drain (T17). It also found five claimed-but-unimplemented changelog entries and ~20 cross-file contract contradictions. This release fixes all of it and adds the machinery that keeps it fixed: an executed self-test, a cross-file consistency lint, loop-safety invariants, and this release gate.
 
+### Adversarial verification rounds (within this release)
+
+Two author-blind agents reviewed the release before tagging (docs/GAPS_SPEC.md
+§"Verification rounds"). Round 1 mutation-tested the harness (five baseline bugs
+re-introduced on copies; the corresponding assertions went red every time) and
+caught three overclaims, fixed in round 2. Round 3 fixed the fresh-eyes agent's
+findings, the most significant being:
+
+- **macOS `secret_set.sh` was unusable and leaked**: the ownership probe parsed
+  `security -g` stderr and treated "item could not be found" as an existing
+  foreign entry — every first-ever store aborted exit 5 (forcing `--force`,
+  which also bypassed the collision guard); the store itself passed the token
+  in `security`'s argv; and an unset `$USER` (containers/CI, `set -u`) made the
+  store silently no-op while reporting success. Fixed: exit-code existence
+  check, attribute dump without `-g` (no password fetched), token via
+  `security -i` stdin, `RUN_USER` fallback. (T30)
+- **Auth-failure bodies reached the orchestrator context**: every non-2xx path
+  logged a 200-char body excerpt, violating the sidecar contract's 401/403/407
+  rule; and the contract's 429/502/407 handling did not exist. Fixed:
+  `body_excerpt` redaction, bounded Retry-After retry, 502 backoff retry,
+  407 → `LAST_STATE=sidecar-session-invalid`; retries are owned by `bb_curl`,
+  not `curl --retry` (which also fires on 429/5xx and bypasses the table).
+  (T35, T36)
+- **`--dry-run` was not dry**: trunk detection ran `ls-remote` and the cleanup
+  trap ran remote branch deletes. Fixed: local-refs-only trunk detection,
+  disarmed trap, and the promised operation plan printed (stderr). (T32)
+- **The force-push probe was blinded by JIRA hooks** on exactly the strict
+  repos AP-23 targets (its own probe commits were rejected before the rewrite
+  test): new `--jira-key` flag unblinds it; without a key the JIRA verdict is
+  concluded from that first rejection instead of a second push. (T29, T37)
+- **Crash-recovery spam**: D1.0.4 appended a `crash_recovery` entry whenever
+  the batched queue was non-empty at fire start — which is every healthy
+  batched-mode fire; now requires actual crash evidence (expired-lock reclaim
+  or the 90-minute heartbeat detector). `[doc-only]`
+- **Undecidable tracker-PR table**: dispatched on `MERGEABLE|CONFLICTED`,
+  which `pr-state` cannot observe, and had no row for `NONE`; rewritten to the
+  observable state set. `[doc-only]`
+- Also: quoted-YAML lock values parse (T34); empty churn window is a clean
+  empty result, not exit 1 (T31); `--show-patterns` prints intact rows (T33);
+  healthz body must BE "ok", not contain it (T38); env-token tier reachable on
+  keychain-less platforms and documented under its real name
+  (`AUTOPILOT_<SERVICE>_TOKEN`); D1.4 rows are ordered first-match with
+  external PR state checked before CI polling; a Done resets both counters;
+  PAUSED recovery is `--resume`-only; `detect_concurrent_drain.sh` exit 64
+  routed at G1/D1; credentialed-URL redaction in probe stderr; cadence
+  deferral precedence stated; `in_progress.pushed_at` documented;
+  `ci.build_states` marked reserved; G1 slug derivation defined; the security
+  validator's grep uses `-iE` (PCRE `(?i)` errors under `grep -E`). `[doc-only]`
+  where no assertion id is cited.
+
 ### Added
 
-- **`scripts/self_test.sh`** — hermetic self-test (mock Bitbucket DC server, local bare repos with deny-configs and pre-receive hooks, curl argv shim): 69 assertions covering every script. (GAPS M1)
+- **`scripts/self_test.sh`** — hermetic self-test (mock Bitbucket DC server, local bare repos with deny-configs and pre-receive hooks, curl argv shim, macOS keychain shims): 96 assertions covering every script. (GAPS M1)
 - **`scripts/lint_consistency.sh`** — deterministic cross-file contract lint, rules L1–L15: one artifact-path scheme, one tracker schema, one step graph, one validator catalog, budget-sourced caps, batching-doc alignment, one TDD commit format, removed fields stay removed, one size vocabulary, cron prompts carry the drain invocation, version refs pinned to this file's top entry, complete flag registry, no consumer-repo leakage, runbook-sourced gates. (GAPS M2)
 - **`references/loop-safety.md`** — the loop's ten never-do invariants, each mapped to its enforcing mechanism, plus honest residuals. (GAPS M4)
 - **`gates:` runbook block** — language-agnostic gate command templates (`test_scoped`, `test_single`, `test_contract`, `typecheck`, `lint`, `precommit` with `{paths}`/`{files}`/`{test}` placeholders; Python defaults preserved). D6.1, the D5 validators, the implementer prompt, and conflict resolution now reference gates instead of hardcoded `pytest`/`mypy`/`ruff`; `test_runner` becomes a warned legacy alias. Lint is scoped to changed files — never repo-wide. (GAPS D3; L15) `[doc-only]` for the prompt files; the contract is linted.

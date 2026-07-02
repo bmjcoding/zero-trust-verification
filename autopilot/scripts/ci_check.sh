@@ -11,8 +11,11 @@
 #     loop inside a fire was never dispatchable. The canonical dispatcher
 #     invocation is:
 #         ci_check.sh --sha <sha> --pr <N> --once
-#   - `--once` adds VERDICT=PENDING (exit 5) for INPROGRESS / within-grace
-#     UNKNOWN observations.
+#   - `--once` reports VERDICT=PENDING (exit 5) for both INPROGRESS and
+#     UNKNOWN observations — a single observation cannot distinguish
+#     "not started yet" from "will never report"; the dispatcher's
+#     ci_check_count cap owns that distinction. Grace/timeout windows
+#     apply to blocking mode only.
 #   - LAST_STATE on stderr now carries the ACTUAL last observed build state
 #     (SUCCESSFUL|FAILED|INPROGRESS|UNKNOWN|<none>), not a constant, so the
 #     tracker entry can cite it as the v2.2.0 changelog promised.
