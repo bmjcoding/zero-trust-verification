@@ -112,7 +112,7 @@ Each of the items below maps to a finding in the adversarial review series (AP-1
 - `references/plan-reviewer-projection.md` — what the reviewer sees and why.
 - `references/implementer-prompt.md` — implementer role contract; TDD cycle shape.
 - `references/validator-prompts.md` — validator catalog (integration, design, quality + optional security, sre); contradiction handling.
-- `references/conflict-resolution.md` — D7.0 rebase resolver; scoped pytest rules.
+- `references/conflict-resolution.md` — D7.0 rebase resolver; scoped test-gate rules.
 - `references/extraction-prompt.md` — code-extraction helper.
 - `references/cadence-dispatch.md` — in-session cadence rules.
 - `references/sidecar-contract.md` — sidecar v0 env vars, URL shape, error codes, resolver chain, and (v2.3.0) probe budget under sidecar mode.

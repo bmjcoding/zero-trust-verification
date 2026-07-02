@@ -102,7 +102,7 @@ This is contract v0 because:
 
 The contract is versioned because the error codes and URL shape will harden as the sidecar matures. v0 covers the current pilot's behavior and explicitly enumerates which fields are stable versus which are subject to change at v1.
 
-## Why pytest scoping during rebase (AP-15)
+## Why test-gate scoping during rebase (AP-15)
 
 When the conflict resolver merges a patch during D7.0 rebase, the natural reflex is to run the full test suite to confirm nothing broke. That is wrong for two reasons:
 
@@ -111,7 +111,7 @@ When the conflict resolver merges a patch during D7.0 rebase, the natural reflex
 
 So conflict resolution runs only the test_gates specified in the subtask's plan entry plus any tests under the touched files' nearest test directory. If those pass, the rebase is considered clean. If a downstream PR in the stack breaks tests outside that scope, it surfaces at that PR's D6, not during this PR's rebase.
 
-The implementer prompt and conflict-resolution.md both enforce this; D6 verifies that the test runner was invoked with file/path scoping (`pytest path/to/test_file.py::test_name` or equivalent), not `pytest` bare.
+The implementer prompt and conflict-resolution.md both enforce this; D6 verifies that the test runner was invoked with file/path scoping via `gates.test_single` / `gates.test_scoped` (Python default: `pytest path/to/test_file.py::test_name`), never the bare runner.
 
 ## Why contradictory validator findings escape to HUMAN_NEEDED (AP-18)
 

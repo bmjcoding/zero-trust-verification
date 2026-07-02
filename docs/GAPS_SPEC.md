@@ -256,7 +256,10 @@ impl 3 / ci 2; cadence's "hits 2 = one short of the threshold" assumes 3. Also
 compare against the configured caps; cadence deferral fires at `cap − 1`. Enforcement
 points added: G3 (max_subtasks at plan validation), D4 (max_cycles_per_subtask in the
 implementer contract + D6 audit), D1.2 (max_runtime_minutes wall-clock check).
-**Status.** FIXED (lint: L6).
+**Status.** FIXED (lint: L6). Verification round 1 caught this entry OVERCLAIMING:
+the G3 max_subtasks check and the D6 cycle-budget cross-check were claimed but not
+written. Both landed in round 2 (`[GENERATE-FAILED: subtask-budget-exceeded]`;
+D6.2 `[BLOCKED: cycle-budget-exhausted]` from git log, not self-report).
 
 ### C7 — `tracker-delta-batching.md` contradicts drain-lifecycle on five load-bearing points [P0-doc]
 (1) Flush point: "immediately after a Subtask PR is confirmed merged and before D7.2
@@ -360,8 +363,10 @@ plugin's unwired `--focus`/`--no-html`.
 `--force-rolling-tracker` dropped; `argument-hint` frontmatter added;
 non-standard `lifecycle:` frontmatter field removed (S09-class; the canonical skill
 schema doesn't define it — status line moved into body text).
-**Status.** FIXED (lint: L13 — every `--flag` token in references must appear in
-SKILL.md's registry).
+**Status.** FIXED (lint: L13). Verification round 1 proved the original L13
+VACUOUS against new flags (a planted `--brand-new-flag` passed); round 2 added the
+advertised scan — every `--flag` token used in an `/autopilot` invocation across
+the docs must appear in SKILL.md — and red-tested it.
 
 ### C20 — Session-lock protection is checkout-local under batched-delta mode [P2-doc]
 Under `branching.no_force_push: true`, D1.0's lock write lands only in the local
@@ -420,8 +425,10 @@ precommit command templates with `{paths}`/`{files}`/`{test}` placeholders; Pyth
 defaults preserved verbatim). D6.1, validators, implementer, and conflict-resolution
 reference gates by name. Lint scope is changed-files, not repo-wide. `test_runner`
 accepted as legacy alias with a warning.
-**Status.** FIXED (lint: L15 — no bare hardcoded gate invocations in lifecycle docs
-outside the defaults table).
+**Status.** FIXED (lint: L15). Verification round 1 found seven bare-pytest strays
+the original L15 could not see (SKILL.md preamble/contract-10/D6 row, drain-lifecycle
+D5/D7.0, README, rationale AP-15); round 2 fixed all seven and extended L15 to catch
+the phrasing class (`(scoped|runs?|running) pytest`), red-tested.
 
 ## M. Meta-gaps (the loop about the loop)
 
@@ -500,6 +507,30 @@ with) its fix.
   reserved with an explicit note (kept for side-band parsing, not currently wired).
 - G5's `git log --oneline --all` seed for already-shipped detection picks up probe
   and foreign-drain branches → scoped to `origin/<trunk>`.
+
+## Verification rounds
+
+**Round 1 (author-blind adversarial, two independent agents).** Agent 1 (closure
+auditor) verified all 31 register items against the diff, re-ran both harnesses,
+and mutation-tested the harness itself: five baseline bugs were re-introduced on
+/tmp copies (A1 subshell, A2 first-pipe split, A3 fast-forward probe, A5 legacy
+fields, A9 legacy platform id) and the corresponding assertions went red every
+time (65/69, 61/69, 67/69, 63/69, 61/69); eight lint rules were red-tested with
+planted violations and all fired; the suite was confirmed loopback-only and
+sandbox-clean. Verdict: A1–A10, B1–B6, D1–D2, M1–M6 and 20/23 C-items genuinely
+closed; **three overclaims found** (C6 partial, C19's L13 vacuous against new
+flags, D3's seven pytest strays) plus four smaller residuals (lowercase size
+example; SKILL.md's wrong claim that D1 invokes `detect_concurrent_drain.sh`;
+sidecar-contract omitting the healthz body requirement).
+
+**Round 2 (fixes for round-1 findings).** All seven landed: G3 subtask-budget
+refusal; D6.2 cycle-budget audit from git log; L13 full `/autopilot`-invocation
+flag scan (red-tested); seven pytest strays replaced with `gates.*` phrasing and
+L15 extended to the class (red-tested); `S+S → M`; D1.0 now actually invokes
+`detect_concurrent_drain.sh` as its fail-closed pre-check (matching SKILL.md's
+index and giving exit 4 a defined route); healthz body requirement added to the
+sidecar contract. A second closure agent's findings were triaged the same way
+(see below if any survived).
 
 ## Honest residuals (recorded, not hidden)
 

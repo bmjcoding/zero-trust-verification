@@ -112,6 +112,9 @@ For each Story emitted in G2, spawn a `general-purpose` agent with the role prom
 Run all planners in parallel (one Agent message, multiple tool calls). Validate each output against the schema; missing required fields → re-prompt that planner ONCE. Second failure → mark that Story `[GENERATE-FAILED: planner-schema]` and continue with the rest.
 
 
+**Budget check (`budget.max_subtasks`).** After all planners return, count the union of emitted Subtasks. If it exceeds the runbook's `budget.max_subtasks` (default 20), refuse with `[GENERATE-FAILED: subtask-budget-exceeded]` citing the count — the operator either raises the budget or splits the input docs into separate drains. Do NOT silently truncate the plan.
+
+
 ## Step G3.5 — Plan review (schema-only projection — AP-3)
 
 
@@ -145,7 +148,7 @@ When enabled, after G3.5 the orchestrator walks the reviewed plan for consolidat
 Consolidated groups become one Subtask with:
 - New `id` = `<lowest-id>+` (e.g., `B2+`)
 - Union of `owned_files[]`, `behaviors_to_test[]`, `test_gates[]`
-- `estimated_size` = the ceiling of the group's sizes (`s+s` → `m`)
+- `estimated_size` = the ceiling of the group's sizes (`S+S` → `M`)
 - `Consolidated from:` note listing the merged Subtask IDs
 
 
