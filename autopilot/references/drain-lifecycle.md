@@ -16,6 +16,9 @@ Orchestrator-direct work in this step is limited to: reading the tracker, readin
 ### D1.0 — Session lock claim (AP-4)
 
 
+Run `bash ${SKILL_DIR}/scripts/detect_concurrent_drain.sh .autopilot/runbooks/<slug>.tracker.md` as the fast pre-check: exit 2 → another session holds a live lock, refuse the fire (`CronDelete`, exit silently — the other session's cron keeps firing); exit 4 → corrupt lock state, refuse with `STATUS: HUMAN_NEEDED — tracker-lock-unreadable` (fail closed); exit 0 or 3 → proceed to the dispatch table below.
+
+
 Read the tracker's frontmatter. Compute `now_iso = $(date -u +%Y-%m-%dT%H:%M:%SZ)`.
 
 
@@ -221,7 +224,7 @@ Spawn THREE `general-purpose` agents in ONE message (parallel) with role prompts
 
 1. **Integration validator** — types compile, contracts honored, no import cycles, file-path verification.
 2. **Design validator** — structural coherence, no premature abstractions, layer rule respected. Tests verify behavior through public interface.
-3. **Quality validator** — runs scoped pytest and any contract tests added.
+3. **Quality validator** — runs the scoped test gates (`gates.test_single` / `gates.test_scoped`) and any contract tests added.
 
 
 Read all three outputs in parallel.
@@ -281,6 +284,7 @@ Expected shape for `kind: code | test-only`:
 
 
 Failure modes:
+- Cycle count (RED/GREEN pairs) exceeds `budget.max_cycles_per_subtask` → `[BLOCKED: cycle-budget-exhausted]` (impl) — the git log is the enforcement point, not the implementer's self-report.
 - Missing RED for behavior N → `[BLOCKED: tdd-no-red]` (impl) citing N.
 - Missing GREEN for behavior N → `[BLOCKED: tdd-no-green]` (impl) citing N.
 - GREEN precedes RED for any N → `[BLOCKED: tdd-out-of-order]` (impl).
@@ -303,7 +307,7 @@ Failure dispatch matches Step D5 (typed BLOCKED, increment `consecutive_impl_blo
 **Step D7.0 — Pre-push rebase.** `git fetch origin && git rebase origin/<base>`. If clean, continue. If conflicts, follow the protocol at `references/conflict-resolution.md` (inlined Pocock-style). Budget: 3 hunks across 2 files max — past that, `[BLOCKED: rebase-too-large]` (impl), no retry (planning failure; needs human).
 
 
-During conflict resolution, run pytest scoped to changed paths only — never the full suite (AP-15).
+During conflict resolution, run `gates.test_scoped` against changed paths only — never the full suite (AP-15).
 
 
 **Step D7.1 — Stage owned_files[].** The per-cycle commits from D4 ARE the PR's commits. Stage only `owned_files[]` if any unstaged changes remain from refactor pass; otherwise skip. Never `git add -A`.

@@ -24,7 +24,7 @@ Loop-safety invariants (what the loop may NEVER do, and which mechanism enforces
 ## Loading preamble (read first, every invocation)
 
 
-**Delegation is the positive default, not a fallback.** This skill is an orchestrator. Its job is to name and dispatch subagents (`Explore`, `Plan`, `general-purpose`) that do the actual reading, planning, editing, and testing. Direct orchestrator tool use is limited to reading the tracker/runbook, running short-output git and skill scripts, and writing tracker/runbook edits. Everything else — reading source, running pytest, running long Bashes — belongs to a subagent.
+**Delegation is the positive default, not a fallback.** This skill is an orchestrator. Its job is to name and dispatch subagents (`Explore`, `Plan`, `general-purpose`) that do the actual reading, planning, editing, and testing. Direct orchestrator tool use is limited to reading the tracker/runbook, running short-output git and skill scripts, and writing tracker/runbook edits. Everything else — reading source, running test gates, running long Bashes — belongs to a subagent.
 
 
 **First-action gate.** Before any tool call in a GENERATE or DRAIN fire, name the subagent you are about to dispatch. If the next action is not a dispatch and does not fall inside the orchestrator-direct allow-list above, stop and re-read this preamble. This gate survives every override in the modes table below; it is Hard Contract §10 stated positively.
@@ -96,7 +96,7 @@ For one-off tasks use `/loop` instead. Autopilot is for multi-task autonomous dr
 7. **No `--no-verify`, no rebases of trunk. `--force` is logged.** AP-11.
 8. **Refuse-by-default on existing artifacts.** Re-running `--generate` requires explicit `--merge` or `--overwrite`.
 9. **Stop conditions are terminal.** `STATUS: DRAINED | PAUSED | HUMAN_NEEDED | STOPPED` ends the drain; the cron is deleted.
-10. **Orchestrator-as-coordinator only. This rule survives every override — `--yolo`, `--force`, single-branch, no-force-push, and any future flag.** Orchestrator NEVER directly Reads source files, Greps the repo, runs pytest, or runs long-output Bashes. Delegate to subagents (Plan, general-purpose, Explore). Orchestrator-direct is limited to (a) Read/Edit on the tracker + runbook, (b) short-output single-line git commands, (c) the skill's own scripts under `${SKILL_DIR}/scripts/`. See the loading preamble at the top of this file for the first-action gate and the context-poisoning trap; both must be honoured at every step boundary. The tracker is the source of truth across fires.
+10. **Orchestrator-as-coordinator only. This rule survives every override — `--yolo`, `--force`, single-branch, no-force-push, and any future flag.** Orchestrator NEVER directly Reads source files, Greps the repo, runs test gates, or runs long-output Bashes. Delegate to subagents (Plan, general-purpose, Explore). Orchestrator-direct is limited to (a) Read/Edit on the tracker + runbook, (b) short-output single-line git commands, (c) the skill's own scripts under `${SKILL_DIR}/scripts/`. See the loading preamble at the top of this file for the first-action gate and the context-poisoning trap; both must be honoured at every step boundary. The tracker is the source of truth across fires.
 11. **Bitbucket Data Center is the source-of-truth host.** All PR / build-status operations go through `scripts/bitbucket.sh`. The `gh` CLI is NOT a dependency.
 12. **Secrets never enter Claude's context.** Tokens are resolved through `scripts/secret_get.sh` (sidecar → keychain → env), echoed only into curl `-H` headers via subshell, and never logged. AP-13/14.
 13. **Heartbeats at every step boundary.** D3, D4, D5, D6, D7.x each update `last_heartbeat_at` so D1's 90-min-old crash detector is meaningful. AP-6.
@@ -147,7 +147,7 @@ Each fire is one Subtask end-to-end. Per-fire scope is HARD: one Subtask, one PR
 | D3 | Plan + Plan review | D3.0 audited-SHA verification (AP-5); D3.1 Plan agent; D3.2 review on schema projection (AP-3) |
 | D4 | Implement (TDD vertical slice) | Spawn `general-purpose` with `references/implementer-prompt.md`; per-cycle commits (AP-1); JIRA-key prefix under AP-22 |
 | D5 | Validate (parallel) | Three validators from `references/validator-prompts.md`; contradictory-finding escape (AP-18) |
-| D6 | Test gate + commit-shape audit | Scoped pytest (AP-15); TDD shape from `git log` (AP-1) |
+| D6 | Test gate + commit-shape audit | Scoped `gates:` commands (AP-15); TDD shape + cycle budget from `git log` (AP-1) |
 | D7 | Pre-push rebase + commit + PR | D7.0 rebase; D7.1 stage; D7.1a AP-23 tracker-delta fold; D7.2 push; D7.3 PR (`bitbucket.sh pr-open`); D7.3a stacked-merge strategy (AP-10); D7.4 tracker update (batched under `branching.no_force_push`) |
 | D7.5 | CI poll (cross-fire) | `ci_check.sh --once`; short-circuits when `ci.skip_wait: true` |
 | D8 | Adaptive cron re-arm | Cadence dispatch per `references/cadence-dispatch.md`; session-lock release on terminal STATUS; PAUSED spec dedup (AP-17) |

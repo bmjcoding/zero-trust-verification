@@ -24,7 +24,7 @@ When `sidecar_detect.sh` reports `MODE=sidecar`, the following env vars are guar
 | `WORKSPACE_USER_SUB` | User's stable subject identifier (NOT a credential — safe to log). Used by scripts when they need to construct user-scoped audit trails. | `u_42198765` |
 
 
-Absence of `IDENTITY_PROXY_URL` is the canonical signal that sidecar mode is unavailable. `sidecar_detect.sh` checks this and additionally pings `${IDENTITY_PROXY_URL}/healthz` to confirm reachability.
+Absence of `IDENTITY_PROXY_URL` is the canonical signal that sidecar mode is unavailable. `sidecar_detect.sh` checks this and additionally pings `${IDENTITY_PROXY_URL}/healthz` to confirm reachability. **Sidecar implementations MUST return HTTP 200 with a body containing `ok` from `/healthz`** — detectors verify both, and a 200 with a different body is treated as sidecar-unavailable (local-mode fallback).
 
 
 ## URL shape

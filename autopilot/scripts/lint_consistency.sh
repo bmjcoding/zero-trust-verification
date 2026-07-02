@@ -123,8 +123,8 @@ else
 fi
 
 # --- L10: one estimated_size vocabulary ----------------------------------------
-if grep -qE '`xs`' "$ROOT/references/generate-lifecycle.md"; then
-  violation L10 "generate-lifecycle.md uses out-of-vocabulary size 'xs' (planner emits S|M|L)"
+if grep -qE '`xs`|`s\+s`|`s` or `m`|→ `m`' "$ROOT/references/generate-lifecycle.md"; then
+  violation L10 "generate-lifecycle.md uses out-of-vocabulary lowercase sizes (planner emits S|M|L)"
 else
   ok L10
 fi
@@ -157,6 +157,14 @@ fi
 (( l12_bad == 0 )) && ok L12
 
 # --- L13: flag registry ----------------------------------------------------------
+# Three sub-checks:
+#  (a) required dispatcher flags present in SKILL.md;
+#  (b) ghost flags absent everywhere;
+#  (c) EVERY --flag token used in an `/autopilot ...` invocation anywhere in
+#      the docs must appear in SKILL.md — new flags cannot be introduced in a
+#      reference without registration. (Script-level flags like --dry-run are
+#      out of scope: they belong to their script's usage header, not the
+#      dispatcher registry.)
 l13_bad=0
 for flag in --generate --drain --resume --yolo --merge --overwrite --jira --consolidate=auto --slug --force --reprobe --no-probe --no-auto-seed; do
   grep -q -- "$flag" "$ROOT/SKILL.md" || { violation L13 "dispatcher flag $flag missing from SKILL.md registry"; l13_bad=1; }
@@ -168,6 +176,9 @@ for ghost in --force-rolling-tracker --external-scheduler; do
     [[ -n "$hits" ]] && { violation L13 "ghost flag $ghost referenced in: $(tr '\n' ' ' <<<"$hits")"; l13_bad=1; }
   fi
 done
+while IFS= read -r flag; do
+  grep -q -- "$flag" "$ROOT/SKILL.md" || { violation L13 "flag $flag used in an /autopilot invocation but not registered in SKILL.md"; l13_bad=1; }
+done < <(grep -h '/autopilot' "${DOCS[@]}" 2>/dev/null | grep -oE -- '--[a-z][a-z0-9-]*(=auto)?' | sort -u)
 (( l13_bad == 0 )) && ok L13
 
 # --- L14: no consumer-repo leakage -----------------------------------------------
@@ -193,6 +204,12 @@ if hits=$(grep_docs 'ruff check \.'); then
 fi
 if hits=$(grep_docs 'pytest -m unit'); then
   violation L15 "hardcoded 'pytest -m unit' gate in: $(tr '\n' ' ' <<<"$hits")"
+  l15_bad=1
+fi
+# Bare-runner phrasing outside "(Python default: ...)" annotations — the
+# stray class the v2.4.0 adversarial round caught seven of.
+if hits=$(grep_docs '(scoped|runs?|running) pytest'); then
+  violation L15 "bare 'pytest' phrasing (use gates.* with a Python-default annotation) in: $(tr '\n' ' ' <<<"$hits")"
   l15_bad=1
 fi
 grep -q 'gates.test_scoped' "$ROOT/references/drain-lifecycle.md" || { violation L15 "drain-lifecycle D6.1 does not reference gates.test_scoped"; l15_bad=1; }
