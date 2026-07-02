@@ -19,8 +19,9 @@ You will receive:
 1. The Story block (full tier-1 schema, including `behaviors_or_outcomes`, `evidence`, `cross_doc_refs`, optional `shipped_check`)
 2. The path to the input docs (so you can `Read` them for full context)
 3. The repo root path
-4. The current `HEAD` SHA — emit this as `audited_sha:` at the top of your output so D1.D3.0 can detect drift later (AP-5)
-5. The strict tier-2 schema below
+4. The current `HEAD` SHA — emit this as `audited_sha:` at the top of your output so DRAIN Step D3.0 can detect drift later (AP-5)
+5. The runbook's `contract_paths:` globs and `gates:` table (for test-gate selection)
+6. The strict tier-2 schema below
 
 
 ## OUTPUT SCHEMA (strict)
@@ -41,7 +42,6 @@ subtasks:
     source_ref: <doc-path>:<section>  # may be more specific than Story's source_ref
     owned_files:                 # MUST be verified (Read or Glob) before emit
       - <repo-relative-path>     # mark new files: "<path>  # NEW"
-    branch_pattern: <type>/<slug>-{date}  # date filled in at drain-time
     depends_on: [<other-subtask-ids>]    # other Subtasks (this Story or others) that must land first
     test_gates: [<unit | contract | integration>]
     validators: [integration, design, quality]  # may add: security, sre — see selection rules
@@ -50,7 +50,7 @@ subtasks:
       contract: <semantic guarantee>
     behaviors_to_test:           # ordered; first is the tracer bullet; one entry per public-interface behavior
       - behavior: <one-line statement>
-        test_name_hint: <pytest-friendly name>   # AP-9: planner suggests; implementer is free to deviate
+        test_name_hint: <test-runner-friendly name>   # AP-9: planner suggests; implementer is free to deviate
     acceptance_criteria:         # crisp, testable; what "done" means
       - <criterion>
     estimated_size: <S | M | L>  # S<3 files & <100 LOC; M=4-8 files & 100-500 LOC; L=>8 files or >500 LOC
@@ -76,19 +76,19 @@ subtasks:
    - `test-only` — adding tests against existing behavior (e.g., audit task). Has behaviors_to_test, no interface_change.
    - `refactor` — internal restructure, no API change. Both interface_change and behaviors_to_test are null. Acceptance criteria: "all existing tests still pass; LOC of refactored module decreased / coupling reduced / etc."
    - `docs` — markdown / ADR / README only. test_gates may be empty.
-   - `config` — `pyproject.toml`, `pre-commit`, `internal.yml`, etc. No TDD inner loop.
+   - `config` — build/packaging manifests, hook config, CI config (`pyproject.toml`, `package.json`, `.pre-commit-config.yaml`, pipeline files, ...). No TDD inner loop.
 
 
 5. **`validators` selection rules:**
    - Always include `integration`, `design`, `quality`.
    - Add `security` if `owned_files` includes any of: `*/auth*`, `*/secret*`, `*/token*`, `*/cookie*`, anything calling out to external network in handlers.
-   - Add `sre` if `owned_files` includes any of: `*/workspace/apply.py`, `*/pipeline*`, `*/orchestrator*`, anything in operational hot paths.
+   - Add `sre` if `owned_files` touches operational hot paths — long-lived-state holders, pipeline/orchestrator/deploy modules, anything whose failure takes the service down rather than one request.
    - Names must match validator-prompts.md sections.
 
 
 6. **`test_gates` selection rules:**
    - Include `unit` for any `kind: code | test-only | refactor`.
-   - Include `contract` if `owned_files` includes verbs/, mcp/server.py, wire-shape modules, or anything in `tests/contract/` adjacent.
+   - Include `contract` if `owned_files` matches the runbook's `contract_paths:` globs (wire-shape modules, serialized-format modules), or sits adjacent to an existing contract-test tree.
    - Include `integration` if Subtask spans multiple sub-packages and there's a multi-module behavior to verify.
    - Empty if `kind: docs` or `kind: config` without test infra impact.
 
@@ -109,7 +109,7 @@ subtasks:
    - Ordered. First entry is the tracer bullet (the simplest happy-path test that proves the system is wired up).
    - Subsequent entries: one per public-interface behavior, including error cases.
    - Each entry is a single observable behavior — NOT an implementation detail. Bad: "calls `_validate` with normalized input." Good: "rejects whitespace-only strings with SealIDError."
-   - **AP-9: `test_name_hint`** — pytest-friendly snake_case test name. The implementer is free to deviate (and should if a better name surfaces during TDD), but the hint gives D6's commit-shape audit a stable anchor for matching `test:` commits to behaviors.
+   - **AP-9: `test_name_hint`** — snake_case behavior-describing test name (works across pytest / vitest / go test naming conventions). The implementer is free to deviate (and should if a better name surfaces during TDD), but the hint gives D6's commit-shape audit a stable anchor for matching `test:` commits to behaviors.
    - For `kind: code`, the count must match what TDD vertical-slice expects to drive: typically 3–8 entries for an M-sized Subtask.
 
 
@@ -119,7 +119,7 @@ subtasks:
     - 2–6 criteria typical.
 
 
-11. **`audited_sha:` is mandatory.** It MUST be the SHA passed in input 4 verbatim. D1.D3.0 verifies this SHA's tree against HEAD before allowing the Subtask to run; if you fabricate it the Subtask will be marked `[BLOCKED: plan-stale-missing]` and your work is wasted.
+11. **`audited_sha:` is mandatory.** It MUST be the SHA passed in input 4 verbatim. DRAIN Step D3.0 verifies this SHA's tree against HEAD before allowing the Subtask to run; if you fabricate it the Subtask will be marked `[BLOCKED: plan-stale-missing]` and your work is wasted.
 
 
 ## COMPLETION

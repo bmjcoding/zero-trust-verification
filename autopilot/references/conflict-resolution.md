@@ -104,9 +104,11 @@ defensible:
 
 ```bash
 git add <resolved-file>
-ruff check <resolved-file>
-mypy <resolved-file>
-pytest -m unit -x -q <test-files-touching-resolved-file>    # SCOPED — never full suite during rebase
+# Run the runbook's gates, scoped to the resolved file
+# (Python defaults shown; substitute your runbook's gates: commands):
+#   gates.lint        e.g. ruff check <resolved-file>
+#   gates.typecheck   e.g. mypy <resolved-file>
+#   gates.test_scoped e.g. pytest -x -q <test-files-touching-resolved-file>   # SCOPED — never full suite during rebase
 ```
 
 
@@ -160,8 +162,8 @@ lives in the PR description, not in any individual commit.
 
 
 ```
-Rebase note: Resolved conflict in internal_sdk/foo.py with origin/main's
-rename (validate_seal → check_seal_id). This subtask's call site was
+Rebase note: Resolved conflict in lib/foo.py with origin/main's
+rename (validate_input → check_input). This subtask's call site was
 updated to match. Old name no longer exists.
 ```
 
@@ -173,5 +175,5 @@ updated to match. Old name no longer exists.
 - `git checkout --ours` or `--theirs` blindly across files. Per-hunk only, after reading intent.
 - Resolve a conflict by running the implementer agent again. The implementer doesn't know about the rebase context.
 - Squash the per-cycle commits to simplify the rebase. The per-cycle shape is the evidence D6 audits.
-- Run the full pytest suite during rebase — always scope to changed files (AP-15).
+- Run the full test suite during rebase — always scope to changed files (AP-15).
 - Skip the post-resolution gate run.

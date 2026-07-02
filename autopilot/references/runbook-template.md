@@ -1,4 +1,4 @@
-# Runbook Template (autopilot v2.3.0)
+# Runbook Template (autopilot v2.4.0)
 
 > Loading preamble reminder: the runbook is the operator's contract with
 > autopilot. Read it in full before every drain; do not cache stale
@@ -6,11 +6,11 @@
 > defaults only within the scope declared by that flag (repo-wide vs
 > drain-scoped) — see SKILL.md for the override-scoping table.
 
-A runbook is a single YAML+Markdown file that defines a unit of autonomous work for autopilot to execute. The operator writes this once; the dispatcher reads it on every step. As of v2.3.0 the runbook also carries the auto-detected repo-shape flags produced by G1.5 (see the `Repo constraints (detected)` block below).
+A runbook is a single YAML+Markdown file that defines a unit of autonomous work for autopilot to execute. The operator writes this once (or GENERATE seeds it); the dispatcher reads it on every step. Since v2.3.0 the runbook also carries the auto-detected repo-shape flags produced by G1.5 (see the `Repo constraints (detected)` block below).
 
-## File location
+## File location (canonical artifact paths)
 
-Runbooks live under `.autopilot/runbooks/<slug>.md` in the repository root. The slug is kebab-case, matches the branch prefix used in `autopilot/<slug>/...`, and is the only identifier the dispatcher uses to correlate plans, trackers, and PRs.
+Runbooks live under `.autopilot/runbooks/<slug>.md` in the repository root; the sibling tracker is `.autopilot/runbooks/<slug>.tracker.md`. These are the ONLY artifact paths (v2.4.0 removed a competing scheme under the repo's design-docs tree that GENERATE and DRAIN disagreed on). The slug is kebab-case, matches the branch prefix used in `autopilot/<slug>/...`, and is the only identifier the dispatcher uses to correlate plans, trackers, and PRs.
 
 ## Frontmatter
 
@@ -27,17 +27,30 @@ budget:
   max_impl_blocks: 3                     # AP-2: consecutive_impl_blocks cap before HUMAN_NEEDED
   max_ci_blocks: 2                       # AP-2: consecutive_ci_blocks cap before HUMAN_NEEDED
   max_runtime_minutes: 240               # wall-clock cap; dispatcher emits HUMAN_NEEDED at expiry
-validators:                              # list of validator names to run on every D5
-  - correctness
-  - security
-  - performance
-  - style
+validators:                              # validator names run on every D5; catalog = validator-prompts.md
+  - integration                          # always
+  - design                               # always
+  - quality                              # always
+  # - security                           # optional; auto-added by planner on auth/secret/token/cookie paths
+  # - sre                                # optional; auto-added by planner on operational hot paths
 cadence:                                 # AP-19: in-session only, no external_scheduler field
   mode: in-session                       # only legal value
   step_pause_seconds: 0                  # operator-facing pause between dispatch steps; 0 = no pause
-test_runner:
-  cmd: pytest                            # base command; subtask plans add path+nodeid scoping
-  scoped_flag: ""                        # any flag prepended to scoped invocations; usually empty
+gates:                                   # v2.4.0: language-agnostic gate commands (D6.1, D5 quality,
+                                         # conflict-resolution, implementer). Placeholders: {paths} =
+                                         # changed module/dir scope, {files} = changed file list,
+                                         # {test} = single test id. Defaults shown are the Python pack;
+                                         # replace per-repo (e.g. "npx vitest run {paths}",
+                                         # "go test {paths}", "cargo test -p {paths}").
+  test_scoped: "pytest -x -q {paths}"
+  test_single: "pytest {test} -x"
+  test_contract: "pytest -m contract -x -q {paths}"
+  typecheck: "mypy {paths}"
+  lint: "ruff check {paths}"             # scoped to changed files — never repo-wide (brownfield debt
+                                         # elsewhere must not block a Subtask)
+  precommit: "pre-commit run --files {files}"
+contract_paths: []                       # optional globs marking wire-shape/contract modules; the
+                                         # planner adds the `contract` test gate for Subtasks touching them
 ci:
   platform: bitbucket-dc                 # AP-13: only legal value
   skip_wait: false                       # AP-23: when true, do not poll for build; treat push as terminal. Auto-flipped true by G1.5 when CI_PRESENT=false.
@@ -68,10 +81,11 @@ The following frontmatter fields are NOT accepted. Runbooks containing them are 
 - `validator_contradiction_resolution: <strategy>` (AP-18: contradictions always escape to HUMAN_NEEDED)
 - `tracker_pr.force_push` (AP-23: superseded by `branching.no_force_push`)
 - `wait_for_ci` (AP-23: superseded by `ci.skip_wait`)
+- `test_runner` (v2.4.0: superseded by `gates:`; accepted as a legacy alias — `test_runner.cmd: X` is read as `gates.test_scoped: "X -x -q {paths}"` — with a warning)
 
 ## Body sections
 
-The runbook body is plain Markdown. The dispatcher reads three optional H2 sections by name; everything else is operator notes.
+The runbook body is plain Markdown. The dispatcher reads the sections below by name (Goal / Constraints / Non-Goals, plus the G1.5-owned `Repo constraints (detected)` block); everything else is operator notes.
 
 ### Goal
 
@@ -135,41 +149,39 @@ not flipped.
 
 ## Tracker file
 
-The dispatcher writes a sibling tracker at `.autopilot/runbooks/<slug>.tracker.md`. Operators do not edit this; it is the dispatcher's append-only state log. The frontmatter holds the lockfile (AP-4):
+The dispatcher writes a sibling tracker at `.autopilot/runbooks/<slug>.tracker.md`. Operators do not edit this; it is the dispatcher's append-only state log. The frontmatter is the CANONICAL schema (v2.4.0 — this section previously documented a divergent legacy field set that neither G7 nor `detect_concurrent_drain.sh` could interoperate with; see docs/GAPS_SPEC.md C2):
 
 ```yaml
 ---
-slug: <kebab-case-identifier>
-session_id: <CLAUDE_SESSION_ID>          # AP-4: lock owner
-lock_acquired_at: <iso8601>              # AP-4: expires 30 minutes after this
-last_heartbeat_at: <iso8601>             # AP-6: updated every step boundary
-current_step: <D0..D7.5>
-consecutive_impl_blocks: 0               # AP-2
-consecutive_ci_blocks: 0                 # AP-2
-force_audit:                             # AP-11
-  - {at: <iso8601>, step: <Dx>, reason: <string>}
-paused:                                  # AP-17: deduped by spec_hash
-  - {spec_hash: <sha>, subtask_id: <id>, reason: <string>, first_seen: <iso8601>, paused_count: <int>}
+STATUS: ACTIVE                    # ACTIVE | DRAINED | PAUSED | HUMAN_NEEDED | STOPPED
+consecutive_impl_blocks: 0        # AP-2: split counters
+consecutive_ci_blocks: 0
+drain_start_sha: <sha>
+drain_started_at: <iso8601>       # seeded by the first fire; budget.max_runtime_minutes anchor
+audited_sha: <sha>                # AP-5: SHA at planner-spawn time
+trunk_branch: <name>              # from G1.5 TRUNK=
+host: bitbucket-dc
+ci:
+  skip_wait: <bool>               # G1.5 CI_PRESENT auto-set
+branching:
+  no_force_push: <bool>           # G1.5 FORCE_PUSH_ALLOWED auto-set
+  single_branch_single_pr: false  # operator-toggle only
+enforce_jira_key: <bool>          # G1.5 JIRA_HOOK_ENFORCED or --jira auto-set
+pack_subtasks: <bool>             # AP-21 operator-toggle
+in_progress: null                 # or the claimed Subtask block (subtask_id, started_at,
+                                  #   last_heartbeat_at, pr_number, pushed_sha, awaiting_ci, ci_check_count)
+last_heartbeat_at: <iso8601>      # AP-6: updated every step boundary
+session_lock: null                # AP-4: CLAUDE_SESSION_ID of the lock owner
+session_lock_expires_at: null     # AP-4: now+30min, refreshed every fire
+force_audit: []                   # AP-11
 ---
 ```
 
-Body is a Markdown log of dispatch events in append-only order. Each entry: `<iso8601> <step> <subtask-id-or-->: <one-line-summary>`. Multi-line details (validator findings, conflict patches) go in collapsible sections.
+Body is a Markdown log of dispatch events in append-only order (`## Drift Notes`, the Subtask sections, `## Force Audit`, and — under `branching.no_force_push: true` — `## Pending Tracker Deltas (batched)`). Each entry: `<iso8601> <step> <subtask-id-or-->: <one-line-summary>`. Multi-line details (validator findings, conflict patches) go in collapsible sections.
 
 ## How autopilot reads the runbook
 
-D0 (init):
-1. Acquire lock on tracker frontmatter (AP-4) keyed on `CLAUDE_SESSION_ID`; if locked by another session and `lock_acquired_at` is less than 30 minutes old, exit with `[BLOCKED: lock-held] (external)`.
-2. If `audit_handoff` is set, verify `audited_sha` exists (`git cat-file -e`); if not, `[BLOCKED: audit-sha-missing] (impl)`.
-3. Verify branch shape (AP-7): current branch must match `autopilot/<slug>/(setup|tracker|<subtask-id>)`. If not, `[BLOCKED: branch-shape] (impl)`.
-4. Write heartbeat (AP-6).
-
-D1.x (audit/setup): only runs if `audit_handoff` set and tracker has no prior plan.
-
-D2 (plan): planner reads goal, constraints, non-goals, audit handoff, audited_sha; emits structured plan; D2.1 runs reviewer on projection (AP-3); on review pass, plan is committed to tracker.
-
-D3 (dispatch): per subtask, D3.0 checks plan freshness vs HEAD (AP-5); if stale, `[BLOCKED: plan-stale] (impl)`.
-
-D4..D7.5: see SKILL.md for the full step graph. Each step boundary updates `last_heartbeat_at` (AP-6).
+The operative step graphs are GENERATE G1..G8 (`references/generate-lifecycle.md`) and DRAIN D1..D8 (`references/drain-lifecycle.md`); those files are canonical for step semantics. In brief, each DRAIN fire: D1 claims the session lock (AP-4, via `session_lock`/`session_lock_expires_at`), verifies branch shape (AP-7) and heartbeat freshness (AP-6), and recovers WIP; D2 claims the next eligible Subtask; D3 plans and reviews on the projection (AP-3) after the D3.0 `audited_sha` staleness gate (AP-5); D4 implements TDD-vertically with per-cycle commits (AP-1); D5 validates in parallel; D6 runs the `gates:` commands and the git-log commit-shape audit; D7 rebases, folds batched deltas (D7.1a), pushes, opens the PR; D7.5 takes one CI observation; D8 re-arms the adaptive cron.
 
 ## Validators
 
@@ -212,15 +224,19 @@ budget:
   max_ci_blocks: 2
   max_runtime_minutes: 180
 validators:
-  - correctness
+  - integration
+  - design
+  - quality
   - security
-  - style
 cadence:
   mode: in-session
   step_pause_seconds: 0
-test_runner:
-  cmd: pytest
-  scoped_flag: ""
+gates:
+  test_scoped: "pytest -x -q {paths}"
+  test_single: "pytest {test} -x"
+  typecheck: "mypy {paths}"
+  lint: "ruff check {paths}"
+  precommit: "pre-commit run --files {files}"
 ci:
   platform: bitbucket-dc
   skip_wait: false
