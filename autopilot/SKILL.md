@@ -2,20 +2,23 @@
 name: autopilot
 description: >
   Turn ADRs / design docs / specs into an autonomous task queue and
-  drain it into PRs while you sleep. Use when the user says "drain
-  ADR", "run autopilot on a doc", "/autopilot", or wants overnight
-  autonomous PR drain.
-lifecycle: beta
+  drain it into PRs across self-scheduled fires — no re-prompting
+  between Subtasks for as long as the session lives. Use when the user
+  says "drain ADR", "run autopilot on a doc", "/autopilot", or wants an
+  unattended-within-session PR drain.
+argument-hint: "--generate @<doc>... | --drain @<runbook> | --resume @<runbook> [--yolo|--merge|--overwrite|--jira <PROJ>|--consolidate=auto|--slug=<name>|--reprobe|--no-probe|--no-auto-seed|--force]"
 ---
 
 
 # Autopilot
 
 
-CHANGELOG.md is the single source of truth for version history. This SKILL.md carries no `version:` field (the canonical Anthropic skill schema does not define one); the current release is the top entry in CHANGELOG.md.
+CHANGELOG.md is the single source of truth for version history. This SKILL.md carries no `version:` or `lifecycle:` field (the canonical Anthropic skill schema defines neither); the current release is the top entry in CHANGELOG.md. Status: beta.
 
 
-Take a spec document — ADR, design doc, RFC, PRD, TO-DO list, anything markdown that defines work — and turn it into a self-prompting drain loop that ships PRs end-to-end. The operator reviews once at GENERATE-time; the loop runs autonomously after that. Autopilot targets Bitbucket Data Center via `git` + REST, runs cleanly inside ephemeral workspace containers (no external scheduler, no host crontab assumptions), and reads secrets via a portable resolver chain (sidecar → keychain → env) so the token never enters Claude's context or tool-call arguments.
+Take a spec document — ADR, design doc, RFC, PRD, TO-DO list, anything markdown that defines work — and turn it into a self-prompting drain loop that ships PRs end-to-end. The operator reviews once at GENERATE-time; after that the loop runs autonomously **within a live Claude Code session** — the adaptive cron re-arms in-session, and the drain does not survive session death (there is no headless mode; see AP-19 in `references/role-prompts-rationale.md`). Autopilot targets Bitbucket Data Center via `git` + REST, runs cleanly inside ephemeral workspace containers (no external scheduler, no host crontab assumptions), and reads secrets via a portable resolver chain (sidecar → keychain → env) so the token never enters Claude's context or tool-call arguments.
+
+Loop-safety invariants (what the loop may NEVER do, and which mechanism enforces each) live in `references/loop-safety.md`; every lifecycle step below is bound by them. The deterministic substrate (all `scripts/`) is covered by `scripts/self_test.sh`; cross-file contract consistency is enforced by `scripts/lint_consistency.sh`.
 
 
 ## Loading preamble (read first, every invocation)
@@ -48,9 +51,14 @@ Take a spec document — ADR, design doc, RFC, PRD, TO-DO list, anything markdow
 | `/autopilot --generate @<doc>... --slug=<name>` | GENERATE + slug override | Overrides the auto-derived slug. Combine with any other GENERATE flag. Slug must match `[a-z0-9][a-z0-9-]*` and be unique across in-flight drains. |
 | `/autopilot --resume @<runbook>` | RESUME | Resume a paused drain. Auto-detects `STATUS: PAUSED`, validates runbook + tracker, flips `STATUS: ACTIVE`, re-arms the cron at appropriate cadence, and continues. |
 | `/autopilot --force ...` | Any mode + force override | Bypass the matching refusal (concurrent drain, existing artifacts, etc.). Every use is logged to the tracker's `## Force Audit` section with timestamp + flag + reason. AP-11. |
+| `/autopilot ... --reprobe` | Any mode + probe refresh | Re-run the G1.5 repo-shape probe against an existing runbook and refresh the `Repo constraints (detected)` block (operator edits newer than the probe are preserved). |
+| `/autopilot ... --no-probe` | GENERATE without probe | Skip G1.5 entirely; the runbook keeps hand-authored `Repo constraints (detected)` values (or defaults when none). |
+| `/autopilot ... --no-auto-seed` | GENERATE + probe, no flag flips | G1.5 still runs and populates the detected block, but no frontmatter flags are auto-flipped; the operator decides each at review. |
 
 
-Mode detection: ADR / design-doc / spec markdown → GENERATE. `AUTOPILOT-PROMPT-*.md` with `--drain` → DRAIN. Same file with `--resume` → RESUME.
+Mode detection: ADR / design-doc / spec markdown → GENERATE. A runbook under `.autopilot/runbooks/` with `--drain` → DRAIN. Same file with `--resume` → RESUME.
+
+The complete flag registry is the table above plus this list — a flag that appears in any reference but not here is a defect (`lint_consistency.sh` L13): `--generate`, `--drain`, `--resume`, `--yolo`, `--merge`, `--overwrite`, `--jira`, `--consolidate=auto`, `--slug`, `--force`, `--reprobe`, `--no-probe`, `--no-auto-seed`.
 
 
 ## When to invoke
@@ -93,7 +101,7 @@ For one-off tasks use `/loop` instead. Autopilot is for multi-task autonomous dr
 12. **Secrets never enter Claude's context.** Tokens are resolved through `scripts/secret_get.sh` (sidecar → keychain → env), echoed only into curl `-H` headers via subshell, and never logged. AP-13/14.
 13. **Heartbeats at every step boundary.** D3, D4, D5, D6, D7.x each update `last_heartbeat_at` so D1's 90-min-old crash detector is meaningful. AP-6.
 14. **Tracker frontmatter session lock.** Each fire claims a `session_lock` keyed on `${CLAUDE_SESSION_ID}` with `lock_expires_at = now + 30 min`. Two concurrent sessions hitting the same tracker is a refuse. AP-4.
-15. **Block counters split by domain.** `consecutive_impl_blocks` and `consecutive_ci_blocks` escalate independently at N≥3 so a CI flake streak doesn't mask real impl failures. External faults (foreign commits, trunk rename, tracker-pr-blocked) route straight to `HUMAN_NEEDED` and don't increment counters. AP-2.
+15. **Block counters split by domain.** `consecutive_impl_blocks` and `consecutive_ci_blocks` escalate independently at the runbook's `budget.max_impl_blocks` / `budget.max_ci_blocks` caps (defaults 3 / 2) so a CI flake streak doesn't mask real impl failures. External faults (foreign commits, trunk rename, tracker-pr-blocked) route straight to `HUMAN_NEEDED` and don't increment counters. AP-2.
 
 
 ---
@@ -140,8 +148,8 @@ Each fire is one Subtask end-to-end. Per-fire scope is HARD: one Subtask, one PR
 | D4 | Implement (TDD vertical slice) | Spawn `general-purpose` with `references/implementer-prompt.md`; per-cycle commits (AP-1); JIRA-key prefix under AP-22 |
 | D5 | Validate (parallel) | Three validators from `references/validator-prompts.md`; contradictory-finding escape (AP-18) |
 | D6 | Test gate + commit-shape audit | Scoped pytest (AP-15); TDD shape from `git log` (AP-1) |
-| D7 | Pre-push rebase + commit + PR | D7.0 rebase; D7.1 stage; D7.1a AP-23 tracker-delta fold; D7.2 push; D7.3 PR (`bitbucket.sh pr-open`); D7.4 tracker update (batched under `branching.no_force_push`); D7.5 stacked-merge strategy |
-| D7.5 | CI poll (cross-fire) | `ci_check.sh`; short-circuits when `ci.skip_wait: true` |
+| D7 | Pre-push rebase + commit + PR | D7.0 rebase; D7.1 stage; D7.1a AP-23 tracker-delta fold; D7.2 push; D7.3 PR (`bitbucket.sh pr-open`); D7.3a stacked-merge strategy (AP-10); D7.4 tracker update (batched under `branching.no_force_push`) |
+| D7.5 | CI poll (cross-fire) | `ci_check.sh --once`; short-circuits when `ci.skip_wait: true` |
 | D8 | Adaptive cron re-arm | Cadence dispatch per `references/cadence-dispatch.md`; session-lock release on terminal STATUS; PAUSED spec dedup (AP-17) |
 
 
@@ -154,7 +162,7 @@ Triggered by `/autopilot --resume @<runbook>`. Recovers a paused drain without r
 ### Failure escalation, STATUS state machine, tracker-PR availability, end-of-drain output
 
 
-All defined in `references/drain-lifecycle.md`. The short version: `consecutive_impl_blocks` and `consecutive_ci_blocks` escalate independently at N≥3; external faults route straight to `HUMAN_NEEDED` without incrementing counters; the tracker PR (or the batched-delta queue under `branching.no_force_push`) is the only place bookkeeping ever lands; `STATUS: DRAINED` produces `MERGE-ORDER.md`.
+All defined in `references/drain-lifecycle.md`. The short version: `consecutive_impl_blocks` and `consecutive_ci_blocks` escalate independently at the runbook's `budget.max_impl_blocks` / `budget.max_ci_blocks` caps (defaults 3 / 2); external faults route straight to `HUMAN_NEEDED` without incrementing counters; the tracker PR (or the batched-delta queue under `branching.no_force_push`) is the only place bookkeeping ever lands; `STATUS: DRAINED` produces `MERGE-ORDER.md`.
 
 
 ---
@@ -190,12 +198,15 @@ Queue entry schema, valid `delta_kind:` values, durability across BLOCKED fires,
 | `references/sidecar-contract.md` | v0 workspace-sidecar contract (env vars, URL shape, error codes, `## Probe budget under sidecar mode`) | `scripts/secret_get.sh`, `scripts/bitbucket.sh`, `scripts/repo_shape_probe.sh` |
 | `references/role-prompts-rationale.md` | ADR-style explanation of why each prompt is shaped the way it is | Maintainer reading; not loaded at runtime |
 | `references/runbook-template.md` | The `AUTOPILOT-PROMPT-<slug>.md` skeleton GENERATE fills in | GENERATE Step G7 |
-| `scripts/repo_shape_probe.sh` | AP-23 G1.5 repo-shape probe (trunk / CI / force-push / JIRA-hook) | GENERATE Step G1.5 |
-| `scripts/repo_shape_probe_patterns.sh` | Regex registry for rejection-message parsing (`match_rejection`) | Sourced by `repo_shape_probe.sh` |
-| `scripts/detect_concurrent_drain.sh` | Branch-namespace concurrency check | GENERATE Step G1, DRAIN Step D1 |
-| `scripts/hot_file_audit.sh` | 30-day churn analysis | GENERATE Step G4 |
-| `scripts/ci_check.sh` | Bitbucket build-status poll (git CLI + REST; no `gh` dependency); emits `LAST_STATE=<value>` on stderr before exit 2/3 | DRAIN Step D7.5 |
-| `scripts/bitbucket.sh` | PR lifecycle via Bitbucket DC REST: `pr-open`, `pr-state`, `pr-comment`, `pr-merge` (409 retry + strategy discovery), `pr-approve`, `pr-decline`, `pr-merge-strategies`, `build-status`. XSRF header + UTF-8 response sanitisation applied centrally. | DRAIN Steps D1, D7.3, D7.5 |
-| `scripts/secret_get.sh` | Resolver chain: sidecar → keychain → env. Probes a priority list of candidate service names. Token never echoed to stdout/stderr. | All REST-calling scripts |
-| `scripts/secret_set.sh` | Operator setup: store token in OS-native keychain. `--as-host` writes to the host-derived joined name; `--force` bypasses the operator-credential abort. | One-time setup |
-| `scripts/sidecar_detect.sh` | Detect identity-proxy sidecar; emit MODE=sidecar\|local | GENERATE Step G1, sourced by `bitbucket.sh` |
+| `references/loop-safety.md` | Loop-safety invariants: what the loop may never do, and which mechanism enforces each | Maintainer + every lifecycle step (binding) |
+| `scripts/repo_shape_probe.sh` | AP-23 G1.5 repo-shape probe (trunk / CI / force-push / JIRA-hook); `--dry-run`, `--explain` (reasoning trace on stderr), `--show-patterns` | GENERATE Step G1.5 |
+| `scripts/repo_shape_probe_patterns.sh` | Regex registry for rejection-message parsing (`match_rejection`; signal = text after the LAST `\|` so regexes may contain alternations) | Sourced by `repo_shape_probe.sh` |
+| `scripts/detect_concurrent_drain.sh` | Tracker session-lock concurrency check (canonical `session_lock` / `session_lock_expires_at` fields; fail-closed exit 4 on unreadable state). Takes the TRACKER PATH. | GENERATE Step G1, DRAIN Step D1 |
+| `scripts/hot_file_audit.sh` | `--churn`: 30-day churn analysis (G4). `--subtasks <slug>`: cross-branch overlap hotspots (D7.0). | GENERATE Step G4, DRAIN Step D7.0 |
+| `scripts/ci_check.sh` | Bitbucket build-status check (git CLI + REST; no `gh` dependency). Dispatcher uses `--once` (single observation: GREEN/RED/PENDING/PR_DECLINED, exits 0/1/5/4); blocking poll mode is operator-only. `LAST_STATE=<actual last build state>` on stderr before every exit. | DRAIN Step D7.5 |
+| `scripts/bitbucket.sh` | PR lifecycle via Bitbucket DC REST: `pr-open`, `pr-state` (`--num` or `--branch`), `pr-comment`, `pr-merge` (409 retry + strategy discovery), `pr-approve`, `pr-decline`, `pr-merge-strategies`, `build-status`. XSRF header + UTF-8 request AND response sanitisation applied centrally. | DRAIN Steps D1, D7.3, D7.5 |
+| `scripts/secret_get.sh` | Resolver chain: sidecar → keychain → env. Probes a priority list of candidate service names (`--list-candidates` prints them). Token never echoed to stdout/stderr, never in argv. | All REST-calling scripts |
+| `scripts/secret_set.sh` | Operator setup: store token in OS-native keychain. `--as-host` writes the host-scoped `autopilot-<service>-<host>` name; default mode probes ALL resolver candidates and aborts on collision; `--force` bypasses. | One-time setup |
+| `scripts/sidecar_detect.sh` | Detect identity-proxy sidecar (HTTP 200 + "ok" body); emit MODE=sidecar\|local | GENERATE Step G1, sourced by `bitbucket.sh` |
+| `scripts/self_test.sh` | Hermetic self-test of every script against fixtures (mock Bitbucket server, local bare repos, deny-hooks). Run after ANY change under `scripts/`. | Maintainer / CI |
+| `scripts/lint_consistency.sh` | Cross-file contract lint (L1–L15): canonical paths, tracker schema, step ids, validator catalog, flag registry, version refs, no consumer-repo leakage | Maintainer / CI (also invoked by `self_test.sh`) |

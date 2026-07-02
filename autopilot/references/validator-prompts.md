@@ -10,6 +10,7 @@ Every validator receives:
 3. `git log --oneline origin/<base>..HEAD` (the per-cycle commit shape from AP-1; readable evidence of TDD compliance)
 4. The implementer's TDD sequence summary (from `references/implementer-prompt.md` final report)
 5. Repo root path
+6. The runbook's `gates:` command table (all tool invocations below show the Python defaults in parentheses; run YOUR runbook's commands)
 
 
 ## Common: output format
@@ -62,11 +63,11 @@ import cycles, file paths match what the Subtask claimed.
 
 
 1. **File-path verification.** Every file in the diff matches `owned_files[]`. Surface any out-of-scope file as `severity: high, blocking: true`.
-2. **Type compilation.** Run `mypy <changed-modules>` (delta only). Type errors → finding per error.
-3. **Import resolution.** Run `python -c "import <module>"` for each top-level package touched. Import errors → finding.
+2. **Type/compile check.** Run `gates.typecheck` on the changed modules (Python default: `mypy <changed-modules>`, delta only). Errors → finding per error.
+3. **Import/link resolution.** Load each touched top-level module the cheapest way the language allows (Python default: `python -c "import <module>"`; TS: `tsc --noEmit` on the entry; Go/Rust: the compile in check 2 already covers it). Failures → finding.
 4. **Public interface contract.** If `interface_change.public_api` is set, grep the diff for the signature. If the actual implementation diverges (different param order, different return type, different name), finding.
 5. **Cross-Subtask contracts.** If `depends_on[]` lists Subtasks that landed earlier in this drain, verify any contract they advertised is consumable here. If the consumer's import fails, finding.
-6. **No import cycles.** `python -c "import <package>"` from a clean shell; if RecursionError or circular-import warnings, finding.
+6. **No import cycles.** Load the touched package from a clean shell (Python default: `python -c "import <package>"`); RecursionError / circular-import warnings / cycle-detector output → finding.
 
 
 ### NOT YOUR JOB
@@ -143,19 +144,16 @@ Run the test gate. Confirm new tests exist. Report failures.
 ### CHECKS
 
 
-1. **Run pytest scoped to the Subtask's tests (AP-15).** Iterate the implementer's TDD sequence; for each test name, run `pytest <path>::<name> -x -q`. Failures → finding per test. **Do NOT run the full suite.** The full-suite gate runs in D6 against the changed-module scope; running it again here doubles wall-clock for no information gain.
+1. **Run the Subtask's tests, scoped (AP-15).** Iterate the implementer's TDD sequence; for each test name, run `gates.test_single` (Python default: `pytest <path>::<name> -x -q`). Failures → finding per test. **Do NOT run the full suite.** The scoped gate runs again in D6 against the changed-module scope; running the full suite here doubles wall-clock for no information gain.
 
 
-2. **Run repo-wide markers scoped to changed modules.** `pytest -m unit -x -q <changed-modules-only>` (NOT the whole repo). The `<changed-modules-only>` set is `git diff --name-only origin/<base>..HEAD | grep -E '\.py$' | xargs -n1 dirname | sort -u`. Failures → finding.
+2. **Run the scoped suite over changed modules.** `gates.test_scoped` with `{paths}` = the changed-module set: `git diff --name-only origin/<base>..HEAD | xargs -n1 dirname | sort -u` (NOT the whole repo). Failures → finding.
 
 
-3. **Run linters.**
-   - `ruff check .` — must be zero, repo-wide. This one IS repo-wide because ruff is fast and lint debt anywhere blocks merges.
-   - `mypy <changed-module>` — delta only.
-   - Findings → severity by category (lint = low, type = medium).
+3. **Run linters — scoped to the changed files.** `gates.lint` with `{paths}` = changed files (Python default: `ruff check <changed-files>`), and `gates.typecheck` on the changed modules (delta only). Scoped, never repo-wide: pre-existing lint debt elsewhere in a brownfield repo is not this Subtask's finding. Findings → severity by category (lint = low, type = medium).
 
 
-4. **Pre-commit hooks.** `pre-commit run --files <owned_files>`. Failures → finding.
+4. **Pre-commit hooks.** `gates.precommit` (default `pre-commit run --files <owned_files>`). Failures → finding.
 
 
 5. **Behavior coverage check (lexical).** Every entry in `behaviors_to_test[]` must be referenced by at least one new test in the diff. Match by tokenizing the behavior text on `_` and whitespace and substring-matching against test names (e.g., behavior `"rejects whitespace-only strings"` matches test `test_rejects_whitespace_only_strings`, or the planner's `test_name_hint` if the implementer used it verbatim). Missing behaviors → finding. Additional tests beyond the listed behaviors are fine — strict equality is wrong because one behavior can legitimately drive multiple tests (happy path + parametrized edge cases).
@@ -164,10 +162,10 @@ Run the test gate. Confirm new tests exist. Report failures.
 ### Severity guidance
 
 
-- `pytest` failure: high, blocking
-- `mypy` failure: high, blocking
-- `ruff` failure: low, blocking (repo policy is zero)
-- `pre-commit` failure: high, blocking
+- test-gate failure: high, blocking
+- typecheck failure: high, blocking
+- lint failure (scoped): low, blocking
+- pre-commit failure: high, blocking
 
 
 ### NOT YOUR JOB
@@ -205,10 +203,10 @@ OWASP Top 10 + STRIDE pass on the diff.
 3. **Injection sinks.** Subprocess calls with shell=True + interpolated input. SQL strings concatenated with user data. Os.path with user input.
 4. **Auth bypass.** New code paths that conditionally skip authentication checks. Comparison: `if user == "admin"` etc.
 5. **Token surface.** Any new code path that reads `BITBUCKET_TOKEN` from env outside of `secret_get.sh` and its callers. The token must flow through the resolver chain (sidecar → keychain → env), not be re-read at call sites.
-6. **Dependency drift.** New entries in `pyproject.toml` / `requirements.txt`. Severity: medium, non-blocking. Note for review.
+6. **Dependency drift.** New entries in the repo's dependency manifests (`pyproject.toml`, `requirements.txt`, `package.json`, `go.mod`, `Cargo.toml`, ...). Severity: medium, non-blocking. Note for review.
 
 
-If repo has `~/.claude/skills/owasp-reference/`, consider its checklist as the canonical source.
+If the environment provides a security-checklist skill (e.g. an OWASP reference), you may consult it; its absence changes nothing about the checks above.
 
 
 ---
@@ -237,9 +235,9 @@ Operational readiness pass.
 1. **Health check / observability.** New service code without health endpoint? Long operations without log lines?
 2. **Timeouts.** New external calls without timeouts. `requests.get(url)` without `timeout=` is a finding. `curl` without `--max-time` is a finding.
 3. **Graceful degradation.** New dependencies that, if down, kill the whole flow. Should be optional / cached / fallback'd.
-4. **Idempotency.** Long operations that aren't retry-safe. Especially anything writing to TFE / SSM / external state stores.
-5. **Resource cleanup.** New file handles, network sockets, processes — `with` blocks or explicit `close()` required.
-6. **Sidecar contract compliance.** Any new script that calls Bitbucket REST MUST go through `scripts/bitbucket.sh` or use the sidecar-aware resolver pattern documented in `references/sidecar-contract.md`. Direct `curl` calls with `Authorization: Bearer ${BITBUCKET_TOKEN}` outside of `secret_get.sh`'s subshell pattern → high, blocking.
+4. **Idempotency.** Long operations that aren't retry-safe. Especially anything writing to external state stores (cloud parameter/secret stores, infra-state backends, queues).
+5. **Resource cleanup.** New file handles, network sockets, processes — scope-bound cleanup (`with` / `defer` / RAII) or explicit `close()` required.
+6. **Sidecar contract compliance.** Any new script that calls Bitbucket REST MUST go through `scripts/bitbucket.sh` or use the sidecar-aware resolver pattern documented in `references/sidecar-contract.md`. Direct `curl` calls with `Authorization: Bearer ${BITBUCKET_TOKEN}` outside of `secret_get.sh`'s resolver flow → high, blocking.
 
 
-If repo has `~/.claude/skills/observability-patterns/`, consider its checklist canonical.
+If the environment provides an observability/SRE checklist skill, you may consult it; its absence changes nothing about the checks above.

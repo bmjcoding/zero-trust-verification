@@ -30,6 +30,9 @@ Read the tracker's frontmatter. Compute `now_iso = $(date -u +%Y-%m-%dT%H:%M:%SZ
 Commit the tracker delta via the rolling tracker PR (under `branching.no_force_push: false`) OR append the delta as `delta_kind: session_lock` to `## Pending Tracker Deltas (batched)` (under `branching.no_force_push: true`) before doing any other work.
 
 
+> **Known limitation (batched-delta mode).** Under `branching.no_force_push: true` the lock write stays in the local tracker file until the next D7.1a fold lands — a second session draining from a DIFFERENT clone cannot see it. AP-4's session lock is therefore checkout-local in that mode; the cross-clone guard is the branch-namespace check (`git ls-remote origin 'refs/heads/autopilot/<slug>/*'` showing branches you didn't create) plus operator discipline. Documented, not solved, in v2.4.0.
+
+
 ### D1.0.4 — Pending-deltas migration + crash recovery (AP-23)
 
 
@@ -69,13 +72,16 @@ Anything else → `STATUS: HUMAN_NEEDED — unexpected-branch-shape` citing the 
 
 
 Read in parallel:
-- `docs/design/AUTOPILOT-TRACKER-<slug>.md`
+- `.autopilot/runbooks/<slug>.tracker.md`
 - `git status --short`
 - `git fetch origin && git rev-list --count <drain-start-sha>..origin/<trunk>` (external churn count)
 - `git branch --show-current`
 
 
 Update `last_heartbeat_at: <now>` (AP-6 first heartbeat of the fire).
+
+
+**Runtime budget check.** If `now - drain_started_at > budget.max_runtime_minutes`, write `STATUS: HUMAN_NEEDED — runtime-budget-expired`, `CronDelete`, exit. (`drain_started_at` is seeded by the first fire.)
 
 
 ### D1.3 — Heartbeat-driven crash detection
@@ -90,8 +96,8 @@ If `in_progress.last_heartbeat_at > 90 min old` → treat as crashed; apply RESU
 | `in_progress` block in tracker | Action |
 |---|---|
 | Empty / null | Normal — proceed to D2. |
-| `awaiting_ci: true`, `pr_number` set, and `ci.skip_wait: false` | CI-poll mode — run `bash ${SKILL_DIR}/scripts/bitbucket.sh pr-state <pr_number>` then `bash ${SKILL_DIR}/scripts/ci_check.sh <pr_number>`; act on result (D7.5). **Hard contract: after D7.5 completes, exit the fire regardless of outcome. Do NOT continue to D2 in the same fire.** |
-| `awaiting_ci: true`, `pr_number` set, and `ci.skip_wait: true` | Skip CI polling entirely. Check PR state via `pr-state`; on `MERGED` → move Subtask to Done and continue. On `OPEN` → the PR is still awaiting operator merge; re-arm at `*/30`, exit. On `DECLINED` → treat as ci-block per the standard row below. |
+| `awaiting_ci: true`, `pr_number` set, and `ci.skip_wait: false` | CI-poll mode — run `bash ${SKILL_DIR}/scripts/bitbucket.sh pr-state --num <pr_number>` then `bash ${SKILL_DIR}/scripts/ci_check.sh --sha <in_progress.pushed_sha> --pr <pr_number> --once`; act on result (D7.5). **Hard contract: after D7.5 completes, exit the fire regardless of outcome. Do NOT continue to D2 in the same fire.** |
+| `awaiting_ci: true`, `pr_number` set, and `ci.skip_wait: true` | Skip CI polling entirely. Check PR state via `pr-state --num <pr_number>`; on `MERGED` → move Subtask to Done, then exit the fire (same hard contract as the row above — no D2 in the same fire). On `OPEN` → the PR is still awaiting operator merge; re-arm at `*/30`, exit. On `DECLINED` → treat as ci-block per the standard row below. |
 | `subtask_id` set, branch exists locally with commits ahead of base | RESUME — rebase on base, re-run Step D6 test gate; if green → push + open PR (D7); if red → spawn ONE `general-purpose` quality fix attempt; then push or `[BLOCKED: resume-failed]` (impl). |
 | `subtask_id` set, branch missing or empty | ABANDON — clear `in_progress`, write `[BLOCKED: orphan-resume]` (impl) on that Subtask, continue to D2 with the next Subtask. |
 | `awaiting_ci: true` + Bitbucket PR state = `MERGED` | PR was merged externally — move Subtask to `## Done` with PR URL + merge commit SHA, reset `consecutive_ci_blocks = 0`, clear `in_progress`, re-arm at `*/5`, exit fire. |
@@ -117,7 +123,7 @@ Topo-walk the DAG. Pick the lowest-ID Subtask where:
 If no eligible Subtask:
 - All `[x]` → write `STATUS: DRAINED`, render `MERGE-ORDER.md`, `CronDelete`, exit fire successfully.
 - All blocked or pending-deps → write `STATUS: HUMAN_NEEDED`, `CronDelete`, exit.
-- `consecutive_impl_blocks >= 3` OR `consecutive_ci_blocks >= 3` → write `STATUS: HUMAN_NEEDED` + `## Escalation` block citing which counter tripped and the three contributing Subtasks, `CronDelete`, exit. AP-2.
+- `consecutive_impl_blocks >= budget.max_impl_blocks` OR `consecutive_ci_blocks >= budget.max_ci_blocks` (runbook-configured; defaults 3 / 2) → write `STATUS: HUMAN_NEEDED` + `## Escalation` block citing which counter tripped and the contributing Subtasks, `CronDelete`, exit. AP-2.
 
 
 Otherwise: write the chosen Subtask's full block to `in_progress` in the tracker, with `started_at`, `last_heartbeat_at`, and a placeholder `pr_number: null`.
@@ -182,7 +188,7 @@ Branch from the appropriate base per the DAG-aware branching rule:
 `git checkout -b autopilot/<slug>/<subtask-id>` (or `git checkout <single-feature-branch>` under the single-branch mode).
 
 
-Spawn ONE `general-purpose` agent with the role prompt at `references/implementer-prompt.md` inlined verbatim. The prompt enforces:
+Spawn ONE `general-purpose` agent with the role prompt at `references/implementer-prompt.md` inlined verbatim, plus the runbook's `gates:` command table (the implementer runs tests through `gates.test_scoped`, never a hardcoded runner). The number of TDD cycles may not exceed `budget.max_cycles_per_subtask`; hitting the cap mid-Subtask → `[BLOCKED: cycle-budget-exhausted]` (impl). The prompt enforces:
 - TDD vertical slice: for each behavior in `behaviors_to_test[]`, RED → GREEN, in order
 - **Per-cycle local commits** (AP-1):
   - After each RED: `git add <test files>` + `git commit -m "test: <id>.<n> RED — <behavior>"`
@@ -248,12 +254,12 @@ Refresh heartbeat after validation pass (AP-6).
 ### D6.1 — Test gates
 
 
-Run, must all pass:
-- `pytest -m unit -x -q` against the **changed module scope only** (AP-15: not full suite during rebase loops). Use `pytest --collect-only -q <owned_files>` to scope.
-- `pytest -m contract -x -q <scoped paths>` (only if `test_gates` includes `contract`)
-- `mypy <changed-module>` (delta only)
-- `ruff check .` (must be zero — repo-wide)
-- `pre-commit run --files <changed-files>` (NEVER `--no-verify`)
+Run the runbook's `gates:` commands (see `references/runbook-template.md` §gates — Python defaults shown in parentheses), must all pass:
+- `gates.test_scoped` against the **changed module scope only** (default `pytest -x -q {paths}`; AP-15: not full suite during rebase loops)
+- `gates.test_contract` on the scoped paths (default `pytest -m contract -x -q {paths}`; only if `test_gates` includes `contract`)
+- `gates.typecheck` on the changed modules (default `mypy {paths}`; delta only)
+- `gates.lint` on the changed files (default `ruff check {paths}`; scoped, not repo-wide — pre-existing lint debt elsewhere in a brownfield repo must not block this Subtask)
+- `gates.precommit` (default `pre-commit run --files {files}`; NEVER `--no-verify`)
 
 
 ### D6.2 — TDD audit via git log (AP-1)
@@ -330,7 +336,7 @@ Under `branching.no_force_push: false` this step is a no-op — tracker bookkeep
 **Step D7.2 — Push.** `git push -u origin <branch>`. Transient failure → 1 retry. Auth failure → `[BLOCKED: bitbucket-token-missing]` (impl), no retry.
 
 
-**Step D7.3 — PR.** `bash ${SKILL_DIR}/scripts/bitbucket.sh pr-open <base> <head> <title-file> <body-file>` returns the PR number on stdout. Base = the rebase base from D7.0. Title = commit subject. Body = HEREDOC with Summary + Test plan + TDD sequence + Checklist sections.
+**Step D7.3 — PR.** `bash ${SKILL_DIR}/scripts/bitbucket.sh pr-open --title "<commit-subject>" --src <head-branch> --dest <base-branch> --body-file <body-file>` returns the PR number on stdout. Dest = the rebase base from D7.0. Body file = Summary + Test plan + TDD sequence + Checklist sections.
 
 
 Under `branching.no_force_push: true` with a non-empty D7.1a fold, the PR body ALSO includes a `## Tracker deltas folded in` H2 listing each entry's `delta_kind` + `diff_summary` for reviewer visibility.
@@ -339,17 +345,17 @@ Under `branching.no_force_push: true` with a non-empty D7.1a fold, the PR body A
 Under `branching.single_branch_single_pr: true`, D7.3 opens the PR only on the FIRST successful Subtask; subsequent Subtasks push additional commits to the same branch and update the existing PR via `bitbucket.sh pr-comment` (append a "Subtask <id> landed" note).
 
 
-**Step D7.4 — Tracker update.** Set `in_progress.pr_number = <num>`, `in_progress.awaiting_ci = true`, `in_progress.pushed_at = <iso8601>`, `in_progress.ci_check_count = 0`, `last_heartbeat_at = <now>`.
+**Step D7.4 — Tracker update.** Set `in_progress.pr_number = <num>`, `in_progress.awaiting_ci = true`, `in_progress.pushed_at = <iso8601>`, `in_progress.pushed_sha = <HEAD sha just pushed>` (consumed by D7.5's `ci_check.sh --sha`), `in_progress.ci_check_count = 0`, `last_heartbeat_at = <now>`.
 
 
 - Under `branching.no_force_push: false`: commit via rolling tracker PR.
 - Under `branching.no_force_push: true`: append `delta_kind: status_change` to the queue. The next Subtask's D7.1a fold will land it. Between now and then, D2 will surface the pending entry on hydrate.
 
 
-### D7.5 — Stacked PR merge strategy (AP-10)
+### D7.3a — Stacked PR merge strategy (AP-10)
 
 
-When the PR being created stacks on another in-flight Subtask's branch, the PR description MUST request a **merge commit (not squash)**. Bitbucket's PR merge UI defaults to squash; squash on a stacked PR collapses the dependency chain and breaks subsequent rebases. `bitbucket.sh pr-open` sets the PR's `merge.strategy = "merge-commit"` field explicitly via the REST API; `pr-merge` uses `pr-merge-strategies` to fall back to the closest enabled strategy on repos that don't offer merge-commit.
+(Renamed from a second "D7.5" in v2.4.0 — the step id collided with the CI poll below.) When the PR being created stacks on another in-flight Subtask's branch, the PR description MUST request a **merge commit (not squash)**. Bitbucket's PR merge UI defaults to squash; squash on a stacked PR collapses the dependency chain and breaks subsequent rebases. `bitbucket.sh pr-merge` defaults to the merge-commit intent and uses `pr-merge-strategies` discovery to fall back to the closest enabled strategy on repos that don't offer it.
 
 
 ## Step D7.5 — CI poll (cross-fire)
@@ -358,21 +364,20 @@ When the PR being created stacks on another in-flight Subtask's branch, the PR d
 This step runs only on a fire that started with `awaiting_ci: true` (D1 dispatch). Under `ci.skip_wait: true` this step is short-circuited — D1's WIP dispatch already handled the merged/open/declined cases without running `ci_check.sh`.
 
 
-Run `bash ${SKILL_DIR}/scripts/ci_check.sh <pr_number>`. The script now emits `LAST_STATE=<value>` on stderr before `exit 2` (STUCK timeout) and `exit 3` (UNDETERMINED grace expiry) so the tracker entry can cite the last seen build state.
+Run `bash ${SKILL_DIR}/scripts/ci_check.sh --sha <in_progress.pushed_sha> --pr <pr_number> --once`. `--once` takes ONE observation and exits immediately (the drain design is cross-fire; the blocking poll mode is for interactive operator use only). The script emits `LAST_STATE=<actual last observed build state>` on stderr before every exit; cite it in tracker entries.
 
 
-| `ci_check.sh` result | Action |
+| `ci_check.sh --once` result | Action |
 |---|---|
 | exit 0 (VERDICT=GREEN) | Move Subtask to `## Done` with PR URL + commit SHA + `[<JIRA-KEY>]` if any. Reset `consecutive_ci_blocks = 0`. Clear `in_progress`. Re-arm cron at `*/5`. Exit fire. |
 | exit 1 (VERDICT=RED) | Write `[BLOCKED: ci-red]` (ci) on Subtask with the failing check name + log URL. Increment `consecutive_ci_blocks`. Clear `in_progress`. Re-arm cron at `*/30`. Exit fire. **No retry.** |
-| pending + `ci_check_count < 6` | Increment `ci_check_count`. Update `last_heartbeat_at`. Re-arm cron at `*/10`. Exit fire. |
-| pending + `ci_check_count >= 6` | Write `[BLOCKED: ci-stuck-pending]` (ci). Increment `consecutive_ci_blocks`. Clear `in_progress`. Re-arm cron at `*/30`. Exit fire. |
-| exit 2 (VERDICT=STUCK — timeout) + `ci_check_count < 6` | Treat as pending; cite the `LAST_STATE=` from stderr in the tracker entry. Increment `ci_check_count`. Re-arm at `*/10`. Exit fire. |
-| exit 2 (VERDICT=STUCK) + `ci_check_count >= 6` | Write `[BLOCKED: ci-timeout]` (ci) citing `LAST_STATE=`. Increment `consecutive_ci_blocks`. Clear `in_progress`. Re-arm cron at `*/30`. Exit fire. |
-| exit 3 (VERDICT=UNDETERMINED) + `ci_check_count < 6` | Treat as pending; cite the `LAST_STATE=` on stderr. Increment `ci_check_count`. Re-arm at `*/10`. Exit fire. |
-| exit 3 + `ci_check_count >= 6` consecutive uncertain results | Write `[BLOCKED: ci-undetermined]` (ci) citing `LAST_STATE=` and stderr. Increment `consecutive_ci_blocks`. Clear `in_progress`. Re-arm at `*/30`. Exit fire. |
+| exit 5 (VERDICT=PENDING) + `ci_check_count < 6` | Build in progress or not yet reported. Increment `ci_check_count`. Update `last_heartbeat_at`. Re-arm cron at `*/10`. Exit fire. |
+| exit 5 (VERDICT=PENDING) + `ci_check_count >= 6` | Write `[BLOCKED: ci-stuck-pending]` (ci) citing `LAST_STATE=` (INPROGRESS = a build is hung; UNKNOWN = CI never reported for this SHA). Increment `consecutive_ci_blocks`. Clear `in_progress`. Re-arm cron at `*/30`. Exit fire. |
 | exit 4 (VERDICT=PR_DECLINED) | Write `[BLOCKED: pr-declined]` (ci) on Subtask citing PR URL. Increment `consecutive_ci_blocks`. Clear `in_progress`. Re-arm at `*/30`. Exit fire. |
 | exit 64 (usage error) | Write `STATUS: HUMAN_NEEDED — ci-check-usage-error` citing stderr, `CronDelete`, exit. (External fault: no counter increment.) |
+
+
+(Exit codes 2 STUCK and 3 UNDETERMINED belong to the blocking mode and cannot occur under `--once`.)
 
 
 ## Step D8 — Adaptive cron re-arm
@@ -405,7 +410,7 @@ Triggered by `/autopilot --resume @<runbook>`. Recovers a paused drain without r
 Steps in order:
 
 
-1. **Validate inputs.** Confirm runbook exists at the given path; derive `<slug>` from the filename; confirm `docs/design/AUTOPILOT-TRACKER-<slug>.md` exists. Refuse if either is missing.
+1. **Validate inputs.** Confirm runbook exists at the given path; derive `<slug>` from the filename; confirm `.autopilot/runbooks/<slug>.tracker.md` exists. Refuse if either is missing.
 2. **Validate STATUS.** Read `STATUS:` from the tracker frontmatter.
    - `PAUSED` → continue.
    - `ACTIVE` → refuse with `Resume refused: drain already ACTIVE. Either a fire is in flight or the previous session is still draining.`
@@ -417,7 +422,7 @@ Steps in order:
    - `awaiting_ci: true` + `ci.skip_wait: true` → use `*/30` (no CI polling; wait for operator merge)
    - `consecutive_ci_blocks > 0` or `consecutive_impl_blocks > 0` and last entry is `[BLOCKED]` → use `*/30`
    - else → use `*/5`
-6. **Re-arm cron.** `CronCreate(cron=<expr>, recurring=True, durable=False, prompt='@<runbook-path>')`.
+6. **Re-arm cron.** `CronCreate(cron=<expr>, recurring=True, durable=False, prompt='/autopilot --drain @<runbook-path>')` — the prompt must carry the `/autopilot --drain` invocation, not a bare `@file` reference (a bare file mention gives the next fire no instruction to run the DRAIN lifecycle).
 7. **Print one-line summary.** `Resumed drain '<slug>' at cadence <expr>; <N> Subtasks remaining.` (Count `[ ]` Subtasks in the tracker.)
 
 
@@ -427,7 +432,7 @@ Steps in order:
 # Failure escalation (AP-2)
 
 
-Tracker tracks `consecutive_impl_blocks: N` and `consecutive_ci_blocks: N` at the top frontmatter. Increment the corresponding counter on every `[BLOCKED]` outcome based on the block's domain tag (every BLOCKED in this skill is tagged `(impl)` or `(ci)`). Reset both to 0 whenever a Subtask transitions to `[x] Done` during a drain fire (the D7.5 all-green path).
+Tracker tracks `consecutive_impl_blocks: N` and `consecutive_ci_blocks: N` at the top frontmatter. Increment the corresponding counter on every `[BLOCKED]` outcome based on the block's domain tag (every BLOCKED in this skill is tagged `(impl)`, `(ci)`, or `(external)`). Reset both to 0 whenever a Subtask transitions to `[x] Done` during a drain fire (the D7.5 all-green path).
 
 
 G5 already-shipped Subtasks do NOT affect either counter — they're marked Done at GENERATE-time before any drain has started.
@@ -436,11 +441,11 @@ G5 already-shipped Subtasks do NOT affect either counter — they're marked Done
 External faults (`foreign-commits-on-branch`, `trunk-renamed`, `tracker-pr-blocked`, `unexpected-branch-shape`, `ci-check-usage-error`) route straight to `HUMAN_NEEDED` and never touch counters.
 
 
-At `consecutive_impl_blocks >= 3` OR `consecutive_ci_blocks >= 3`:
+The caps are runbook-configured: `budget.max_impl_blocks` (default 3) and `budget.max_ci_blocks` (default 2 — CI flakes are usually environmental; retrying past 2 burns budget). At `consecutive_impl_blocks >= budget.max_impl_blocks` OR `consecutive_ci_blocks >= budget.max_ci_blocks`:
 
 
 1. Write `STATUS: HUMAN_NEEDED` at the top.
-2. List which counter tripped and the three contributing blocked Subtask IDs + reasons in a `## Escalation` section.
+2. List which counter tripped and the contributing blocked Subtask IDs + reasons in a `## Escalation` section.
 3. `CronDelete`.
 4. Exit fire.
 
@@ -466,7 +471,7 @@ Every fire under `branching.no_force_push: false` writes its tracker delta throu
 Under `branching.no_force_push: true` this section does not apply — bookkeeping lands via the AP-23 batched-delta queue, and there is no rolling tracker PR to poll.
 
 
-At the top of D1 (after D1.0/D1.1, before D2), when `branching.no_force_push: false`, check the tracker PR state via `bash ${SKILL_DIR}/scripts/bitbucket.sh pr-state autopilot/<slug>/tracker`:
+At the top of D1 (after D1.0/D1.1, before D2), when `branching.no_force_push: false`, check the tracker PR state via `bash ${SKILL_DIR}/scripts/bitbucket.sh pr-state --branch autopilot/<slug>/tracker` (returns the newest PR's state for that source branch, or `NONE`):
 
 
 | Tracker PR state | Action |
