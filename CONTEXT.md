@@ -49,7 +49,7 @@ A business-significant emission point on a Journey: a money movement, state tran
 _Avoid_: metric, KPI, business event
 
 **Decision Log**:
-The complete, cheap record of agent-resolved decisions — one line per decision in the tracker and PR body. ADRs are the promoted subset (hard to reverse, surprising, real trade-off), not the whole record.
+The complete, cheap record of agent-resolved decisions — one line per decision in the tracker and PR body during drains, and in the Verification Manifest's `interrogation.log` during spec sessions. ADRs are the promoted subset (hard to reverse, surprising, real trade-off), not the whole record.
 _Avoid_: decision register, audit trail (that term is taken by the tracker section)
 
 **Claim**:
