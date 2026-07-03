@@ -22,20 +22,20 @@ If the reviewer sees those fields, two failure modes appear:
 1. The reviewer second-guesses contract prose and produces structural-review reports that are actually content critiques. This blurs the line between "is the plan well-formed" and "is the plan correct" — the latter belongs to the planner-self-review loop, not the reviewer.
 2. The reviewer's context window bloats. Plan reviewer must scale to 20+ subtasks; including full contracts means a 200KB review prompt for a real change.
 
-The projection passed to the reviewer is therefore restricted to: `id`, `kind`, `owned_files`, `depends_on`, `test_gates` (names only), `validators` (names only), `public_api` (signature only — no contract prose), `behaviors` (one-line summaries only — no acceptance criteria), and `estimated_size`. Anything else is stripped before the reviewer sees it.
+The projected field set is defined ONCE, in `references/plan-reviewer-projection.md` §"Allowed fields" — that list is canonical and this document deliberately does not restate it (restating it is how three divergent copies accumulated pre-v2.4.0). Anything outside the list is stripped before the reviewer sees it.
 
-This is enforced in D2.1: the dispatcher builds the projection from the planner's output and never passes the full plan to the reviewer.
+This is enforced at G3.5 and D3.2: the dispatcher builds the projection from the planner's output and never passes the full plan to the reviewer.
 
 ## Why per-cycle commits in D4 (AP-1)
 
 TDD only works as a verification mechanism if the test-first ordering is auditable after the fact. If the implementer makes all edits in one shot and commits once, there is no way for D6 to verify that the test was actually written before the implementation — the implementer could have written both together and back-rolled the test to make it look TDD.
 
-Per-cycle commits split each TDD cycle into two commits:
+Per-cycle commits split each TDD cycle into two commits (the canonical shape — matching the implementer prompt and D6's parser):
 
-- `test: <subtask-id> <test-name> [RED]` — test added, scoped test run shows it failing
-- `feat: <subtask-id> <impl-summary> [GREEN]` — implementation added, same scoped test now passes
+- `test: <subtask-id>.<n> RED — <behavior summary>` — test added, scoped test run shows it failing
+- `feat: <subtask-id>.<n> GREEN — <behavior summary>` — implementation added, same scoped test now passes
 
-D6 verifies the cycle by reading git log and checking that each `feat:` commit's parent is a `test:` commit with a matching `<subtask-id>` and that the RED→GREEN ordering holds for every cycle in the subtask. If a subtask claims 3 cycles, the git log must show 3 alternating commits ending on `feat: [GREEN]`.
+D6 verifies the cycle by reading git log and checking that for each behavior `<n>` there is exactly one RED and one GREEN commit, in that order, with matching indices. If a subtask claims 3 cycles, the git log must show 3 RED/GREEN pairs.
 
 This adds 1 commit per cycle versus a single squashed commit. For a 4-cycle subtask, that is 8 commits instead of 1. The cost is paid back in two places:
 
@@ -44,7 +44,7 @@ This adds 1 commit per cycle versus a single squashed commit. For a 4-cycle subt
 
 The cost is NOT paid back in branch history if the team squash-merges. Autopilot defaults stacked PRs to `merge.strategy = "merge-commit"` to preserve the cycle history (see AP-10). Teams that prefer squash can override per-PR, but lose the audit trail.
 
-The implementer prompt enforces the commit shape; D6 enforces the verification. If implementer skips commits and tries to do everything in one shot, D6 fails the subtask with `[BLOCKED: tdd-shape] (impl)` and returns to D3 for replan.
+The implementer prompt enforces the commit shape; D6 enforces the verification. If the implementer skips commits and tries to do everything in one shot, D6 fails the subtask with a typed block (`[BLOCKED: tdd-no-red]` / `tdd-no-green` / `tdd-out-of-order` / `tdd-scope-leak`, all `(impl)`), increments the impl counter, and the fire exits — there is no automatic replan.
 
 ## Why split block counters (AP-2)
 
@@ -58,8 +58,8 @@ Treating all three the same means a flaky CI run looks identical to a broken pla
 
 v2 splits the counter into:
 
-- `consecutive_impl_blocks` — increments on plan-ungated, unresolved validator findings, test failures, rebase conflicts, plan-stale, tdd-shape, ownership-overflow, validator-contradiction. Reset on a clean cycle. Cap at 3 → HUMAN_NEEDED.
-- `consecutive_ci_blocks` — increments on ci-red, ci-stuck, ci-undetermined, pr-declined. Reset on a green CI run. Cap at 2 → HUMAN_NEEDED (lower because CI flakes are usually environmental and re-trying past 2 just burns budget).
+- `consecutive_impl_blocks` — increments on plan-ungated, unresolved validator findings, test failures, rebase conflicts, plan-stale, tdd-shape blocks, ownership-overflow, validator-contradiction. Reset on a clean cycle. Cap at `budget.max_impl_blocks` (default 3) → HUMAN_NEEDED.
+- `consecutive_ci_blocks` — increments on ci-red, ci-stuck, pr-declined. Reset on a green CI run. Cap at `budget.max_ci_blocks` (default 2) → HUMAN_NEEDED (lower because CI flakes are usually environmental and re-trying past 2 just burns budget).
 - External faults — do NOT increment any counter. They route straight to `HUMAN_NEEDED` with `reason: external-fault`. The dispatcher does not retry external faults autonomously because the resolution is always operator-side (re-auth, restart sidecar, unlock keychain).
 
 Every `[BLOCKED: <reason>]` entry MUST be tagged `(impl)`, `(ci)`, or `(external)` so the counter routing is unambiguous. Untagged entries are a defect; the conflict-resolution and validator-prompts references list all currently-defined reasons and their categories.
@@ -74,7 +74,7 @@ Planner's contract requires `audited_sha:` at the top of the plan. D3.0 (the new
 2. For each `owned_files` path in the plan, the file exists at `audited_sha`.
 3. The diff between `audited_sha` and current `HEAD` does not touch any path in any `owned_files`. If it does, the plan is stale and must be regenerated.
 
-If D3.0 fails, the dispatcher emits `[BLOCKED: plan-stale] (impl)` and returns to D2 for replan. The new plan can either retarget HEAD (re-running audit) or rebase the existing changes onto a fresh audit; planner picks per the staleness pattern.
+If D3.0 fails, the dispatcher emits `[BLOCKED: plan-stale-missing]` or `[BLOCKED: plan-stale-drifted]` (impl) and the fire exits — no retry and no automatic replan. HEAD moved under the plan; a human decides whether to re-run the audit or re-generate against fresh HEAD.
 
 This is cheaper than discovering the staleness in D4 (where the implementer would burn cycles trying to make a stale plan work) and much cheaper than discovering it in D7 (PR review).
 
@@ -102,7 +102,7 @@ This is contract v0 because:
 
 The contract is versioned because the error codes and URL shape will harden as the sidecar matures. v0 covers the current pilot's behavior and explicitly enumerates which fields are stable versus which are subject to change at v1.
 
-## Why pytest scoping during rebase (AP-15)
+## Why test-gate scoping during rebase (AP-15)
 
 When the conflict resolver merges a patch during D7.0 rebase, the natural reflex is to run the full test suite to confirm nothing broke. That is wrong for two reasons:
 
@@ -111,7 +111,7 @@ When the conflict resolver merges a patch during D7.0 rebase, the natural reflex
 
 So conflict resolution runs only the test_gates specified in the subtask's plan entry plus any tests under the touched files' nearest test directory. If those pass, the rebase is considered clean. If a downstream PR in the stack breaks tests outside that scope, it surfaces at that PR's D6, not during this PR's rebase.
 
-The implementer prompt and conflict-resolution.md both enforce this; D6 verifies that the test runner was invoked with file/path scoping (`pytest path/to/test_file.py::test_name` or equivalent), not `pytest` bare.
+The implementer prompt and conflict-resolution.md both enforce this; D6 verifies that the test runner was invoked with file/path scoping via `gates.test_single` / `gates.test_scoped` (Python default: `pytest path/to/test_file.py::test_name`), never the bare runner.
 
 ## Why contradictory validator findings escape to HUMAN_NEEDED (AP-18)
 
@@ -119,14 +119,14 @@ A subtask may run multiple validators in parallel. If two validators return find
 
 v1's behavior was to spawn a fix subtask anyway, picking the first validator's finding. The fix subtask would then often re-trigger the second validator's finding, and the loop would oscillate.
 
-v2 detects contradiction by checking whether any pair of findings shares a `target_path` but has opposing `directive` (where directive is one of `add`, `remove`, `change-signature`, `change-semantics`). If a contradiction is found, the dispatcher emits `[BLOCKED: validator-contradiction] (impl)` and routes to HUMAN_NEEDED with the contradiction pair included in the report. The operator's call: relax one validator, change the plan to split the conflict across subtasks, or accept one finding and document the tradeoff.
+v2 detects contradiction lexically (the canonical mechanism per `references/validator-prompts.md` §AP-18 and drain-lifecycle D5): after all validators return, findings sharing the same `location` (file:line) whose `suggested_fix` fields are semantically opposing ("remove X" vs "expand X"; "rename to Y" vs "rename to Z") are a contradiction. The findings schema deliberately has no structured `directive` field — validators are instead required to write `suggested_fix` specifically enough for the comparison to work. On contradiction, the dispatcher emits `[BLOCKED: validator-contradiction] (impl)` with both findings verbatim and routes to HUMAN_NEEDED. The operator's call: relax one validator, change the plan to split the conflict across subtasks, or accept one finding and document the tradeoff.
 
-This adds 4 lines to the dispatcher's finding-aggregation step and removes a class of oscillation bug.
+This adds a few lines to the dispatcher's finding-aggregation step and removes a class of oscillation bug.
 
 ## Why per-spec dedup of PAUSED entries (AP-17)
 
-The tracker file logs every D7.0 PAUSED event (subtask paused for human review). If the operator unblocks and the subtask runs again to the same PAUSED state, v1 would log a duplicate entry. Over multiple unblock attempts the tracker grows without limit and the dispatcher's "show pending PAUSED" view becomes noise.
+The tracker logs PAUSED transitions. If the drain re-hits the same block, v1 would commit a duplicate tracker entry every fire. Over multiple fires the tracker grows without limit and the rolling PR (or batched queue) fills with no-op deltas.
 
-v2 dedupes by spec hash: each PAUSED entry includes `spec_hash: <sha256-of-{subtask_id, blocking_reason, validator_finding_id}>`. Before logging, the dispatcher checks if the most recent PAUSED entry has the same spec_hash; if so, increment a `paused_count` field on that entry instead of appending a new one. The tracker stays compact and the count tells the operator how many times the same block has been encountered.
+v2 dedupes by reason (the canonical mechanism per drain-lifecycle D8 §AP-17): when the tracker is being written to `STATUS: PAUSED` and the PREVIOUS fire also wrote `STATUS: PAUSED` with the same `status_reason`, the tracker commit is skipped entirely. The tracker stays compact; the first PAUSED entry remains the record. (An earlier draft specified a hash-keyed dedup counter on a `paused:` frontmatter list; it was never the shipped contract and was removed from the template in v2.4.0.)
 
 This is purely a tracker-hygiene change; no dispatcher logic depends on it.

@@ -5,6 +5,12 @@
 > `branching.no_force_push: true`, or when the runbook declares that flag
 > manually. It supersedes the rolling tracker-PR pattern for tracker deltas.
 > Never inline this contract into SKILL.md; SKILL.md carries only the summary.
+>
+> This file is the data-and-rationale document. The lifecycle integration
+> points (D1.0.4 injection + crash recovery, D1.0 hydrate, D2 in_progress
+> claim, D7.1a fold, D7.4 status-change queue) are defined in
+> `references/drain-lifecycle.md`, and THAT file is canonical wherever the two
+> could be read to differ.
 
 ## Purpose
 
@@ -12,8 +18,11 @@ Bitbucket Data Center repositories with branch permissions frequently forbid
 force-push and disallow re-open of a merged PR. The pre-2.3 pattern of a rolling
 tracker PR (single long-lived branch that receives one force-push per Subtask
 completion) fails on such repos. Tracker delta batching replaces per-Subtask
-tracker pushes with an in-file queue that flushes on the next successful
-Subtask PR as a single atomic commit alongside the implementation change.
+tracker pushes with an in-file queue that flushes at D7.1a — folded into the
+next successful Subtask PR as a single atomic commit alongside the
+implementation change. **Under `branching.no_force_push: true` there is no
+tracker branch and no tracker PR at all**; the Subtask PR's branch is the only
+place tracker mutations ever land.
 
 ## In-tracker section (canonical location)
 
@@ -23,7 +32,8 @@ Section header, verbatim:
 ## Pending Tracker Deltas (batched)
 ```
 
-Location: immediately above `## Audit trail` inside the tracker file body.
+Location: between `## Drift Notes` and the first Subtask section (as injected
+by D1.0.4; see `references/drain-lifecycle.md`).
 
 Migration: D1.0.4 injects this header on the first drain against a v2.1 or
 v2.2 tracker that lacks it. The injection is a no-op edit against a tracker
@@ -45,13 +55,13 @@ Each delta entry is a top-level list item under the section header. Format:
 
 | Value              | Emitted from | Meaning                                                                 |
 |--------------------|--------------|-------------------------------------------------------------------------|
-| `subtask_done`     | D7.1a fold   | Subtask reached terminal Done; carries the status change and audit note |
-| `in_progress_claim`| D1.0.6 claim | Operator has claimed a Subtask (session lock write)                     |
+| `subtask_done`     | D7.4         | Subtask reached terminal Done; carries the status change and audit note |
+| `in_progress_claim`| D2           | This fire claimed a Subtask (the `in_progress` block write)             |
 | `drift_notes`      | D1.0.5 hydrate + D3 review | Drift-note appendages produced during Plan Reviewer projection |
 | `status_change`    | D-various    | Any STATUS state-machine transition that is not `subtask_done`          |
-| `session_lock`     | D1.0.6, D8   | Session-lock acquire/release records                                    |
+| `session_lock`     | D1.0, D8     | Session-lock acquire/release records                                    |
 | `crash_recovery`   | D1.0.4       | Audit entry emitted when a prior drain aborted with unflushed deltas    |
-| `other`            | escape hatch | Any non-catalogued delta; must set `diff_summary` explicitly            |
+| `other`            | escape hatch | Any non-catalogued delta (e.g. D4 heartbeat refresh); must set `diff_summary` explicitly |
 
 The catalog is closed: additions require a CHANGELOG entry and a runbook
 schema-version bump. `other` is the operator-visible escape valve and must
@@ -72,25 +82,26 @@ never be used for deltas that fit an existing kind.
 
 ## Flush point
 
-Flush occurs at D7.1a, immediately after a Subtask PR is confirmed merged and
-before D7.2 tracker-PR cadence check. The flush is a single commit against the
-tracker branch containing:
+Flush occurs at D7.1a — after D7.0's rebase and D7.1's staging, BEFORE the
+D7.2 push and D7.3 PR creation. Per `references/drain-lifecycle.md` D7.1a:
 
-- The Subtask's own tracker updates (status = Done, audit entry, checklist
-  toggles) merged with all queued `Pending Tracker Deltas (batched)` entries.
-- Removal of the flushed entries from the queue (the section header remains,
-  body becomes empty until the next enqueue).
+1. Build a `Tracker deltas folded in:` block for the commit body listing each
+   pending entry's `delta_kind` + `diff_summary` (one line per entry).
+2. Apply every entry's `body:` field to the tracker file (mutations
+   accumulated in-order).
+3. Flush the queue: replace the section body with `_(empty)_` (the header
+   remains).
+4. Stage the tracker file alongside `owned_files[]` — the ONLY commit in the
+   fire that stages the tracker directly.
+5. One atomic commit lands: impl edit + cumulative tracker mutations + queue
+   flush. D7.3's PR body surfaces the same folded entries as a
+   `## Tracker deltas folded in` H2.
 
-Commit message shape:
+There is no separate flush commit and no tracker-branch push: the fold rides
+the Subtask's own final commit on the Subtask's own branch.
 
-```
-tracker: fold Subtask <STK-ID> + <N> batched deltas
-```
-
-Under `branching.no_force_push: true` the flush commit is pushed to the
-tracker branch as a normal fast-forward. Under `branching.no_force_push: false`
-the pre-existing rolling-tracker-PR pattern still applies and this queue is a
-staging buffer only.
+Under `branching.no_force_push: false` (default) this queue is unused — D7.1a
+is a no-op and tracker bookkeeping stays on the rolling tracker PR.
 
 ## Recovery semantics (D1.0.4 handling)
 
@@ -99,37 +110,40 @@ Case A — clean start: queue is empty. No action.
 Case B — tracker exists, queue is empty, section header missing:
 inject the header (idempotent no-op edit) and continue.
 
-Case C — tracker exists, queue is non-empty, no in-progress drain lock:
+Case C — tracker exists, queue is non-empty, no live session lock:
 prior drain aborted between enqueue and flush. Append a `crash_recovery`
 entry documenting the discovery, then fold the entire queue on the next
 Subtask PR as usual. Preserve prior entries verbatim.
 
-Case D — tracker exists, queue is non-empty, live drain lock held by another
-operator: fall through to D1.0.6 concurrent-drain handling; do not mutate the
+Case D — tracker exists, queue is non-empty, live session lock held by another
+session: fall through to D1.0 concurrent-drain handling; do not mutate the
 queue.
 
 ## Interaction with `enforce_jira_key: true`
 
-Flush commit messages must satisfy the JIRA-key regex when the flag is on.
-The template above (`tracker: fold Subtask <STK-ID> + <N> batched deltas`)
-inherits the Subtask id which is either a JIRA key or a synthetic id; when
-the anchor Subtask id is synthetic, the flush commit MUST additionally carry
-a body-line `Refs: <TRACKER-JIRA-KEY>` sourced from the tracker frontmatter.
+The D7.1a fold rides the Subtask's final commit, which already carries the
+`[<JIRA-KEY>]` prefix per AP-22 — no separate flush-commit message exists to
+police. When the anchor Subtask has no real JIRA key (synthetic ids), the
+commit body MUST additionally carry a `Refs: <TRACKER-JIRA-KEY>` line sourced
+from the tracker frontmatter.
 
 ## Interaction with `branching.single_branch_single_pr: true`
 
-When this flag is on, the tracker branch and the Subtask branch are the same
-branch. The flush commit is then part of the Subtask PR itself; there is no
-separate tracker push. The queue mechanics are unchanged; only the push
-target differs.
+When this flag is on, all Subtasks share one feature branch and one PR. The
+queue mechanics are unchanged; the fold still happens at each Subtask's final
+commit on that shared branch.
 
-## Failure modes and operator overrides
+## Failure modes
 
-- Flush commit rejected by branch permissions: emit `LAST_STATE=queue_flush_blocked`
-  on stderr from D7.1a and escalate per the D-escalation table. Do not retry
-  automatically.
-- Queue body exceeds 64 KiB: emit `LAST_STATE=queue_oversize` and force a
-  synthetic `subtask_done` no-op Subtask PR to drain the queue.
-- Operator override `--force-rolling-tracker` bypasses the queue for a single
-  drain; this is an emergency valve and must be logged in the runbook's
-  Audit trail.
+- Fold commit rejected by branch permissions at D7.2 push: surface
+  `LAST_STATE=queue_flush_blocked` in the tracker entry and escalate per the
+  drain-lifecycle failure table. Do not retry automatically.
+- Queue body exceeds 64 KiB: emit `LAST_STATE=queue_oversize`; the next fire
+  runs a `docs`-kind synthetic no-op Subtask (`AP-queue-drain-<n>`, owning
+  only the tracker file) whose sole purpose is to fold and flush the queue.
+
+There is no force-rolling-tracker override flag (the v2.3.0 draft of this
+file named one, but it was never registered in SKILL.md's flag table): an
+operator who wants the rolling-tracker pattern back flips
+`branching.no_force_push: false` in the runbook — an edit that is logged via
+the standard `## Force Audit` process when it contradicts a probe finding.

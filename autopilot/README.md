@@ -4,7 +4,7 @@ Autonomous TDD-driven implementation loop for Claude Code. Plans, implements, va
 
 ## Status
 
-v2.3.0 (2026-07-02). Adds repo-shape probe (AP-23), batched tracker deltas, JIRA-key enforcement (AP-22), Subtask consolidation (AP-21), drift-notes hydration (AP-20), and hardening across auth, XSRF, and CI classification. See CHANGELOG.md for the full history.
+v2.4.0 (2026-07-02). Audit release: every script is now covered by an executed self-test (`scripts/self_test.sh`) and the doc corpus by a consistency lint (`scripts/lint_consistency.sh`); fixes several release-blocking script bugs (the Bitbucket adapter could never succeed; the force-push probe could never detect a denial; the concurrency guard could never detect a concurrent drain) and reconciles all cross-file contract contradictions. Full register: `docs/GAPS_SPEC.md`. See CHANGELOG.md for history.
 
 ## What it does
 
@@ -12,7 +12,7 @@ Given a runbook (a YAML+Markdown file describing a unit of work, its goal, its c
 
 1. Plans the work into a DAG of subtasks with disjoint file ownership and explicit test gates.
 2. Reviews the plan structure (not its content) for ownership disjointness, dependency acyclicity, and test coverage.
-3. Implements each subtask via TDD cycles: `test:` commit (RED), then `feat:` commit (GREEN), per cycle.
+3. Implements each subtask via TDD cycles: `test: <id>.<n> RED — ...` commit, then `feat: <id>.<n> GREEN — ...` commit, per cycle.
 4. Runs all configured validators in parallel on each subtask's diff. Spawns fix subtasks for findings; escapes contradictions to a human.
 5. Opens a stacked PR per subtask against Bitbucket DC, polls CI, merges with `merge-commit` strategy to preserve cycle history.
 6. Logs every step to an append-only tracker with session lock and heartbeat.
@@ -29,7 +29,8 @@ Given a runbook (a YAML+Markdown file describing a unit of work, its goal, its c
 - One-off scripts or single-file edits.
 - Exploratory refactoring where the plan emerges as you work.
 - Work that cannot tolerate stacked PRs (e.g., teams that strictly squash-merge and forbid merge commits; autopilot's TDD history is destroyed by squash).
-- Repos hosted on GitHub. v2.0.0 ships Bitbucket DC only.
+- Repos hosted on GitHub. Since v2.0.0 autopilot ships Bitbucket DC only.
+- Fully unattended overnight runs: the drain is autonomous only while the Claude Code session is alive (in-session adaptive cron; no headless mode — see AP-19).
 
 ## Installation
 
@@ -63,9 +64,9 @@ budget:
   max_impl_blocks: 3
   max_ci_blocks: 2
   max_runtime_minutes: 180
-validators: [correctness, security, style]
+validators: [integration, design, quality, security]
 cadence: { mode: in-session, step_pause_seconds: 0 }
-test_runner: { cmd: pytest, scoped_flag: "" }
+gates: { test_scoped: "pytest -x -q {paths}", test_single: "pytest {test} -x", typecheck: "mypy {paths}", lint: "ruff check {paths}", precommit: "pre-commit run --files {files}" }
 ci: { platform: bitbucket-dc }
 merge: { strategy: merge-commit, delete_source_on_merge: true }
 force_audit: []
@@ -103,14 +104,15 @@ Each of the items below maps to a finding in the adversarial review series (AP-1
 
 ## Reference index
 
-- `SKILL.md` — the dispatcher. Step graph D0..D7.5, role activations, exit conditions.
-- `references/runbook-template.md` — runbook frontmatter and body schema.
+- `SKILL.md` — the dispatcher. Modes, hard contracts, step graphs GENERATE G1..G8 and DRAIN D1..D8, reference index.
+- `references/loop-safety.md` — loop-safety invariants: what the loop may never do, and which mechanism enforces each.
+- `references/runbook-template.md` — runbook frontmatter and body schema; canonical tracker schema.
 - `references/role-prompts-rationale.md` — why the role split, why projections, why per-cycle commits.
 - `references/planner-prompt.md` — planner role contract.
 - `references/plan-reviewer-projection.md` — what the reviewer sees and why.
 - `references/implementer-prompt.md` — implementer role contract; TDD cycle shape.
-- `references/validator-prompts.md` — validator catalog (correctness, security, performance, style); contradiction handling.
-- `references/conflict-resolution.md` — D7.0 rebase resolver; scoped pytest rules.
+- `references/validator-prompts.md` — validator catalog (integration, design, quality + optional security, sre); contradiction handling.
+- `references/conflict-resolution.md` — D7.0 rebase resolver; scoped test-gate rules.
 - `references/extraction-prompt.md` — code-extraction helper.
 - `references/cadence-dispatch.md` — in-session cadence rules.
 - `references/sidecar-contract.md` — sidecar v0 env vars, URL shape, error codes, resolver chain, and (v2.3.0) probe budget under sidecar mode.
@@ -122,15 +124,17 @@ Each of the items below maps to a finding in the adversarial review series (AP-1
 
 All scripts live in `scripts/` and are invoked by the dispatcher. They have no Claude-context side effects (no stdout other than declared outputs, no token echoing).
 
-- `bitbucket.sh` — Bitbucket DC adapter. Subcommands (v2.3.0): pr-open, pr-state, pr-comment, pr-approve, pr-decline, pr-merge, pr-merge-strategies, build-status. UTF-8 sanitisation on all payloads; XSRF header on all mutating requests; 409 retry-with-fresh-version on pr-merge; LAST_STATE=<value> emitted on stderr before every non-zero exit.
-- `ci_check.sh` — Poll CI verdict for a SHA/PR pair. Output: VERDICT=GREEN|RED|STUCK|UNDETERMINED|PR_DECLINED. v2.3.0 emits LAST_STATE=<value> on stderr before every non-zero exit for D7.5 dispatch.
-- `detect_concurrent_drain.sh` — Tracker lock check. Detects another active session.
-- `hot_file_audit.sh` — Find files touched by multiple subtasks.
-- `secret_get.sh` — Resolve credential through sidecar→keychain→env chain. Output on stdout, nothing else. v2.3.0 probes a prioritised list of candidate service names (operator override → canonical → host-derived → `<service>-token` → bare `<service>`).
-- `secret_set.sh` — One-time token install into OS keychain. Reads token from STDIN. v2.3.0 adds `--as-host` (host-scoped keychain names) and `--force` (bypass operator-owned credential detection).
-- `sidecar_detect.sh` — Probe identity-proxy sidecar. Emits MODE=sidecar|local.
-- `repo_shape_probe.sh` — (v2.3.0, AP-23) G1.5 probe. Detects TRUNK / CI_PRESENT / FORCE_PUSH_ALLOWED / JIRA_HOOK_ENFORCED via minimal git and Bitbucket API operations. Supports `--dry-run` and `--explain`. Cleans up temp branches via a trap.
-- `repo_shape_probe_patterns.sh` — (v2.3.0, AP-23) Regex registry sourced by the probe. Provides `match_rejection <logfile> <outvar>` and a maintained catalogue of Bitbucket DC rejection strings for force-push and JIRA-hook signals.
+- `bitbucket.sh` — Bitbucket DC adapter. Subcommands: pr-open, pr-state (`--num` or `--branch`), pr-comment, pr-approve, pr-decline, pr-merge (409 retry + enabled-strategy discovery), pr-merge-strategies, build-status. UTF-8 sanitisation on request AND response payloads; XSRF header on all mutating requests; token via 0600 header file, never argv; LAST_STATE=<value> emitted on stderr before every non-zero exit.
+- `ci_check.sh` — CI verdict for a SHA/PR pair. Dispatcher mode `--once` takes one observation (VERDICT=GREEN|RED|PENDING|PR_DECLINED, exits 0/1/5/4); blocking poll mode (STUCK/UNDETERMINED) is operator-only. LAST_STATE on stderr carries the actual last observed build state.
+- `detect_concurrent_drain.sh` — Tracker session-lock check against the canonical `session_lock`/`session_lock_expires_at` fields; takes the tracker path; fail-closed (exit 4) on unreadable lock state.
+- `hot_file_audit.sh` — `--churn`: 30-day churn top-20 (G4). `--subtasks <slug>`: files touched by multiple in-flight subtask branches (D7.0).
+- `secret_get.sh` — Resolve credential through sidecar→keychain→env chain. Output on stdout, nothing else. Probes a prioritised candidate list (operator override → `autopilot-<service>` → `autopilot-<service>-<host>` → `<service>-token:<host>` → `<service>-token` → `<service>`); `--list-candidates` prints it.
+- `secret_set.sh` — One-time token install into OS keychain. Reads token from STDIN. `--as-host` writes the host-scoped name; default mode aborts if ANY resolver candidate already holds a foreign entry; `--force` bypasses.
+- `sidecar_detect.sh` — Probe identity-proxy sidecar (HTTP 200 + "ok" body). Emits MODE=sidecar|local.
+- `repo_shape_probe.sh` — (AP-23) G1.5 probe. Detects TRUNK / CI_PRESENT / FORCE_PUSH_ALLOWED / JIRA_HOOK_ENFORCED via minimal git and Bitbucket API operations; the force-push probe performs a genuine history rewrite (fast-forwards prove nothing). Supports `--dry-run`, `--explain` (reasoning trace), `--show-patterns`. Cleans up temp branches via a trap; stdout is strictly KEY=VALUE.
+- `repo_shape_probe_patterns.sh` — (AP-23) Regex registry sourced by the probe. Provides `match_rejection <logfile> <outvar>` (signal = text after the LAST `|`, so regexes may contain alternations) and a maintained catalogue of Bitbucket DC rejection strings with example messages.
+- `self_test.sh` — Hermetic self-test: mock Bitbucket server, local bare repos with deny-hooks, table-driven pattern tests, call-signature contract tests. Runs `lint_consistency.sh` as its final section. Run after any change.
+- `lint_consistency.sh` — Deterministic cross-file contract lint (L1–L15): one artifact-path scheme, one tracker schema, one step graph, one validator catalog, registered flags only, version refs pinned to CHANGELOG, no consumer-repo leakage.
 
 ## Migrating from v1
 

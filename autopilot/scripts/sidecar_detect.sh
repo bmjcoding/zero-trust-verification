@@ -14,8 +14,10 @@
 # Detection rules (in order):
 #   1. If IDENTITY_PROXY_URL is unset -> MODE=local.
 #   2. curl GET ${IDENTITY_PROXY_URL%/}/healthz with 2s timeout.
-#      Expect HTTP 200 and body containing "ok". TLS validated against
-#      ${IDENTITY_PROXY_CA} if set, else system CA bundle.
+#      Expect HTTP 200 and body containing "ok" (both checked as of v2.4.0;
+#      previously only the status code was checked despite this header's
+#      claim). TLS validated against ${IDENTITY_PROXY_CA} if set, else
+#      system CA bundle.
 #      On success -> MODE=sidecar with PLATFORMS from IDENTITY_PROXY_PLATFORMS.
 #      On any failure -> MODE=local.
 #
@@ -42,19 +44,27 @@ if [[ -n "${IDENTITY_PROXY_CA:-}" ]]; then
 fi
 
 # 2s connect + 2s overall, retry once, no auth header.
+BODY_TMP=$(mktemp)
 RESP=$(curl -sS --max-time 4 --connect-timeout 2 --retry 1 --retry-delay 1 \
   "${CA_ARG[@]}" \
   -H 'Accept: text/plain' \
-  -o /dev/null -w "%{http_code}" \
+  -o "$BODY_TMP" -w "%{http_code}" \
   "$HEALTH_URL" 2>/dev/null) || RESP="000"
+BODY_OK=0
+# Body must BE "ok" (case-insensitive, surrounding whitespace/quotes
+# tolerated) — a substring match would accept "not ok" / "broken".
+if [[ "$(tr -d '[:space:]"' < "$BODY_TMP" 2>/dev/null | tr '[:upper:]' '[:lower:]')" == "ok" ]]; then
+  BODY_OK=1
+fi
+rm -f "$BODY_TMP"
 
-if [[ "$RESP" == "200" ]]; then
+if [[ "$RESP" == "200" && "$BODY_OK" == "1" ]]; then
   PLATFORMS="${IDENTITY_PROXY_PLATFORMS:-}"
   echo "MODE=sidecar PLATFORMS=\"${PLATFORMS}\" URL=\"${URL_BASE}\""
   exit 0
 fi
 
-# Non-200 or curl error.
-echo "sidecar-health-failed: http=${RESP}" >&2
+# Non-200, missing "ok" body, or curl error.
+echo "sidecar-health-failed: http=${RESP} body_ok=${BODY_OK}" >&2
 echo "MODE=local"
 exit 0
