@@ -3,7 +3,9 @@
 #
 # G1.5 repo-shape probe (AP-23). Detects trunk name, CI presence, force-push
 # permission, and JIRA-hook enforcement by performing minimal probe operations
-# against the current origin. Emits KEY=VALUE on stdout, one per line.
+# against the current origin. Emits KEY=VALUE on stdout, one per line, and
+# NOTHING else on stdout (v2.4.0 — GAPS A4: git output leaking into the
+# captured values previously corrupted the KEY=VALUE contract).
 #
 # Emitted keys:
 #   TRUNK=<branch>              detected trunk (default: main; falls back to master)
@@ -20,10 +22,19 @@
 #                including which pattern from repo_shape_probe_patterns.sh
 #                matched (if any) and which temp branch was used. Never prints
 #                credentials.
+#   --show-patterns
+#                Print the current pattern registry on stdout and exit 0.
+#                No network, no git state.
 #   --no-auto-seed
-#                Reserved for future use. Currently accepted and ignored; the
+#                Reserved for the dispatcher: accepted and ignored here; the
 #                dispatcher (not this script) applies auto-seed rules to the
 #                runbook.
+#   --jira-key <KEY>
+#                Prefix probe commit subjects with `[<KEY>] ` so the
+#                force-push probe is not rejected by JIRA-enforcing
+#                pre-receive hooks before it can test the rewrite. Without
+#                it, on such repos the force-push probe reports `unknown`
+#                (and the JIRA probe concludes `true` from that rejection).
 #   --temp-prefix <p>
 #                Prefix for temp branches. Default: `autopilot/probe`.
 #
@@ -35,9 +46,21 @@
 # both the local repo and origin even on error paths. Probe never touches
 # operator-visible branches.
 #
+# Force-push probe method (v2.4.0 — GAPS A3): push trunk-tip+A to the temp
+# branch, then rewrite the branch to the DIVERGENT sibling trunk-tip+B and
+# force-push. The previous implementation force-pushed a fast-forward (which
+# every server accepts), so it could never observe a denial and
+# `branching.no_force_push` was never auto-set.
+#
+# Unknown rejections: whenever a push is rejected and no registry pattern
+# matches, the probe emits (always-on, stderr):
+#   probe: unknown rejection pattern; please add to repo_shape_probe_patterns.sh: <raw>
+# This is the corpus-growth seam promised in the v2.3.0 changelog (GAPS B4).
+#
 # Auth: routes through bitbucket.sh for API calls; git push/delete uses the
 # operator's ambient git auth (SSH key or credential helper). If bitbucket.sh
-# is unavailable, the probe still runs but CI_PRESENT falls back to `unknown`.
+# is unavailable, the probe still runs and CI presence falls back to manifest
+# inspection.
 
 set -u
 set +x
@@ -53,6 +76,11 @@ DRY_RUN=0
 EXPLAIN=0
 NO_AUTO_SEED=0
 TEMP_PREFIX="autopilot/probe"
+PROBE_JIRA_KEY=""     # --jira-key: prefix probe commit subjects so the
+                      # force-push probe survives JIRA-enforcing servers
+FP_JIRA_BLOCKED=0     # set when the FP probe's initial push was rejected by
+                      # a JIRA-hook signal; lets the JIRA probe conclude
+                      # without a second rejected push
 
 explain() {
   (( EXPLAIN == 1 )) && echo "probe: $*" >&2 || true
@@ -65,12 +93,16 @@ die() {
 
 while (( $# > 0 )); do
   case "$1" in
-    --dry-run)      DRY_RUN=1; shift ;;
-    --explain)      EXPLAIN=1; shift ;;
-    --no-auto-seed) NO_AUTO_SEED=1; shift ;;
-    --temp-prefix)  TEMP_PREFIX="$2"; shift 2 ;;
+    --dry-run)       DRY_RUN=1; shift ;;
+    --explain)       EXPLAIN=1; shift ;;
+    --show-patterns) printf '%s\n' "${REJECTION_PATTERNS[@]}"; exit 0 ;;
+    --no-auto-seed)  NO_AUTO_SEED=1; shift ;;
+    --jira-key)      PROBE_JIRA_KEY="$2"; shift 2 ;;
+    --temp-prefix)   TEMP_PREFIX="$2"; shift 2 ;;
     -h|--help)
-      sed -n '1,45p' "$0" | sed 's/^# \{0,1\}//'
+      # Print the header comment block (everything up to the first
+      # non-comment, non-shebang line), robust to header length drift.
+      awk 'NR==1{next} /^#/{sub(/^# ?/,""); print; next} {exit}' "$0"
       exit 0
       ;;
     *) die "unknown arg: $1" ;;
@@ -90,6 +122,13 @@ JH_BRANCH="${TEMP_PREFIX}-jira-hook-${PID}"
 
 cleanup() {
   # Best-effort. Never fail the script from cleanup itself.
+  # Under --dry-run nothing was created and NO remote operation may run.
+  (( DRY_RUN == 1 )) && return 0
+  # Restore original HEAD first (a temp branch cannot be deleted while
+  # checked out).
+  if [[ -n "${_PROBE_ORIG_HEAD:-}" ]]; then
+    git checkout -q "$_PROBE_ORIG_HEAD" >/dev/null 2>&1 || true
+  fi
   local b
   for b in "$FP_BRANCH" "$JH_BRANCH"; do
     # Local delete.
@@ -97,23 +136,44 @@ cleanup() {
     # Remote delete.
     git push origin --delete "$b" >/dev/null 2>&1 || true
   done
-  # Restore original HEAD if we detached.
-  if [[ -n "${_PROBE_ORIG_HEAD:-}" ]]; then
-    git checkout -q "$_PROBE_ORIG_HEAD" 2>/dev/null || true
-  fi
 }
-trap cleanup EXIT
+trap cleanup EXIT INT TERM
+
+# --dry-run plan: print (to STDERR — stdout stays KEY=VALUE-pure) every
+# operation a live probe would perform and the temp branch names.
+if (( DRY_RUN == 1 )); then
+  {
+    echo "probe[dry-run]: would fetch origin <trunk>"
+    echo "probe[dry-run]: would create + push temp branch $FP_BRANCH (commit A), rewrite to divergent commit B, force-push, then delete local+remote"
+    echo "probe[dry-run]: would create + push temp branch $JH_BRANCH (one commit without a JIRA key), then delete local+remote"
+    echo "probe[dry-run]: would call bitbucket.sh build-status on the trunk tip (CI presence)"
+    echo "probe[dry-run]: no network or git-state operation is performed in this mode"
+  } >&2
+fi
 
 _PROBE_ORIG_HEAD="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
+
+# Emit the always-on corpus-growth message for an unmatched rejection. (GAPS B4)
+# Credentialed URLs are redacted: git error text can embed the origin URL,
+# and `https://user:token@host/...` must never reach the orchestrator context.
+report_unknown_rejection() {
+  local logfile="$1"
+  echo "probe: unknown rejection pattern; please add to repo_shape_probe_patterns.sh: $(tr '\n' ' ' < "$logfile" | sed -E 's#(https?://)[^/@[:space:]]+@#\1[redacted]@#g' | head -c 500)" >&2
+}
 
 # --- Trunk detection ----------------------------------------------------------
 
 detect_trunk() {
-  # Prefer origin/HEAD symbolic ref if set.
+  # Prefer origin/HEAD symbolic ref if set (local, no network).
   local h
   h=$(git symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null | sed 's|^origin/||' || true)
   if [[ -n "$h" ]]; then
     printf '%s' "$h"
+    return 0
+  fi
+  # Under --dry-run stop here: the remaining strategies are remote calls.
+  if (( DRY_RUN == 1 )); then
+    printf '%s' "main"
     return 0
   fi
   # Ask remote directly.
@@ -145,45 +205,44 @@ detect_ci() {
     return 0
   fi
   # Strategy: fetch trunk HEAD sha, then call bitbucket.sh build-status.
-  # UNKNOWN response with no historical builds => CI_PRESENT=false.
+  # UNKNOWN response with no historical builds => fall through to manifest check.
   # SUCCESSFUL / FAILED / INPROGRESS => CI_PRESENT=true.
-  # bitbucket.sh unavailable => unknown.
-  if [[ ! -x "$BITBUCKET" ]]; then
-    explain "CI_PRESENT=unknown (bitbucket.sh not executable)"
-    printf 'unknown'
-    return 0
+  # bitbucket.sh unavailable => manifest check only.
+  local bs="UNKNOWN"
+  if [[ -x "$BITBUCKET" ]]; then
+    local trunk_sha
+    trunk_sha=$(git ls-remote origin "refs/heads/${TRUNK}" 2>/dev/null | awk '{print $1; exit}')
+    if [[ -n "$trunk_sha" ]]; then
+      bs=$("$BITBUCKET" build-status --sha "$trunk_sha" 2>/dev/null || echo UNKNOWN)
+    fi
   fi
-  local trunk_sha bs
-  trunk_sha=$(git ls-remote origin "refs/heads/${TRUNK}" 2>/dev/null | awk '{print $1; exit}')
-  if [[ -z "$trunk_sha" ]]; then
-    explain "CI_PRESENT=unknown (cannot resolve trunk sha)"
-    printf 'unknown'
-    return 0
-  fi
-  bs=$("$BITBUCKET" build-status --sha "$trunk_sha" 2>/dev/null || echo UNKNOWN)
   case "$bs" in
     SUCCESSFUL|FAILED|INPROGRESS)
-      explain "CI_PRESENT=true (build-status=$bs on trunk sha=$trunk_sha)"
+      explain "CI_PRESENT=true (build-status=$bs on trunk tip)"
       printf 'true'
-      ;;
-    UNKNOWN)
-      # Second heuristic: look for well-known CI config files at trunk.
-      local ci_files
-      ci_files=$(git ls-tree --name-only "origin/${TRUNK}" 2>/dev/null \
-        | grep -E '^(bitbucket-pipelines\.yml|Jenkinsfile|\.gitlab-ci\.yml|azure-pipelines\.yml|\.github/workflows|\.drone\.yml)$' || true)
-      if [[ -n "$ci_files" ]]; then
-        explain "CI_PRESENT=true (config files present: $ci_files)"
-        printf 'true'
-      else
-        explain "CI_PRESENT=false (no build-status, no CI config files)"
-        printf 'false'
-      fi
-      ;;
-    *)
-      explain "CI_PRESENT=unknown (build-status=$bs)"
-      printf 'unknown'
+      return 0
       ;;
   esac
+  # Second heuristic: look for well-known CI config files at trunk.
+  # v2.4.0 (GAPS A10): recursive listing — the previous non-recursive ls-tree
+  # showed `.github`, never `.github/workflows/...`, so GitHub-workflow
+  # manifests were undetectable.
+  if ! git rev-parse --verify -q "origin/${TRUNK}" >/dev/null 2>&1; then
+    git fetch --quiet origin "$TRUNK" >/dev/null 2>&1 || true
+  fi
+  local ci_files
+  ci_files=$(git ls-tree -r --name-only "origin/${TRUNK}" 2>/dev/null \
+    | grep -E '^(bitbucket-pipelines\.yml|Jenkinsfile|\.gitlab-ci\.yml|azure-pipelines\.yml|\.drone\.yml|\.github/workflows/[^/]+\.ya?ml)$' || true)
+  if [[ -n "$ci_files" ]]; then
+    explain "CI_PRESENT=true (config files present: $(tr '\n' ' ' <<<"$ci_files"))"
+    printf 'true'
+  elif git rev-parse --verify -q "origin/${TRUNK}" >/dev/null 2>&1; then
+    explain "CI_PRESENT=false (no build-status, no CI config files at origin/${TRUNK})"
+    printf 'false'
+  else
+    explain "CI_PRESENT=unknown (cannot inspect origin/${TRUNK} tree)"
+    printf 'unknown'
+  fi
 }
 
 CI_PRESENT="$(detect_ci)"
@@ -200,54 +259,68 @@ detect_force_push() {
   local logfile
   logfile=$(mktemp)
 
-  # Create a benign temp branch at trunk, push, then attempt to force-push
-  # a rewritten history. Any rejection signals `false`; success signals `true`.
-  #
-  # We rewrite the branch to an amend of the trunk tip commit (no functional
-  # change), then attempt a force-push. This avoids introducing any real
-  # diff content while still triggering history-rewrite policies.
+  # Method (GAPS A3): establish remote tip at T+A, rewrite the local branch to
+  # the divergent sibling T+B, and force-push. T+A -> T+B is a genuine
+  # non-fast-forward update, which is what history-rewrite policies reject.
+  # All git output goes to the logfile: stdout must stay KEY=VALUE-pure (A4).
 
-  if ! git fetch --quiet origin "$TRUNK" 2>>"$logfile"; then
+  if ! git fetch --quiet origin "$TRUNK" >>"$logfile" 2>&1; then
     explain "FORCE_PUSH_ALLOWED=unknown (cannot fetch trunk)"
     rm -f "$logfile"
     printf 'unknown'
     return 0
   fi
 
-  if ! git branch -f "$FP_BRANCH" "origin/${TRUNK}" 2>>"$logfile"; then
+  if ! git branch -f "$FP_BRANCH" "origin/${TRUNK}" >>"$logfile" 2>&1; then
     explain "FORCE_PUSH_ALLOWED=unknown (cannot create temp branch)"
     rm -f "$logfile"
     printf 'unknown'
     return 0
   fi
 
-  # Initial push (fast-forward, no force).
-  if ! git push --quiet origin "$FP_BRANCH:$FP_BRANCH" 2>>"$logfile"; then
-    # Cannot even push a fresh branch; may indicate strict permissions.
-    explain "FORCE_PUSH_ALLOWED=unknown (initial push failed; may be branch-perm-denied)"
+  # Probe commit subjects carry the operator-supplied JIRA key when given
+  # (--jira-key), so the probe is not blinded by JIRA-enforcing servers —
+  # exactly the strict repos AP-23 exists for.
+  local subj_prefix=""
+  [[ -n "$PROBE_JIRA_KEY" ]] && subj_prefix="[${PROBE_JIRA_KEY}] "
+
+  # Build T+A and push it (fast-forward, no force).
+  if ! (
+      git checkout --quiet "$FP_BRANCH" &&
+      git commit --allow-empty --quiet -m "${subj_prefix}autopilot probe: A" &&
+      git push --quiet origin "$FP_BRANCH:$FP_BRANCH"
+  ) >>"$logfile" 2>&1; then
+    # Cannot even push a fresh branch. If the rejection is a JIRA-hook
+    # signal, record that fact — the JIRA probe can conclude from it
+    # without a second rejected push, and the operator learns to re-run
+    # with --jira-key to get a force-push verdict.
+    local pre_signal=""
+    if match_rejection "$logfile" pre_signal && [[ "$pre_signal" == JIRA_HOOK_* ]]; then
+      FP_JIRA_BLOCKED=1
+      explain "FORCE_PUSH_ALLOWED=unknown (initial push rejected by JIRA hook — re-run with --jira-key <KEY> for a force-push verdict)"
+    else
+      explain "FORCE_PUSH_ALLOWED=unknown (initial push failed; may be branch-perm-denied)"
+    fi
     rm -f "$logfile"
     printf 'unknown'
     return 0
   fi
 
-  # Rewrite: amend a trivial commit metadata change locally (no content edit).
-  # We use --allow-empty to add an empty commit on top, then rewind and
-  # attempt to force-push over the previous tip.
+  # Rewrite: rewind to T and commit the divergent sibling B.
   if ! (
-      git checkout --quiet "$FP_BRANCH" &&
-      git commit --allow-empty --quiet -m "autopilot probe: empty" &&
       git reset --hard --quiet HEAD~1 &&
-      git commit --allow-empty --quiet -m "autopilot probe: rewritten"
-  ) 2>>"$logfile"; then
+      git commit --allow-empty --quiet -m "${subj_prefix}autopilot probe: B (rewritten)"
+  ) >>"$logfile" 2>&1; then
     explain "FORCE_PUSH_ALLOWED=unknown (local rewrite failed)"
     rm -f "$logfile"
     printf 'unknown'
     return 0
   fi
 
-  # Attempt the force-push. Capture stderr for pattern matching.
-  if git push --force --quiet origin "$FP_BRANCH:$FP_BRANCH" 2>>"$logfile"; then
-    explain "FORCE_PUSH_ALLOWED=true (force-push accepted)"
+  # Attempt the force-push of the rewritten history. Capture stderr for
+  # pattern matching.
+  if git push --force --quiet origin "$FP_BRANCH:$FP_BRANCH" >>"$logfile" 2>&1; then
+    explain "FORCE_PUSH_ALLOWED=true (non-fast-forward force-push accepted)"
     rm -f "$logfile"
     printf 'true'
     return 0
@@ -264,7 +337,7 @@ detect_force_push() {
         return 0
         ;;
       *)
-        explain "FORCE_PUSH_ALLOWED=unknown (unrecognised signal=$signal)"
+        explain "FORCE_PUSH_ALLOWED=unknown (unrelated signal=$signal)"
         rm -f "$logfile"
         printf 'unknown'
         return 0
@@ -272,9 +345,11 @@ detect_force_push() {
     esac
   fi
 
-  # Failure with no matching pattern: transient network, missing perms on a
-  # non-history-rewrite path, etc. Cannot conclude.
-  explain "FORCE_PUSH_ALLOWED=unknown (push failed, no pattern match; log head: $(head -c 200 "$logfile" | tr '\n' ' '))"
+  # Rejection with no matching pattern: surface it for registry growth (B4),
+  # then report unknown — transient network and unrecognized policies are
+  # indistinguishable here.
+  report_unknown_rejection "$logfile"
+  explain "FORCE_PUSH_ALLOWED=unknown (push failed, no pattern match)"
   rm -f "$logfile"
   printf 'unknown'
 }
@@ -290,6 +365,14 @@ detect_jira_hook() {
     return 0
   fi
 
+  # The force-push probe's initial push may already have produced the
+  # ground truth (a JIRA-hook rejection); no need for a second push.
+  if (( FP_JIRA_BLOCKED == 1 )); then
+    explain "JIRA_HOOK_ENFORCED=true (force-push probe's initial push was rejected by the JIRA hook)"
+    printf 'true'
+    return 0
+  fi
+
   local logfile
   logfile=$(mktemp)
 
@@ -297,7 +380,7 @@ detect_jira_hook() {
   # deliberately omits any JIRA key. If the server rejects, the hook is
   # enforced; if it accepts, the hook is not enforced (or is warn-only).
 
-  if ! git branch -f "$JH_BRANCH" "origin/${TRUNK}" 2>>"$logfile"; then
+  if ! git branch -f "$JH_BRANCH" "origin/${TRUNK}" >>"$logfile" 2>&1; then
     explain "JIRA_HOOK_ENFORCED=unknown (cannot create temp branch)"
     rm -f "$logfile"
     printf 'unknown'
@@ -307,14 +390,14 @@ detect_jira_hook() {
   if ! (
       git checkout --quiet "$JH_BRANCH" &&
       git commit --allow-empty --quiet -m "autopilot probe: no jira key on purpose"
-  ) 2>>"$logfile"; then
+  ) >>"$logfile" 2>&1; then
     explain "JIRA_HOOK_ENFORCED=unknown (local commit failed)"
     rm -f "$logfile"
     printf 'unknown'
     return 0
   fi
 
-  if git push --quiet origin "$JH_BRANCH:$JH_BRANCH" 2>>"$logfile"; then
+  if git push --quiet origin "$JH_BRANCH:$JH_BRANCH" >>"$logfile" 2>&1; then
     explain "JIRA_HOOK_ENFORCED=false (push without JIRA key accepted)"
     rm -f "$logfile"
     printf 'false'
@@ -339,6 +422,7 @@ detect_jira_hook() {
     esac
   fi
 
+  report_unknown_rejection "$logfile"
   explain "JIRA_HOOK_ENFORCED=unknown (push rejected, no JIRA pattern match)"
   rm -f "$logfile"
   printf 'unknown'

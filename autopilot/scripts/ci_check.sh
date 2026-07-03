@@ -1,38 +1,43 @@
 #!/usr/bin/env bash
 # ci_check.sh
 #
-# Polls CI build status for a given commit and PR, returning a normalized
+# Reports CI build status for a given commit and PR, returning a normalized
 # verdict the dispatcher consumes at D7.5.
 #
-# v2 changes:
-#   - gh CLI removed. All Bitbucket interaction goes through bitbucket.sh.
-#   - Resolver chain (sidecar -> keychain -> env) is handled inside bitbucket.sh.
-#   - No tokens enter argv or trace logs here.
-#   - PR-declined check uses bitbucket.sh pr-state.
+# v2.4.0 (GAPS A6/A7):
+#   - NEW `--once` mode: take ONE observation and exit immediately. This is
+#     what the DRAIN D7.5 dispatch consumes — the drain design is cross-fire
+#     (one observation per fire, cron re-arms at */10), so a blocking poll
+#     loop inside a fire was never dispatchable. The canonical dispatcher
+#     invocation is:
+#         ci_check.sh --sha <sha> --pr <N> --once
+#   - `--once` reports VERDICT=PENDING (exit 5) for both INPROGRESS and
+#     UNKNOWN observations — a single observation cannot distinguish
+#     "not started yet" from "will never report"; the dispatcher's
+#     ci_check_count cap owns that distinction. Grace/timeout windows
+#     apply to blocking mode only.
+#   - LAST_STATE on stderr now carries the ACTUAL last observed build state
+#     (SUCCESSFUL|FAILED|INPROGRESS|UNKNOWN|<none>), not a constant, so the
+#     tracker entry can cite it as the v2.2.0 changelog promised.
+#   - Blocking mode (no --once) is retained for interactive operator use.
 #
 # Usage:
-#   ci_check.sh --sha <sha> --pr <N> [--timeout-sec 1800] [--poll-sec 30]
+#   ci_check.sh --sha <sha> --pr <N> [--once] [--timeout-sec 1800] [--poll-sec 30] [--grace-sec 120]
 #
 # Output (single line on stdout): VERDICT=<value>
 #   GREEN       - build SUCCESSFUL
 #   RED         - build FAILED
-#   STUCK       - poll loop hit timeout while INPROGRESS
+#   PENDING     - (--once only) build INPROGRESS, or no statuses within grace
+#   STUCK       - (blocking mode) poll loop hit timeout while INPROGRESS
 #   UNDETERMINED- no build statuses reported for the SHA after grace window
 #   PR_DECLINED - PR state is DECLINED (no further build polling)
 #
-# Exit codes mirror verdict: 0 GREEN, 1 RED, 2 STUCK, 3 UNDETERMINED, 4 PR_DECLINED, 64 usage.
+# Exit codes: 0 GREEN, 1 RED, 2 STUCK, 3 UNDETERMINED, 4 PR_DECLINED,
+#             5 PENDING (--once only), 64 usage.
 #
-# v2.3.0 (AP-23):
-#   - Emits LAST_STATE=<value> on stderr immediately before every non-zero
-#     exit so the dispatcher (drain-lifecycle D7.5 poll dispatch) can classify
-#     the terminal state without re-parsing preceding stderr lines.
-#     Emitted values:
-#       LAST_STATE=green           (exit 0)
-#       LAST_STATE=red             (exit 1)
-#       LAST_STATE=stuck-timeout   (exit 2)
-#       LAST_STATE=undetermined    (exit 3)
-#       LAST_STATE=pr-declined     (exit 4)
-#       LAST_STATE=usage-error     (exit 64)
+# LAST_STATE=<value> is emitted on stderr immediately before every exit so the
+# dispatcher (drain-lifecycle D7.5 dispatch) can classify the terminal state
+# without re-parsing preceding stderr lines.
 
 set -u
 set +x
@@ -42,6 +47,7 @@ BITBUCKET="$HERE/bitbucket.sh"
 
 SHA=""
 PR=""
+ONCE=0
 TIMEOUT=1800
 POLL=30
 GRACE=120  # window during which "no build statuses" counts as still-pending
@@ -50,6 +56,7 @@ while (( $# > 0 )); do
   case "$1" in
     --sha) SHA="$2"; shift 2 ;;
     --pr) PR="$2"; shift 2 ;;
+    --once) ONCE=1; shift ;;
     --timeout-sec) TIMEOUT="$2"; shift 2 ;;
     --poll-sec) POLL="$2"; shift 2 ;;
     --grace-sec) GRACE="$2"; shift 2 ;;
@@ -57,14 +64,22 @@ while (( $# > 0 )); do
   esac
 done
 
-[[ -n "$SHA" && -n "$PR" ]] || { echo "LAST_STATE=usage-error" >&2; echo "usage: ci_check.sh --sha <sha> --pr <N> [--timeout-sec N] [--poll-sec N]" >&2; exit 64; }
+[[ -n "$SHA" && -n "$PR" ]] || { echo "LAST_STATE=usage-error" >&2; echo "usage: ci_check.sh --sha <sha> --pr <N> [--once] [--timeout-sec N] [--poll-sec N]" >&2; exit 64; }
 [[ -x "$BITBUCKET" ]] || { echo "LAST_STATE=usage-error" >&2; echo "missing bitbucket.sh next to ci_check.sh" >&2; exit 64; }
 
 START=$(date -u +%s)
-LAST_STATE=""
+LAST_STATE="<none>"
 
 emit() {
   echo "VERDICT=$1"
+}
+
+finish() {
+  # finish <verdict> <exit-code> — LAST_STATE carries the last OBSERVED
+  # build state (GAPS A7), independent of the verdict name.
+  emit "$1"
+  echo "LAST_STATE=${LAST_STATE}" >&2
+  exit "$2"
 }
 
 while :; do
@@ -74,33 +89,37 @@ while :; do
   # First, check PR state. If declined, stop polling builds.
   PR_STATE=$("$BITBUCKET" pr-state --num "$PR" 2>/dev/null || echo UNKNOWN)
   case "$PR_STATE" in
-    DECLINED) emit PR_DECLINED; echo "LAST_STATE=pr-declined" >&2; exit 4 ;;
+    DECLINED) finish PR_DECLINED 4 ;;
     MERGED|OPEN|UNKNOWN) : ;;
   esac
 
   BUILD_STATE=$("$BITBUCKET" build-status --sha "$SHA" 2>/dev/null || echo UNKNOWN)
   LAST_STATE="$BUILD_STATE"
   case "$BUILD_STATE" in
-    SUCCESSFUL) emit GREEN; echo "LAST_STATE=green" >&2; exit 0 ;;
-    FAILED)     emit RED;   echo "LAST_STATE=red" >&2;   exit 1 ;;
-    INPROGRESS) : ;;  # keep polling
+    SUCCESSFUL) finish GREEN 0 ;;
+    FAILED)     finish RED 1 ;;
+    INPROGRESS)
+      if (( ONCE == 1 )); then
+        finish PENDING 5
+      fi
+      ;;  # blocking mode: keep polling
     UNKNOWN)
-      # If we've been in UNKNOWN for longer than the grace window, treat as UNDETERMINED.
+      if (( ONCE == 1 )); then
+        # Single observation: no statuses at all. Within the grace window
+        # after the push this is normal (CI hasn't picked the SHA up yet) —
+        # the dispatcher supplies elapsed context by counting fires, so we
+        # report PENDING and let ci_check_count cap the retries.
+        finish PENDING 5
+      fi
+      # Blocking mode: if we've been in UNKNOWN longer than grace, UNDETERMINED.
       if (( ELAPSED > GRACE )); then
-        # AP-23: emit LAST_STATE=undetermined on stderr before exit 3 so
-        # drain-lifecycle D7.5 can dispatch without re-parsing prior output.
-        echo "LAST_STATE=undetermined" >&2
-        emit UNDETERMINED
-        exit 3
+        finish UNDETERMINED 3
       fi
       ;;
   esac
 
   if (( ELAPSED > TIMEOUT )); then
-    # AP-23: emit LAST_STATE=stuck-timeout on stderr before exit 2.
-    echo "LAST_STATE=stuck-timeout" >&2
-    emit STUCK
-    exit 2
+    finish STUCK 2
   fi
 
   sleep "$POLL"

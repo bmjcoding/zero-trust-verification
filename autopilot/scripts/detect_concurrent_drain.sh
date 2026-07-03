@@ -1,26 +1,28 @@
 #!/usr/bin/env bash
 # detect_concurrent_drain.sh
 #
-# Detects whether more than one autopilot session is currently active against
-# the same runbook. The dispatcher calls this at D0 (init) and at every
-# step boundary as part of the AP-6 heartbeat check.
+# Detects whether another autopilot session holds a live lock on a tracker.
+# The dispatcher calls this at GENERATE Step G1 and at DRAIN Step D1, passing
+# the TRACKER PATH (v2.4.0: G1 previously documented passing a bare slug,
+# which always exited 0 — see docs/GAPS_SPEC.md A5a; callers derive the path
+# as .autopilot/runbooks/<slug>.tracker.md).
 #
-# Mechanism: read the tracker frontmatter's session_id + lock_acquired_at +
-# last_heartbeat_at, compare against the current CLAUDE_SESSION_ID and current
-# time. The lock has two failure modes:
+# Mechanism (v2.4.0, aligned with the canonical G7 tracker schema and the
+# D1.0 dispatch table — GAPS A5b/A5c): read the tracker frontmatter's
+# `session_lock` + `session_lock_expires_at` and compare against
+# CLAUDE_SESSION_ID and the current time. Staleness is defined ONLY by
+# `session_lock_expires_at` (which every fire refreshes to now+30min);
+# there is no heartbeat-age window here — heartbeats age legitimately
+# between */30-cadence fires, and using them would let a second session
+# steal the lock of a healthy drain.
 #
-#   1. lock-held-by-other: session_id differs from CLAUDE_SESSION_ID AND
-#      lock_acquired_at is less than 30 minutes old AND
-#      last_heartbeat_at is less than 5 minutes old.
-#      -> exit 2, print "lock-held-by-other:<other-session-id>"
-#
-#   2. lock-held-stale: session_id differs from CLAUDE_SESSION_ID AND
-#      (lock_acquired_at is >= 30 min old OR last_heartbeat_at is >= 5 min old).
-#      -> exit 3, print "lock-stale:<other-session-id>"
-#      Caller may overwrite the lock.
-#
-# Clean cases:
-#   - No tracker file exists OR session_id matches CLAUDE_SESSION_ID -> exit 0
+# Exit codes (fail-closed — GAPS A5d):
+#   0  no tracker file, no lock, or lock held by THIS session
+#   2  lock-held-by-other:<sid>   live foreign lock (expires_at > now)
+#   3  lock-stale:<sid>           foreign lock past expiry (caller may reclaim)
+#   4  tracker-unreadable         frontmatter present but lock fields
+#                                 unparseable — caller MUST refuse, not proceed
+#   64 usage error
 #
 # Usage: detect_concurrent_drain.sh <tracker-path>
 # Env:   CLAUDE_SESSION_ID must be set.
@@ -30,26 +32,51 @@ set -euo pipefail
 TRACKER="${1:?usage: detect_concurrent_drain.sh <tracker-path>}"
 : "${CLAUDE_SESSION_ID:?CLAUDE_SESSION_ID env var required}"
 
-if [[ ! -f "$TRACKER" ]]; then
-  exit 0
+if [[ ! -e "$TRACKER" ]]; then
+  # No tracker at that path: nothing to collide with. Callers that expected a
+  # tracker to exist must check existence themselves; this script only judges
+  # locks. (Passing a bare slug lands here — that caller bug is now caught by
+  # the .md suffix guard below.)
+  case "$TRACKER" in
+    *.md) exit 0 ;;
+    *) echo "tracker-path-suspect: '$TRACKER' does not look like a tracker path (want .../<slug>.tracker.md)" >&2; exit 64 ;;
+  esac
+fi
+
+if [[ ! -r "$TRACKER" ]]; then
+  echo "tracker-unreadable" >&2
+  exit 4
 fi
 
 # Extract YAML frontmatter (between first two --- lines).
 FM=$(awk '/^---$/{c++; next} c==1{print} c==2{exit}' "$TRACKER")
 
+if [[ -z "$FM" ]]; then
+  echo "tracker-unreadable: no frontmatter" >&2
+  exit 4
+fi
+
 get() {
-  echo "$FM" | awk -v k="$1" '$1==k":"{ $1=""; sub(/^ /, ""); print; exit }'
+  # Strips surrounding single/double quotes: `session_lock: "sess-A"` is
+  # valid YAML that an LLM or yq may legitimately write, and unquoted-only
+  # parsing made a quoted OWN lock look foreign (then exit 4 on the quoted
+  # expiry — a fail-closed brick).
+  echo "$FM" | awk -v k="$1" '$1==k":"{ $1=""; sub(/^ /, ""); print; exit }' \
+    | sed -E "s/^[\"']//; s/[\"']\$//"
 }
 
-OTHER_SID=$(get session_id)
-LOCK_AT=$(get lock_acquired_at)
-HB_AT=$(get last_heartbeat_at)
+LOCK_SID=$(get session_lock)
+LOCK_EXPIRES=$(get session_lock_expires_at)
 
-if [[ -z "$OTHER_SID" ]]; then
+# Normalise YAML nulls.
+[[ "$LOCK_SID" == "null" || "$LOCK_SID" == "~" ]] && LOCK_SID=""
+[[ "$LOCK_EXPIRES" == "null" || "$LOCK_EXPIRES" == "~" ]] && LOCK_EXPIRES=""
+
+if [[ -z "$LOCK_SID" ]]; then
   exit 0
 fi
 
-if [[ "$OTHER_SID" == "$CLAUDE_SESSION_ID" ]]; then
+if [[ "$LOCK_SID" == "$CLAUDE_SESSION_ID" ]]; then
   exit 0
 fi
 
@@ -64,17 +91,22 @@ iso_to_epoch() {
   date -u -j -f "%Y-%m-%dT%H:%M:%SZ" "$iso" +%s 2>/dev/null
 }
 
-LOCK_EPOCH=$(iso_to_epoch "$LOCK_AT" || echo 0)
-HB_EPOCH=$(iso_to_epoch "$HB_AT" || echo 0)
+if [[ -z "$LOCK_EXPIRES" ]]; then
+  # A foreign lock with no expiry is corrupt state: fail closed.
+  echo "tracker-unreadable: session_lock set but session_lock_expires_at missing" >&2
+  exit 4
+fi
 
-LOCK_AGE=$(( NOW_EPOCH - LOCK_EPOCH ))
-HB_AGE=$(( NOW_EPOCH - HB_EPOCH ))
+EXPIRES_EPOCH=$(iso_to_epoch "$LOCK_EXPIRES" || true)
+if [[ -z "${EXPIRES_EPOCH:-}" ]]; then
+  echo "tracker-unreadable: cannot parse session_lock_expires_at='$LOCK_EXPIRES'" >&2
+  exit 4
+fi
 
-# 30 min lock window, 5 min heartbeat window.
-if (( LOCK_AGE < 1800 )) && (( HB_AGE < 300 )); then
-  echo "lock-held-by-other:${OTHER_SID}"
+if (( EXPIRES_EPOCH > NOW_EPOCH )); then
+  echo "lock-held-by-other:${LOCK_SID}"
   exit 2
 fi
 
-echo "lock-stale:${OTHER_SID}"
+echo "lock-stale:${LOCK_SID}"
 exit 3

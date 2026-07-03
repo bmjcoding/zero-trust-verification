@@ -18,7 +18,7 @@ Read in parallel:
 Refuse if working tree is dirty. Refuse if not on trunk. Refuse if any of the input docs don't exist.
 
 
-Run `bash ${SKILL_DIR}/scripts/detect_concurrent_drain.sh <slug>` — if another autopilot drain is in flight on this repo for this slug, refuse with `STATUS: STOPPED — concurrent drain detected`. Operator overrides with `--force` (logged per AP-11).
+Derive `<slug>` now (same derivation G7 uses — from the input doc names, `--slug=` override wins) — it is needed for the tracker path here and for branch naming throughout. Then run `bash ${SKILL_DIR}/scripts/detect_concurrent_drain.sh .autopilot/runbooks/<slug>.tracker.md` (the script takes the TRACKER PATH, not a bare slug) — exit 2 means another session holds a live lock: refuse with `STATUS: STOPPED — concurrent drain detected`. Exit 4 (unreadable lock state) is also a refuse — fail closed. Exit 64 (malformed invocation) is a refuse — fix the call, don't proceed unguarded. Exit 3 (stale lock) may be reclaimed. Operator overrides with `--force` (logged per AP-11).
 
 
 ## Step G1.5 — Repo-shape probe (AP-23)
@@ -65,13 +65,23 @@ Pre-receive hooks are server-side state. A local heuristic on `git config` / rem
 ### `--dry-run` mode
 
 
-`repo_shape_probe.sh --dry-run` prints every probe operation and the temp branch names that WOULD be created, with no network calls. Useful for operators reviewing what the probe will touch before running it against a repo with sensitive pre-receive hooks.
+`repo_shape_probe.sh --dry-run` prints (on stderr — stdout stays KEY=VALUE-pure) every probe operation and the temp branch names that WOULD be created, performs no network or git-state operation of any kind (trunk detection uses only local refs; the cleanup trap is disarmed), and emits `unknown` for every live-probe signal. Useful for operators reviewing what the probe will touch before running it against a repo with sensitive pre-receive hooks.
 
 
-### `--explain` mode
+### `--jira-key <KEY>` flag
 
 
-`repo_shape_probe.sh --explain` prints the current contents of `scripts/repo_shape_probe_patterns.sh` on stdout and exits 0. No network, no git state. Useful for operators reviewing which rejection patterns are recognized before running a real probe.
+On repos whose pre-receive hook rejects commits without a JIRA key, the force-push probe's own commits get rejected before the rewrite can be tested — the probe then reports `FORCE_PUSH_ALLOWED=unknown` (and concludes `JIRA_HOOK_ENFORCED=true` from that same rejection without a second push). Passing `--jira-key <KEY>` (any valid issue key the operator owns) prefixes probe commit subjects with `[<KEY>]` so the force-push probe can reach its actual test. G1.5 passes the runbook's `jira_key` automatically when one is present.
+
+
+### `--explain` and `--show-patterns` modes
+
+
+`repo_shape_probe.sh --explain` runs the real probe and additionally prints, on stderr, the reasoning behind each emitted value (which registry pattern matched, which temp branch was used). Stdout stays KEY=VALUE-pure.
+
+`repo_shape_probe.sh --show-patterns` prints the current contents of the `scripts/repo_shape_probe_patterns.sh` registry on stdout and exits 0. No network, no git state. Useful for operators reviewing which rejection patterns are recognized before running a real probe.
+
+Whenever a push rejection matches no registry pattern, the probe emits (always-on): `probe: unknown rejection pattern; please add to repo_shape_probe_patterns.sh: <raw message>` — every operator-visible `unknown` rejection is a candidate new pattern.
 
 
 ## Step G2 — Tier-1 extraction
@@ -108,16 +118,13 @@ For each Story emitted in G2, spawn a `general-purpose` agent with the role prom
 Run all planners in parallel (one Agent message, multiple tool calls). Validate each output against the schema; missing required fields → re-prompt that planner ONCE. Second failure → mark that Story `[GENERATE-FAILED: planner-schema]` and continue with the rest.
 
 
+**Budget check (`budget.max_subtasks`).** After all planners return, count the union of emitted Subtasks. If it exceeds the runbook's `budget.max_subtasks` (default 20), refuse with `[GENERATE-FAILED: subtask-budget-exceeded]` citing the count — the operator either raises the budget or splits the input docs into separate drains. Do NOT silently truncate the plan.
+
+
 ## Step G3.5 — Plan review (schema-only projection — AP-3)
 
 
-For each planner output, spawn a `Plan` agent in REVIEW mode. The reviewer receives a STRIPPED projection of the planner's output per `references/plan-reviewer-projection.md`:
-
-
-- `id`, `kind`, `owned_files`, `depends_on`, `test_gates`, `validators`
-- `interface_change.public_api` (signature only, no `contract` prose)
-- `behaviors_to_test` (behavior strings only, no rationale, no `test_name_hint`)
-- `estimated_size`
+For each planner output, spawn a `Plan` agent in REVIEW mode. The reviewer receives a STRIPPED projection of the planner's output. The allow-list of projected fields is defined ONCE, in `references/plan-reviewer-projection.md` §"Allowed fields" — build the projection from that list verbatim (do not re-derive it from memory; a field outside the reviewer's allow-list triggers NEVER-GO).
 
 
 The reviewer never sees the planner's `evidence` quote, the `contract` semantic-guarantee prose, or the planner's reasoning. This keeps the review independent: the reviewer must form its own judgment from the schema's structural fields rather than agreeing with the planner's narrative.
@@ -137,7 +144,7 @@ When enabled, after G3.5 the orchestrator walks the reviewed plan for consolidat
 
 - Same `kind` (typically `docs` or `config`)
 - Same parent Story
-- Each Subtask's `estimated_size` is `xs` or `s`
+- Each Subtask's `estimated_size` is `S` (the planner vocabulary is `S | M | L`)
 - `owned_files[]` do not overlap after merge
 - `depends_on[]` are consistent (no cycle created by the merge)
 - Combined `behaviors_to_test[]` count ≤ 6
@@ -147,7 +154,7 @@ When enabled, after G3.5 the orchestrator walks the reviewed plan for consolidat
 Consolidated groups become one Subtask with:
 - New `id` = `<lowest-id>+` (e.g., `B2+`)
 - Union of `owned_files[]`, `behaviors_to_test[]`, `test_gates[]`
-- `estimated_size` = the ceiling of the group's sizes (`s+s` → `m`)
+- `estimated_size` = the ceiling of the group's sizes (`S+S` → `M`)
 - `Consolidated from:` note listing the merged Subtask IDs
 
 
@@ -157,10 +164,13 @@ Ineligible or single-Subtask groups pass through unchanged. Consolidation is log
 ## Step G4 — Topological sort + hot-file detection
 
 
-Run `bash ${SKILL_DIR}/scripts/hot_file_audit.sh` — surfaces the 20 most-churned files in the last 30 days. For any Subtask whose `owned_files[]` includes a hot file:
+Run `bash ${SKILL_DIR}/scripts/hot_file_audit.sh --churn` — surfaces the 20 most-churned files in the last 30 days from origin-trunk history. For any Subtask whose `owned_files[]` includes a hot file:
 
 
 - If another Subtask in this drain also owns that hot file → **force a DAG edge** between them (lower-ID blocks higher-ID). Surface in review summary.
+
+
+Validate every `depends_on[]` entry against the union of all planner-emitted Subtask IDs — planners run in parallel and cross-Story references are unverifiable at plan time, so this check runs on EVERY generate path (not only `--merge`). Unknown ID → `[GENERATE-FAILED: dangling-dependency]`.
 
 
 Topo-sort all Subtasks. Detect cycles → `[GENERATE-FAILED: dependency-cycle]`. Detect ownership overlap (same file in two non-dependent Subtasks) → `[GENERATE-FAILED: ownership-overlap]`.
@@ -169,7 +179,7 @@ Topo-sort all Subtasks. Detect cycles → `[GENERATE-FAILED: dependency-cycle]`.
 ## Step G5 — Already-shipped detection
 
 
-For every Subtask, the planner already verified file existence. Now check git log: `git log --oneline --all -- <owned_files[]>` for each Subtask. If a recent commit already implemented the Subtask's intent (heuristic: commit message overlaps with `acceptance_criteria`), mark it pre-emptively `[x] Done` in the seeded tracker with the commit SHA cited. This is the Queue A pattern from the original autopilot.
+For every Subtask, the planner already verified file existence. Now check git log: `git log --oneline origin/<trunk> -- <owned_files[]>` for each Subtask (scoped to trunk — `--all` would pick up probe branches and foreign drains). If a recent commit already implemented the Subtask's intent (heuristic: commit message overlaps with `acceptance_criteria`), mark it pre-emptively `[x] Done` in the seeded tracker with the commit SHA cited. This is the Queue A pattern from the original autopilot.
 
 
 G5-marked Subtasks do NOT affect either failure counter — they're done at GENERATE-time before any drain has started.
@@ -181,7 +191,8 @@ G5-marked Subtasks do NOT affect either failure counter — they're done at GENE
 If `--jira <PROJ>` was passed:
 
 
-1. Activate Jira tools: `mcp__dev-tools__activate_jira`
+0. **Environment check (fail fast).** `--jira` depends on an environment-specific Jira MCP tool surface — this is the ONE mode with a dependency beyond vanilla Claude Code (Hard Contract §2 covers agents; this is a declared external-tool exception). Probe for the Jira tools first (e.g. via ToolSearch); if absent, refuse immediately with `[GENERATE-FAILED: jira-tools-unavailable] — re-run without --jira, or connect a Jira MCP server` rather than halting mid-generate after extraction/planning work is done.
+1. Activate the environment's Jira tools (e.g. `mcp__dev-tools__activate_jira` where that server is configured)
 2. For each Story → create a Jira Story; populate description from `behaviors_or_outcomes` and `source_ref`
 3. For each Subtask → create a Jira Subtask under its parent Story; populate from `acceptance_criteria` and `interface_change`
 4. Store `jira_key:` on every Story and Subtask in the runbook
@@ -194,11 +205,11 @@ Failures here (auth missing, project doesn't exist, etc.) → halt with clear er
 ## Step G7 — Write runbook + tracker
 
 
-Render `references/runbook-template.md` with all the data accumulated so far. Write to:
+Render `references/runbook-template.md` with all the data accumulated so far. Write to the canonical artifact paths:
 
 
-- `docs/design/AUTOPILOT-PROMPT-<slug>.md` — the runbook (immutable after this point)
-- `docs/design/AUTOPILOT-TRACKER-<slug>.md` — the seeded tracker
+- `.autopilot/runbooks/<slug>.md` — the runbook (operator-editable until the drain is armed; immutable during an active drain except the G1.5-owned `Repo constraints (detected)` block)
+- `.autopilot/runbooks/<slug>.tracker.md` — the seeded tracker
 
 
 Seed the tracker frontmatter with these defaults:
@@ -243,4 +254,4 @@ The runbook's first commit creates a feature branch `autopilot/<slug>/setup` wit
 **Default (review path):** Print a structured summary then exit (no cron arming). Required content: drain slug; Stories count; Subtasks count broken down by `kind` and `estimated_size`; already-shipped (G5) count; hot-file serializations applied; G1.5 probe facts + any `unknown` values that need operator review; consolidations applied (G3.6); estimated drain runtime; paths of the runbook + tracker; rolling tracker PR URL (or "batched-delta queue active" under `branching.no_force_push`); the exact `/autopilot --drain @<runbook-path>` command to start the drain; one-line reminder to edit before draining.
 
 
-**`--yolo` path:** Skip the review entirely; immediately invoke the DRAIN mode as if operator typed `/autopilot --drain @docs/design/AUTOPILOT-PROMPT-<slug>.md`.
+**`--yolo` path:** Skip the review entirely; immediately invoke the DRAIN mode as if operator typed `/autopilot --drain @.autopilot/runbooks/<slug>.md`.

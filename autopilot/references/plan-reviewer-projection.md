@@ -19,7 +19,7 @@ This mirrors the audit plugin's adversarial-reviewer pattern (see codebase-healt
 ## Allowed fields (full list)
 
 
-The reviewer's prompt input contains EXACTLY these keys, in this order, for each Subtask in the planner's output:
+This list is the SINGLE canonical allow-list — G3.5, D3.2, and the rationale doc reference it rather than restating it. The reviewer's prompt input contains EXACTLY these keys, in this order, for each Subtask in the planner's output:
 
 
 ```yaml
@@ -28,7 +28,6 @@ The reviewer's prompt input contains EXACTLY these keys, in this order, for each
   kind: <code | test-only | refactor | docs | config>
   owned_files:
     - <repo-relative-path>
-  branch_pattern: <type>/<slug>-{date}
   depends_on: [<other-subtask-ids>]
   test_gates: [<unit | contract | integration>]
   validators: [<integration | design | quality | security | sre>]
@@ -38,6 +37,8 @@ The reviewer's prompt input contains EXACTLY these keys, in this order, for each
     - <behavior string only — no test_name_hint, no rationale>
   estimated_size: <S | M | L>
 ```
+
+(`branch_pattern` was removed from the planner schema in v2.4.0 — branch names are dictated by AP-7 (`autopilot/<slug>/<subtask-id>`), so the field contradicted the D1.1 shape check and was consumed by nothing.)
 
 
 Notably absent from the reviewer's input:

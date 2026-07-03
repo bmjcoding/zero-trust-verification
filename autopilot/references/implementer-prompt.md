@@ -19,6 +19,7 @@ You will receive (passed by the orchestrator):
 2. The current branch you've already been switched to
 3. The base branch this Subtask branched from
 4. Any Plan refinements from the prior Plan-agent invocation (file ownership map, integration contracts)
+5. The runbook's `gates:` command table and `budget.max_cycles_per_subtask`. Run tests ONLY through `gates.test_single` / `gates.test_scoped` (the examples below show the Python defaults, `pytest ...`; substitute your runbook's commands verbatim). Exceeding the cycle budget → stop and report `[BLOCKED: cycle-budget-exhausted]`.
 
 
 ## WORKFLOW BY KIND
@@ -38,7 +39,8 @@ behavior `<n>` in `behaviors_to_test[]`, in order:
 ```
 RED phase:
   - write the test for this behavior in its target file
-  - run JUST this one test: `pytest <path>::<test-name> -x`
+  - run JUST this one test via gates.test_single
+    (Python default: `pytest <path>::<test-name> -x`)
   - confirm it fails for the RIGHT reason (read the failure message;
     if it fails because of a typo or import error, that's not RED — fix
     and re-run)
@@ -50,8 +52,7 @@ GREEN phase:
   - write the minimum code needed to pass JUST this test
   - don't anticipate future tests; don't add features the next
     behavior will need; just pass this one test
-  - run the test: `pytest <path>::<test-name> -x`
-  - confirm pass
+  - run the same single test via gates.test_single; confirm pass
   - git add <impl files>     # do NOT include test files in the GREEN commit
   - git commit -m "feat: <subtask-id>.<n> GREEN — <behavior summary>"
 ```
@@ -72,7 +73,7 @@ After ALL behaviors are GREEN, do ONE refactor pass:
 - Extract duplication
 - Deepen modules (move complexity behind simple interfaces)
 - Apply SOLID principles where natural
-- Run the FULL scope of this Subtask's tests after each refactor step: `pytest <test-files-touched-by-this-subtask> -x`
+- Run the FULL scope of this Subtask's tests after each refactor step via gates.test_scoped (Python default: `pytest <test-files-touched-by-this-subtask> -x`)
 - **Never refactor while RED.**
 - Single `refactor: <subtask-id> — <change summary>` commit at the end of the refactor pass (or omit the commit entirely if no refactor was warranted).
 
@@ -143,9 +144,9 @@ Files touched: <count>
 
 
 TDD sequence (in order applied):
-  1. RED  → behavior: "<text>"  → test: <full::pytest::nodeid>  → commit: <short-sha>  → fail-mode: <assertion|import|attribute|other>  → fail-reason: <one-line>
+  1. RED  → behavior: "<text>"  → test: <full test id (e.g. pytest nodeid)>  → commit: <short-sha>  → fail-mode: <assertion|import|attribute|other>  → fail-reason: <one-line>
      GREEN → impl: <one-line description>  → commit: <short-sha>  → confirmed pass
-  2. RED  → behavior: "<text>"  → test: <full::pytest::nodeid>  → commit: <short-sha>  → fail-mode: <assertion|import|attribute|other>  → fail-reason: <one-line>
+  2. RED  → behavior: "<text>"  → test: <full test id (e.g. pytest nodeid)>  → commit: <short-sha>  → fail-mode: <assertion|import|attribute|other>  → fail-reason: <one-line>
      GREEN → impl: <one-line description>  → commit: <short-sha>  → confirmed pass
   ...
 
@@ -178,8 +179,8 @@ review.
 
 - You MUST commit per-cycle as specified above. The orchestrator's D6 audit reads `git log` to verify the RED/GREEN cycle shape; missing commits produce `[BLOCKED: tdd-no-red]` or `[BLOCKED: tdd-no-green]`.
 - Never `git push`. The orchestrator handles pushes at D7.2.
-- Never run `pytest` against the full suite — only against the tests you're driving (`pytest path/to/test_file.py::test_name -x`). The orchestrator runs the scoped gate at Step D6.
-- Never modify `pyproject.toml`, `pre-commit`, or CI config unless the Subtask's `kind` is `config` AND those files are in `owned_files[]`.
+- Never run the full test suite — only the tests you're driving, via gates.test_single (Python default: `pytest path/to/test_file.py::test_name -x`). The orchestrator runs the scoped gate at Step D6.
+- Never modify build/packaging manifests (`pyproject.toml`, `package.json`, `go.mod`, `Cargo.toml`, ...), hook config, or CI config unless the Subtask's `kind` is `config` AND those files are in `owned_files[]`.
 - Never invent new dependencies. If you need one, that's a planning failure — surface it.
 - Never `git add -A`. Stage explicitly to keep RED/GREEN commits clean.
 - Never use `git commit --no-verify`. Pre-commit hooks must run on every cycle's commit.

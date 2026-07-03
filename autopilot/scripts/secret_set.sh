@@ -17,8 +17,9 @@
 #                candidate #3 in secret_get.sh's resolver. Requires being
 #                inside a git repo with an `origin` remote.
 #   --force      Bypass the "operator-owned credential detected" abort. Use
-#                only when you understand you may be overwriting a keychain
-#                entry that another tool or another operator populated.
+#                only when you understand you may be overwriting (or
+#                shadowing) a keychain entry that another tool or another
+#                operator populated.
 #
 # Hard rules:
 #   - Token NEVER on argv.
@@ -27,18 +28,32 @@
 #   - On Linux: stored via `secret-tool store`.
 #   - Windows VDIs: not supported; operator uses sidecar mode.
 #
-# Operator-owned credential detection (v2.3.0):
-#   Before writing, secret_set.sh probes the target service name in the
-#   keychain. If an entry already exists AND its account/label does not match
-#   the expected autopilot-owned pattern (`autopilot ${SERVICE}` label on
-#   Linux, `$USER` account on macOS with a comment that includes the string
-#   `autopilot-managed`), the script aborts with exit 5 unless `--force` is
-#   passed. This prevents autopilot from silently overwriting personal or
-#   team-shared credentials that happen to share a name.
+# Operator-owned credential detection (v2.4.0 — GAPS B3; the v2.2.0 changelog
+# claimed cross-candidate probing but only the exact target name was checked):
+#   Before writing, secret_set.sh probes EVERY candidate name in
+#   secret_get.sh's resolver chain (via `secret_get.sh <service>
+#   --list-candidates`):
+#   - The TARGET name: if an entry exists and its metadata does not match the
+#     autopilot-managed pattern (`autopilot ${SERVICE}` label + owner attribute
+#     on Linux, `$USER` account + `autopilot-managed` comment on macOS), abort
+#     with exit 5 — you would overwrite a foreign credential.
+#   - Every OTHER candidate: if a non-empty entry exists, abort with exit 5 —
+#     writing the autopilot-namespaced copy would create a silent two-copy
+#     state where the resolver may pick a different token than the one you
+#     just stored (which of the two wins depends on candidate order).
+#   `--force` bypasses both aborts.
 
 set -u
 set +x
 unset HISTFILE 2>/dev/null || true
+
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# $USER is not guaranteed (containers/CI under set -u): fall back to id.
+# Without this, the storage pipeline's printf died on the unbound expansion
+# and `security -i` saw EOF — the script reported success while storing
+# nothing (caught by self_test T30).
+RUN_USER="${USER:-$(id -un)}"
 
 die() { echo "secret_set.sh: $*" >&2; exit 1; }
 
@@ -51,14 +66,14 @@ while (( $# > 0 )); do
     --as-host) AS_HOST=1; shift ;;
     --force)   FORCE=1;   shift ;;
     -h|--help)
-      cat >&2 <<EOF
+      cat <<EOF
 usage: secret_set.sh <service> [--as-host] [--force]
   service: lowercase alnum + dash, e.g. bitbucket
   --as-host: scope keychain name to current git origin host
   --force:   bypass operator-owned credential detection
   token is read from STDIN, never from argv
 EOF
-      exit 64
+      exit 0
       ;;
     -*) die "unknown flag: $1" ;;
     *)
@@ -94,44 +109,60 @@ if (( AS_HOST == 1 )); then
   KEY_NAME="autopilot-${SERVICE}-${host}"
 fi
 
-# Operator-owned credential detection.
-# Probe the target name; if it exists and does not look autopilot-managed,
-# refuse to overwrite unless --force.
+# Existence probe for an arbitrary keychain service name. Returns 0 when a
+# non-empty entry exists, 1 otherwise. Never prints the secret.
+entry_exists() {
+  local name="$1"
+  case "$(uname -s)" in
+    Darwin)
+      command -v security >/dev/null 2>&1 || return 1
+      [[ -n "$(security find-generic-password -s "$name" -w 2>/dev/null)" ]]
+      ;;
+    Linux)
+      command -v secret-tool >/dev/null 2>&1 || return 1
+      [[ -n "$(secret-tool lookup service "$name" 2>/dev/null)" ]]
+      ;;
+    *) return 1 ;;
+  esac
+}
+
+# Operator-owned credential detection on the TARGET name: if it exists and
+# does not look autopilot-managed, refuse to overwrite unless --force.
 probe_ownership() {
   case "$(uname -s)" in
     Darwin)
       command -v security >/dev/null 2>&1 || return 0
-      # Query with -g so we get metadata including comment/account.
-      local meta
-      meta=$(security find-generic-password -s "$KEY_NAME" -g 2>&1 >/dev/null || true)
-      # `security -g` prints the password on stderr in a specific format.
-      # We only need to check for existence + metadata; extract acct and icmt.
-      if [[ -z "$meta" ]]; then
-        return 0  # no existing entry
+      # Existence check FIRST, by exit code (44 = item not found). The
+      # previous implementation parsed the -g stderr and treated the
+      # "could not be found" message as an existing entry — every
+      # first-ever secret_set on macOS aborted with exit 5. It also
+      # fetched the stored password (-g prints it) just to read metadata;
+      # the attribute dump (no -g) carries acct/icmt without the secret.
+      local attrs rc
+      attrs=$(security find-generic-password -s "$KEY_NAME" 2>/dev/null); rc=$?
+      if (( rc != 0 )); then
+        return 0  # no existing (readable) entry — nothing to guard
       fi
       local acct icmt
-      acct=$(echo "$meta" | awk -F'"' '/"acct"/ {print $4; exit}')
-      icmt=$(echo "$meta" | awk -F'"' '/"icmt"/ {print $4; exit}')
-      # Autopilot-managed if account matches $USER AND comment includes marker.
-      if [[ "$acct" == "$USER" && "$icmt" == *"autopilot-managed"* ]]; then
+      acct=$(echo "$attrs" | awk -F'"' '/"acct"/ {print $4; exit}')
+      icmt=$(echo "$attrs" | awk -F'"' '/"icmt"/ {print $4; exit}')
+      # Autopilot-managed if account matches the invoking user AND comment includes marker.
+      if [[ "$acct" == "$RUN_USER" && "$icmt" == *"autopilot-managed"* ]]; then
         return 0
       fi
-      echo "operator-owned-credential-detected: service=${KEY_NAME} acct=${acct:-unknown}" >&2
+      echo "operator-owned credential detected at ${KEY_NAME} (acct=${acct:-unknown})" >&2
       return 5
       ;;
     Linux)
       command -v secret-tool >/dev/null 2>&1 || return 0
-      # Existence check via lookup; no metadata API on secret-tool.
       if secret-tool lookup service "$KEY_NAME" >/dev/null 2>&1; then
-        # We can't reliably distinguish autopilot-managed from operator-owned
-        # on Linux without a distinct attribute. Use a marker attribute:
-        # autopilot always stores with `owner=autopilot`; probe for it.
+        # Autopilot always stores with `owner=autopilot`; probe for it.
         local marker
         marker=$(secret-tool search --unlock service "$KEY_NAME" 2>/dev/null | awk -F' = ' '/^attribute\.owner/ {print $2; exit}')
         if [[ "$marker" == "autopilot" ]]; then
           return 0
         fi
-        echo "operator-owned-credential-detected: service=${KEY_NAME} (no autopilot owner marker)" >&2
+        echo "operator-owned credential detected at ${KEY_NAME} (no autopilot owner marker)" >&2
         return 5
       fi
       return 0
@@ -140,10 +171,29 @@ probe_ownership() {
   return 0
 }
 
+# Cross-candidate collision probe (GAPS B3): abort when any OTHER resolver
+# candidate already has a non-empty entry — prevents the silent two-copy
+# state (e.g. operator has `bitbucket-token:cluster03`, then runs
+# `secret_set.sh bitbucket` and ends up with both).
+probe_candidates() {
+  local rc=0 name
+  while IFS= read -r name; do
+    [[ -n "$name" && "$name" != "$KEY_NAME" ]] || continue
+    if entry_exists "$name"; then
+      echo "operator-owned credential detected at ${name}" >&2
+      rc=5
+    fi
+  done < <("$HERE/secret_get.sh" "$SERVICE" --list-candidates 2>/dev/null || true)
+  return $rc
+}
+
 if (( FORCE == 0 )); then
   probe_ownership; rc=$?
+  if (( rc != 5 )); then
+    probe_candidates; rc=$?
+  fi
   if (( rc == 5 )); then
-    echo "hint: pass --force to overwrite anyway; you may be clobbering a personal or team credential" >&2
+    echo "hint: pass --force to write anyway; you may be clobbering or shadowing a personal or team credential" >&2
     exit 5
   fi
 fi
@@ -169,19 +219,23 @@ case "$(uname -s)" in
       unset TOKEN
       exit 4
     fi
-    # -U: update if exists. We use $USER as account and stamp
+    # -U: update if exists. We use the invoking user as account and stamp
     # `autopilot-managed` in the comment so probe_ownership can detect us
     # on the next --force-less run.
-    if ! security add-generic-password \
-        -U \
-        -s "$KEY_NAME" \
-        -a "$USER" \
-        -j "autopilot-managed" \
-        -w "$TOKEN" >/dev/null 2>&1; then
+    #
+    # The command is fed to `security -i` on STDIN — passing the token as
+    # a `-w` argv value would expose it in the process table while
+    # `security` runs, violating "Token NEVER on argv". Backslashes and
+    # double quotes in the token are escaped for security's line parser.
+    TOK_ESC=${TOKEN//\\/\\\\}
+    TOK_ESC=${TOK_ESC//\"/\\\"}
+    if ! printf 'add-generic-password -U -s "%s" -a "%s" -j "autopilot-managed" -w "%s"\n' \
+        "$KEY_NAME" "$RUN_USER" "$TOK_ESC" | security -i >/dev/null 2>&1; then
       echo "keychain-store-failed" >&2
-      unset TOKEN
+      unset TOKEN TOK_ESC
       exit 1
     fi
+    unset TOK_ESC
     ;;
   Linux)
     if ! command -v secret-tool >/dev/null 2>&1; then

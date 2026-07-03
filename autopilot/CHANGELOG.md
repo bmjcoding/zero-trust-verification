@@ -2,6 +2,103 @@
 
 All notable changes to the autopilot skill. Format follows Keep a Changelog; versioning is SemVer. CHANGELOG.md is the single source of truth for version history — the SKILL.md frontmatter does not carry a `version:` field.
 
+**Release gate (v2.4.0, GAPS M3/M6).** Every behavioral claim in a release entry MUST cite the `scripts/self_test.sh` assertion id (Txx) or `scripts/lint_consistency.sh` rule id (Lxx) that proves it, or be tagged `[doc-only]`. Both scripts must pass before tagging. Any drain failure attributable to the skill must land a failing self-test assertion before (or with) its fix — a gap found once may not recur silently. (This gate exists because v2.1.0–v2.3.0 shipped multiple claimed-but-unimplemented behaviors; see docs/GAPS_SPEC.md §B.)
+
+## [2.4.0] - 2026-07-02
+
+Audit release. A ground-truth audit (docs/GAPS_SPEC.md — every mechanical finding reproduced by executing the script against a fixture before registration) found that the deterministic substrate had never been executed: the Bitbucket adapter could not succeed at anything (T01), the force-push probe could not detect a denial (T09), the concurrency guard could not detect a concurrent drain (T13), and the documented CI-poll invocation terminated the drain (T17). It also found five claimed-but-unimplemented changelog entries and ~20 cross-file contract contradictions. This release fixes all of it and adds the machinery that keeps it fixed: an executed self-test, a cross-file consistency lint, loop-safety invariants, and this release gate.
+
+### Adversarial verification rounds (within this release)
+
+Two author-blind agents reviewed the release before tagging (docs/GAPS_SPEC.md
+§"Verification rounds"). Round 1 mutation-tested the harness (five baseline bugs
+re-introduced on copies; the corresponding assertions went red every time) and
+caught three overclaims, fixed in round 2. Round 3 fixed the fresh-eyes agent's
+findings, the most significant being:
+
+- **macOS `secret_set.sh` was unusable and leaked**: the ownership probe parsed
+  `security -g` stderr and treated "item could not be found" as an existing
+  foreign entry — every first-ever store aborted exit 5 (forcing `--force`,
+  which also bypassed the collision guard); the store itself passed the token
+  in `security`'s argv; and an unset `$USER` (containers/CI, `set -u`) made the
+  store silently no-op while reporting success. Fixed: exit-code existence
+  check, attribute dump without `-g` (no password fetched), token via
+  `security -i` stdin, `RUN_USER` fallback. (T30)
+- **Auth-failure bodies reached the orchestrator context**: every non-2xx path
+  logged a 200-char body excerpt, violating the sidecar contract's 401/403/407
+  rule; and the contract's 429/502/407 handling did not exist. Fixed:
+  `body_excerpt` redaction, bounded Retry-After retry, 502 backoff retry,
+  407 → `LAST_STATE=sidecar-session-invalid`; retries are owned by `bb_curl`,
+  not `curl --retry` (which also fires on 429/5xx and bypasses the table).
+  (T35, T36)
+- **`--dry-run` was not dry**: trunk detection ran `ls-remote` and the cleanup
+  trap ran remote branch deletes. Fixed: local-refs-only trunk detection,
+  disarmed trap, and the promised operation plan printed (stderr). (T32)
+- **The force-push probe was blinded by JIRA hooks** on exactly the strict
+  repos AP-23 targets (its own probe commits were rejected before the rewrite
+  test): new `--jira-key` flag unblinds it; without a key the JIRA verdict is
+  concluded from that first rejection instead of a second push. (T29, T37)
+- **Crash-recovery spam**: D1.0.4 appended a `crash_recovery` entry whenever
+  the batched queue was non-empty at fire start — which is every healthy
+  batched-mode fire; now requires actual crash evidence (expired-lock reclaim
+  or the 90-minute heartbeat detector). `[doc-only]`
+- **Undecidable tracker-PR table**: dispatched on `MERGEABLE|CONFLICTED`,
+  which `pr-state` cannot observe, and had no row for `NONE`; rewritten to the
+  observable state set. `[doc-only]`
+- Also: quoted-YAML lock values parse (T34); empty churn window is a clean
+  empty result, not exit 1 (T31); `--show-patterns` prints intact rows (T33);
+  healthz body must BE "ok", not contain it (T38); env-token tier reachable on
+  keychain-less platforms and documented under its real name
+  (`AUTOPILOT_<SERVICE>_TOKEN`); D1.4 rows are ordered first-match with
+  external PR state checked before CI polling; a Done resets both counters;
+  PAUSED recovery is `--resume`-only; `detect_concurrent_drain.sh` exit 64
+  routed at G1/D1; credentialed-URL redaction in probe stderr; cadence
+  deferral precedence stated; `in_progress.pushed_at` documented;
+  `ci.build_states` marked reserved; G1 slug derivation defined; the security
+  validator's grep uses `-iE` (PCRE `(?i)` errors under `grep -E`). `[doc-only]`
+  where no assertion id is cited.
+
+### Added
+
+- **`scripts/self_test.sh`** — hermetic self-test (mock Bitbucket DC server, local bare repos with deny-configs and pre-receive hooks, curl argv shim, macOS keychain shims): 96 assertions covering every script. (GAPS M1)
+- **`scripts/lint_consistency.sh`** — deterministic cross-file contract lint, rules L1–L15: one artifact-path scheme, one tracker schema, one step graph, one validator catalog, budget-sourced caps, batching-doc alignment, one TDD commit format, removed fields stay removed, one size vocabulary, cron prompts carry the drain invocation, version refs pinned to this file's top entry, complete flag registry, no consumer-repo leakage, runbook-sourced gates. (GAPS M2)
+- **`references/loop-safety.md`** — the loop's ten never-do invariants, each mapped to its enforcing mechanism, plus honest residuals. (GAPS M4)
+- **`gates:` runbook block** — language-agnostic gate command templates (`test_scoped`, `test_single`, `test_contract`, `typecheck`, `lint`, `precommit` with `{paths}`/`{files}`/`{test}` placeholders; Python defaults preserved). D6.1, the D5 validators, the implementer prompt, and conflict resolution now reference gates instead of hardcoded `pytest`/`mypy`/`ruff`; `test_runner` becomes a warned legacy alias. Lint is scoped to changed files — never repo-wide. (GAPS D3; L15) `[doc-only]` for the prompt files; the contract is linted.
+- **`ci_check.sh --once`** — single-observation mode for the cross-fire D7.5 dispatch: `VERDICT=GREEN|RED|PENDING|PR_DECLINED` (exit 0/1/5/4); `LAST_STATE` on stderr now carries the actual last observed build state. The blocking poll mode remains for operator use. (GAPS A6/A7; T17–T20)
+- **`bitbucket.sh pr-state --branch <src>`** — PR state lookup by source branch (returns `NONE` when absent), used by the tracker-PR availability check which knows the branch but not the PR number. (T02)
+- **`hot_file_audit.sh --churn`** — implements G4's 30-day churn contract (top-20 from origin-trunk history); the old overlap analysis moved to `--subtasks <slug>` for D7.0. (GAPS A8; T21–T23)
+- **`secret_get.sh --list-candidates`** + the candidates claimed in v2.1.0 but never implemented: `<service>-token:<host>` and `$<SERVICE>_HOST`-derived hosts. (GAPS B3; T25)
+- **`repo_shape_probe.sh --show-patterns`** — prints the rejection-pattern registry (the behavior v2.3.0's changelog attributed to `--explain`; `--explain` is, and remains, the stderr reasoning trace). (GAPS B6) `[doc-only]`
+- **D1.2 runtime-budget check** (`budget.max_runtime_minutes` → `HUMAN_NEEDED — runtime-budget-expired`) and **D4 cycle cap** (`budget.max_cycles_per_subtask` → `[BLOCKED: cycle-budget-exhausted]`) — these budget fields previously existed in the runbook schema but were enforced nowhere. `[doc-only]` (L6 pins the cap sourcing)
+- **G4 dangling-dependency check on every generate path** — planners run in parallel and cannot verify cross-Story `depends_on[]` ids; previously only `--merge` validated them. `[doc-only]`
+- **SKILL.md flag registry** — `--reprobe`, `--no-probe`, `--no-auto-seed` registered (previously referenced only in references); `argument-hint` frontmatter added; ghost flag `--force-rolling-tracker` removed. (L13)
+
+### Fixed
+
+- **`bitbucket.sh` could never succeed** (release-blocking): `bb_curl` was always invoked in a command substitution, so the `HTTP_STATUS` it set never reached the caller — every subcommand failed its status check even on HTTP 200, and resolver failures inside the substitution didn't abort the script. `bb_curl` now writes the body to a caller-named file and sets `HTTP_STATUS` in the calling shell. (GAPS A1; T01–T07)
+- **Rejection-pattern registry could not match most patterns**: the regex/signal split took everything before the FIRST `|`, truncating every alternation-bearing regex into an unbalanced pattern grep silently errored on (5 of 6 realistic Bitbucket DC rejection strings failed). Signal is now everything after the LAST `|`. Also fixed a dynamic-scoping bug where `match_rejection`'s local `signal` shadowed the probe's outvar of the same name. (GAPS A2; T08)
+- **Force-push probe could never return `false`**: it force-pushed a fast-forward (trunk-tip + new commit over trunk-tip), which every server accepts; `branching.no_force_push` was therefore never auto-set and the AP-23 batched-delta machinery was unreachable by detection. The probe now pushes tip+A, rewrites to the divergent sibling tip+B, and force-pushes — a genuine non-fast-forward. Verified against a `receive.denyNonFastForwards` fixture. (GAPS A3; T09/T10)
+- **Probe stdout pollution**: git chatter inside the detector command substitutions corrupted the emitted `KEY=VALUE` values; all git output now goes to the probe logfile, and stdout purity is asserted. (GAPS A4; T11)
+- **`detect_concurrent_drain.sh` could never detect a concurrent drain**: it read a legacy field set (`session_id`/`lock_acquired_at`) that no tracker written by G7 contains, G1's documented call passed a bare slug (silent exit 0), its 5-minute heartbeat window would have declared healthy `*/30`-cadence drains stale (lock-steal), and unreadable state failed open. Now: canonical `session_lock`/`session_lock_expires_at` fields, tracker-path argument (slug-shaped args rejected with exit 64), staleness = lock expiry only, and exit 4 fail-closed on corrupt state. (GAPS A5, C2; T12–T16, T27)
+- **The documented CI-poll invocation killed the drain**: D7.5 (and D1.4) called `ci_check.sh <pr_number>`; the script requires `--sha`/`--pr`, so the call exited 64, which the dispatch table routes to `HUMAN_NEEDED` + cron deletion. Lifecycle and script now agree on `ci_check.sh --sha <sha> --pr <N> --once`, and D7.4 records `in_progress.pushed_sha` to feed it. (GAPS A6; T17)
+- **Sidecar silently bypassed for contract-conformant sidecars**: the contract's platform id is `bitbucketdc`; `bitbucket.sh` matched only legacy `bitbucket` and fell back to local keychain mode — defeating the token-never-in-workspace guarantee. Both ids are now accepted and the matched id is used as the URL segment; the sidecar mode-line is parsed without `eval`. (GAPS A9; T05)
+- **Response UTF-8 sanitisation actually implemented** — claimed in v2.1.0, but only request payloads were sanitised; a non-UTF-8 byte in a PR response still broke jq and misreported "no PR number in response". (GAPS B1; T04)
+- **`pr-merge` strategy discovery actually implemented** — claimed in v2.1.0; the code did a static name mapping and never consulted `pr-merge-strategies`. Now discovers enabled strategies and falls back down an ordered candidate list; also fixed a jq `//`-operator bug that treated `enabled: false` as enabled. (GAPS B2; T06)
+- **`secret_set.sh` cross-candidate collision guard actually implemented** — claimed in v2.2.0; only the exact target name was probed, so the documented silent-two-copy state was still reachable. Default mode now probes every `secret_get.sh --list-candidates` name and aborts (exit 5) on any foreign entry. Erratum: `--as-host` writes `autopilot-<service>-<host>` (as the script always did), not the `bitbucket-token:cluster03` form the v2.2.0 entry described — that form is now a read-side candidate instead. (GAPS B3; T25 covers the read side)
+- **Unknown-rejection corpus-growth message actually implemented** — claimed in v2.3.0 ("probe: unknown rejection pattern; please add ..."); it now fires, always-on, whenever a push rejection matches no registry row. (GAPS B4; T26)
+- **CI-manifest detection**: recursive tree listing so `.github/workflows/*.yml` is detectable (non-recursive `ls-tree` listed `.github`, never the nested path). (GAPS A10; T24)
+- **Token never in curl argv**: the Bearer header is passed via a 0600 temp file (`-H @file`) instead of an argv `-H` string readable in `/proc/*/cmdline`, matching what sidecar-contract.md already claimed. curl `--retry` is now GET-only (retrying POSTs risks duplicate PR/merge submissions). (T03)
+- **`sidecar_detect.sh` checks the healthz body** ("ok") as its own header always claimed, not just the status code. (T28)
+- **Doc-corpus contradictions reconciled** (full list: docs/GAPS_SPEC.md §C) `[doc-only]`, each now pinned by a lint rule: one artifact-path scheme (`.autopilot/runbooks/`, L1); one tracker schema (L2); legacy D0..D7.5 step graph purged from README/template/script headers (L3); the duplicate step id D7.5 renamed to D7.3a for the stacked-merge strategy (L4); one validator catalog — integration/design/quality (+security/sre) — replacing the phantom correctness/performance/style set (L5); escalation caps sourced from `budget.max_*_blocks` instead of hardcoded 3s (L6); tracker-delta-batching.md rewritten to the D7.1a fold semantics it contradicted on five points (L7); one TDD commit format (L8); `branch_pattern` removed from the planner schema and projection (L9, it contradicted AP-7); G3.6 eligibility uses the planner's actual `S|M|L` vocabulary (L10); cron prompts carry `/autopilot --drain` (L11); stale version references corrected (L12); AP-17/AP-18 rationale aligned with the shipped mechanisms; D3.0 staleness routing is terminal-block in all files; the plan-reviewer allow-list is defined once in plan-reviewer-projection.md.
+- **Honesty**: SKILL.md's description no longer promises overnight drains ("while you sleep") that AP-19 explicitly says cannot happen; the constraint (autonomous within a live session, no headless mode) is stated up front and in README "When NOT to use". Non-standard `lifecycle:` frontmatter field removed. `[doc-only]`
+- **De-branding**: internal corporate hostname removed from sidecar-contract.md; origin-repo file names (`internal_sdk/`, `internal.yml`, `mcp/server.py`, `verbs/`), vendor-specific state stores, and `~/.claude/skills/*` dependencies generalized out of the role prompts (L14). The sidecar probe-budget section rewritten to describe the real transport mix instead of an unimplementable REST budget table (GAPS B5). `[doc-only]`
+
+### Known limitations (documented, not fixed)
+
+- Under `branching.no_force_push: true`, the AP-4 session lock is checkout-local until the next D7.1a fold lands; cross-clone concurrency relies on the branch-namespace check. (drain-lifecycle D1.0 note)
+- The orchestrator contract binds an LLM through prose; the self-test proves the deterministic substrate only. (loop-safety.md residuals)
+- `--jira` mode depends on an environment-specific MCP server; it now fails fast with a clear message when absent, but cannot be self-tested here.
+
 ## [2.3.0] - 2026-06-29
 
 Closes all three v2.2.0 "Known follow-ups" in one release: the batched tracker-delta queue (AP-23 dispatcher contract), the probe rejection-message regex registry, and the sidecar-contract probe-budget documentation. The v2.2.0 frontmatter `branching.no_force_push: true` flag now has the dispatcher machinery behind it — under v2.2.0 the contract was documented but the dispatcher would still fall through to the same force-push code path; under v2.3.0 the flag is honoured.
