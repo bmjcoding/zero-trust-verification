@@ -1,0 +1,15 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/skills/cleanup-audit/scripts/check_new_debt.sh\" --hook"
+          }
+        ]
+      }
+    ]
+  }
+}
