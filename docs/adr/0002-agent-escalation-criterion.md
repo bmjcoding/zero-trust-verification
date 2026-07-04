@@ -13,3 +13,4 @@ Decision recording is two-level to avoid ADR spam: every agent-resolved decision
 
 - Illustrative cut: *whether* a wire transfer needs an idempotency key is agent-decidable (manifest schema forces it mechanically); *what happens on a duplicate* (silent dedupe vs reject-and-alert) is risk appetite — escalates.
 - Spec-gen's `[SPEC-INCOMPLETE: <field>]` exits are exactly the MUST-escalate set; everything else resolves in the adversarial round.
+- *Erratum (2026-07-04, doc-consistency — decision substance unchanged):* the manifest spec (§10) later split completeness failures into mechanical-validity (agent fixes silently) and MUST-escalate classes; `[SPEC-INCOMPLETE: rule-<n>: <path>]` echoes cover BOTH classes, and only class (b) is the MUST-escalate residue this ADR describes. The canonical echo grammar is `rule-<n>: <path>`, superseding the bare `<field>` form above.
