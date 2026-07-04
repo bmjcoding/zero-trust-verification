@@ -13,8 +13,12 @@ The unit of implementation inside a Story: one TDD vertical slice landing as RED
 _Avoid_: task, ticket
 
 **Spec**:
-A prose document defining work — ADR, design doc, RFC, PRD. Written for humans; the input to Spec Generation review and to Autopilot GENERATE.
-_Avoid_: requirements doc, plan
+A prose document defining work — ADR, design doc, RFC, PRD. Written for humans; the input to Spec Generation review and to Autopilot GENERATE. Has a lifecycle: drafted → product-approved → merged to main → picked up (Pickup is the Claim event).
+_Avoid_: requirements doc, plan, intent spec (same noun; use Spec)
+
+**Runbook**:
+GENERATE's output for a picked-up Spec: the Stories, Subtasks, and acceptance-behavior bindings that close the Spec out end-to-end. Its PR, opened at Pickup, publishes the Spec's predicted file surface as a prediction-tier Claim.
+_Avoid_: technical implementation spec, tech spec
 
 **Verification Manifest**:
 The machine-readable companion a Spec ships with: acceptance behaviors with stable IDs, the journey map with criticality, required vitals, and idempotency requirements. Produced by the Spec Generation tier; consumed by Autopilot (planner maps Subtasks to behavior IDs) and by the Audit (journey-walker verifies against it). Every consumer pins a `schema_version` and degrades gracefully when the manifest is absent.
@@ -47,6 +51,30 @@ _Avoid_: metric, KPI, business event
 **Decision Log**:
 The complete, cheap record of agent-resolved decisions — one line per decision in the tracker and PR body. ADRs are the promoted subset (hard to reverse, surprising, real trade-off), not the whole record.
 _Avoid_: decision register, audit trail (that term is taken by the tracker section)
+
+**Claim**:
+A workstream's visible assertion of the file surface it is changing, derived from open PRs — never declared in a ledger or service. Strengthens through a lattice: prediction (Runbook PR) → in-progress (Story draft PR) → terminal (ready-for-review PR). Actuality beats prediction; first-visible wins; claims decay by observable inactivity.
+_Avoid_: lock, reservation, ownership record
+
+**Attended Session**:
+A workstream a human is steering in real time (typically a person driving Claude Code). Wins ties against an Unattended Drain because a person is burning calendar time.
+_Avoid_: human work, manual work (nearly all pod work is agentic; the axis is attendance, not authorship)
+
+**Unattended Drain**:
+An autopilot drain firing on cadence with no human watching. Yields ties to Attended Sessions — it serializes and re-plans at no one's cost.
+_Avoid_: agent work, bot PR
+
+**Merge Marshal**:
+The serial, deterministic merge backstop: FIFO over ready PRs, verifying the composed state (build on the post-rebase head) before merging. Wiring, not a checker — it holds no quality opinion; every decision is a timestamp, sha, build state, or file-surface intersection. Shift-left machinery exists to make it boring, not absent.
+_Avoid_: merge queue (implies speculation/batching/trains — deliberately excluded), merge train
+
+**Textual Conflict**:
+Two branches edit overlapping hunks; git cannot merge them. Fully preventable before code is written by ownership claims (file- or target-level), because the collision is visible in the claimed surface itself.
+_Avoid_: merge conflict (ambiguous — used loosely for both failure classes)
+
+**Composition Break**:
+Two branches merge cleanly but the composed HEAD is broken — each green against its fork point, red together (e.g., a rename lands while another branch adds a call site to the old name). Not preventable by ownership claims; only detectable by verifying the composed state (build + test of the merged result).
+_Avoid_: semantic conflict, logical conflict, evil merge
 
 **Tier**:
 One of the three independently runnable stages of the suite: Spec Generation, Autopilot, Audit. Together they cover the ADLC left-to-right.
