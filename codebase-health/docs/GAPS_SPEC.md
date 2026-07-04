@@ -166,7 +166,7 @@ unmeasured navigation tax.
 | OB1 | stdout/stderr as the production log channel invisible | `LOGGING_RE` (\b-anchored, case-sensitive; bare `echo` and `console.warn/error` documented residuals) in `debt_patterns.sh`; `run_audit.sh` writes `audit/stdout_logging.txt` with test paths gated OUT; taxonomy Category LOG (word-key — letters freeze at A–G) names stdout-as-log-channel; hits are candidates, not verdicts. **Self-test half:** LG1 (`print(` on a request path), LG2 (`sys.stdout.write(`), LG5 (`console.log` in render()) recall; N6 precondition (CLI prints ARE listed) + `pprint(` decoy never matches; N7 `game_console.log` and N2 `blueprint()/imprint()` exclusions; tests-path exemption. **Blind half:** the CLI-output-vs-log judgment — a Category-LOG finding on `report_cli.py` (N6) is the precision failure; severity grading (debug prints LOW, library/server paths MED). | Self-test half **Verified** (§9). Blind half **Verified** (2026-07-04 eval): N6 precision held — zero Category-LOG findings on `report_cli.py` (its lines correctly listed as candidates); N7 clean; journey-walker #19's prose loosely implied a widgets.ts artifact line but `stdout_logging.txt` verified at exactly the 6 expected lines — prose looseness only, no finding filed. |
 | OB2 | Log-and-swallow: the log line makes an unhandled error LOOK handled | Category LOG names log-and-swallow as Category B's stricter cousin; HIGH requires confirmed reachability on data-write/auth/payment paths; LG3 fixture (service.py's swallowed except around the unconditionally-raising `_charge`). **Self-test half: none by design** — swallowing is decided by what FOLLOWS the log line in the handler block (return vs re-raise), block-level not line-level; kept agent-scored by the spec §12 sweep with the reason recorded. **Blind half:** LG3 recall with reachability-gated severity. | Self-test half: n/a by design (§12 sweep, LG3 entry). Blind half **Verified** (2026-07-04 eval): LG3 recalled at HIGH by incomplete-logic #1 with an EXECUTED reachability probe (order still marked fulfilled after the swallowed exception), the swallow-vs-reraise call made at block level as the row demands; corroborated by journey-walker #5 and security #4. |
 | OB3 | Sensitive values in logs invisible — gitleaks scores hardcoded secrets, not logged variables | security-auditor checklist gains the Logging bullet: CWE-532 secrets/PII in log lines, fail-open log-and-swallow on security paths, unlogged security events CWE-778; precedence routes token-in-log to `security/logging` with lens `incomplete-logic/LOG`; SEC3 fixture continues the SEC series. **Self-test half: none by design** — dataflow semantics (a secret VALUE reaching a log call); lexical `log.*token` matching drowns in pagination-token/CSRF-token false positives (§12 sweep reason). **Blind half:** SEC3 recall with correct category routing. | Self-test half: n/a by design (§12 sweep, SEC3 entry). Blind half **Verified** (2026-07-04 eval): SEC3 recalled at HIGH (security #5, service.py:24, CWE-532) as dataflow rather than lexical matching, with the exact prescribed routing — `security/logging` by precedence, `incomplete-logic/LOG` as lens, stated explicitly by incomplete-logic #10. |
-| OB4 | Observability absences either invisible or severity-inflated | Category LOG's absence class (missing structured logging / correlation IDs) is `<module>`-level, raised only on demonstrably request-serving paths, and HARD-capped MED needs-verification per the 1.4.0 rubric absence gate (Decision 4 — every citation names the amendment, never a pre-existing rule); LG4 fixture. **Self-test half: none possible** — an absence finding has nothing to grep (§12 sweep reason); the cap itself is rubric text. **Blind half:** LG4 recall at exactly MED needs-verification — an LG4 graded HIGH is a cap violation, a miss is a recall failure. | Self-test half: n/a by design (§12 sweep, LG4 entry). Blind half **PARTIAL** (2026-07-04 eval): the defect was hit and the cap held — security #9 filed service.py:31/:39 at MED citing the 1.4.0 absence cap, journey-walker graded every service.py step LOG-ONLY/DARK — but the `<module>`-scoped finding was never filed, the correlation/request-id half was never articulated, and the needs-verification mark was omitted ("confirmed"). Half-credit per the scoring; a miss stays a miss — miss-to-fixture note 1. |
+| OB4 | Observability absences either invisible or severity-inflated | Category LOG's absence class (missing structured logging / correlation IDs) is `<module>`-level, raised only on demonstrably request-serving paths, and HARD-capped MED needs-verification per the 1.4.0 rubric absence gate (Decision 4 — every citation names the amendment, never a pre-existing rule); LG4 fixture. **Self-test half: none possible** — an absence finding has nothing to grep (§12 sweep reason); the cap itself is rubric text. **Blind half:** LG4 recall at exactly MED needs-verification — an LG4 graded HIGH is a cap violation, a miss is a recall failure. | Self-test half: n/a by design (§12 sweep, LG4 entry). Blind half **PARTIAL** (2026-07-04 eval): the defect was hit and the cap held — security #9 filed service.py:31/:39 at MED citing the 1.4.0 absence cap, journey-walker graded every service.py step LOG-ONLY/DARK — but the `<module>`-scoped finding was never filed, the correlation/request-id half was never articulated, and the needs-verification mark was omitted ("confirmed"). Half-credit per the scoring; a miss stays a miss — miss-to-fixture note 1. **Appended (Eval 2, 2026-07-04, HEAD fb0e743):** blind half **Verified** (PARTIAL closed) — fixValidation PASS, clean: incomplete-logic #22 is the LG4-class absence finding filed at module scope (`planted_pkg/service.py <module>`), naming BOTH facets — (a) no structured emission (all prose logger/print/stdout.write, no event names/fields) and (b) no correlation/request-ID propagation (nothing joinable across a request) — graded MED with the explicit needs-verification mark, citing the 1.4.0 amendment's absence hard-cap verbatim. Every first-eval deficiency (`<module>` scope, correlation half, needs-verification mark) closed; the exact shape the amendment specified. |
 | OB5 | New stdout logging lands unremarked; a wrong-often gate would get disabled | `check_new_debt.sh` gains the stdout warn section on non-test added lines, and stdout NEVER gates — report-only on every surface including the strict-default CLI (Decision 1's explicit carve-out); `stdout_logging_count` written to `counts.env`, report-only in `/verify`'s ratchet, never flips FAIL. **Self-test half:** stdout warn section fires on a non-test `print`; a print-only diff passes the strict-default CLI (exit 0); `stdout_logging_count` key present. **Blind half: none — this row is fully deterministic.** | **Verified** (§5b warn + never-gates assertions; §9 count key). No blind half. |
 
 ## BV — Business vitals (instrumentation placement)
@@ -191,7 +191,7 @@ unmeasured navigation tax.
 
 | ID | Gap | Acceptance criterion | Status |
 |---|---|---|---|
-| JW4 | Journeys were walked for correctness only; three 1.4.0 capabilities would each re-walk them, and a C901 in a debug helper outranked nothing | ONE shared trace: journey-walker dispatched FIRST writes `audit/journeys.json` per `references/journey-trace.md` (schema_version 1; CORE/SUPPORTING/DEV criticality ladder with written derivation rules; degrade-to-no-trace rule; proceed-on-failure stated AT the dispatch site — the other six never wait indefinitely and consume documented degrade rules trace-less). Vitals grades, TX critical-step questions, and branching burden are graded in that single walk; performance-analyzer consumes CORE journeys as confirmed hot paths. Findings are criticality-weighted: `journey/path-complexity` HIGH requires a CORE step in `journeys.json` AND an attached deterministic metric line or quoted structural redundancy (JC1 `submit_order`); metric-invisible redundancy stays judgment-capped MED (JC2 `format_receipt`); the same metric off-journey is LOW hygiene (N10 `dump_state`). **Self-test half:** fixture-integrity anchors — README names `transfer_funds`, `submit_order`, `format_receipt` on documented journeys and never `dump_state`; the C901 profile pinned (fires for submit_order and dump_state, absent for format_receipt — 3 ruff-conditional assertions, loud `[skip]` without ruff). **Blind half:** the walk itself (`journeys.json` written once, schema-valid); JC1 HIGH with quoted metric + CORE anchor; JC2 MED cap; N10 criticality-weighting precision (LOW ceiling, no `journey/path-complexity` HIGH); performance-analyzer consuming the trace. | Self-test half **Verified** (§12 README anchors; C901 profile green on the ruff-equipped run). Blind half **PARTIAL** (2026-07-04 eval): the trace was written once and consumed (journeys.json cited inside the BV2 finding; perf consumed CORE ownership); JC1 Verified at HIGH with the quoted C901 metric line + CORE anchor (journey-walker #10 and perf #1 — double-filed, dedup wrinkle → note 3); N10 Verified at LOW with explicit off-journey calibration (lens-name letter wrinkle → note 6); JC2 recalled, but the MED cap was broken by one lens — perf #2 graded HIGH with no metric line existing to attach, while journey-walker independently held the correct MED. Never round up: the JC2 cap clause failed → miss-to-fixture note 2. |
+| JW4 | Journeys were walked for correctness only; three 1.4.0 capabilities would each re-walk them, and a C901 in a debug helper outranked nothing | ONE shared trace: journey-walker dispatched FIRST writes `audit/journeys.json` per `references/journey-trace.md` (schema_version 1; CORE/SUPPORTING/DEV criticality ladder with written derivation rules; degrade-to-no-trace rule; proceed-on-failure stated AT the dispatch site — the other six never wait indefinitely and consume documented degrade rules trace-less). Vitals grades, TX critical-step questions, and branching burden are graded in that single walk; performance-analyzer consumes CORE journeys as confirmed hot paths. Findings are criticality-weighted: `journey/path-complexity` HIGH requires a CORE step in `journeys.json` AND an attached deterministic metric line or quoted structural redundancy (JC1 `submit_order`); metric-invisible redundancy stays judgment-capped MED (JC2 `format_receipt`); the same metric off-journey is LOW hygiene (N10 `dump_state`). **Self-test half:** fixture-integrity anchors — README names `transfer_funds`, `submit_order`, `format_receipt` on documented journeys and never `dump_state`; the C901 profile pinned (fires for submit_order and dump_state, absent for format_receipt — 3 ruff-conditional assertions, loud `[skip]` without ruff). **Blind half:** the walk itself (`journeys.json` written once, schema-valid); JC1 HIGH with quoted metric + CORE anchor; JC2 MED cap; N10 criticality-weighting precision (LOW ceiling, no `journey/path-complexity` HIGH); performance-analyzer consuming the trace. | Self-test half **Verified** (§12 README anchors; C901 profile green on the ruff-equipped run). Blind half **PARTIAL** (2026-07-04 eval): the trace was written once and consumed (journeys.json cited inside the BV2 finding; perf consumed CORE ownership); JC1 Verified at HIGH with the quoted C901 metric line + CORE anchor (journey-walker #10 and perf #1 — double-filed, dedup wrinkle → note 3); N10 Verified at LOW with explicit off-journey calibration (lens-name letter wrinkle → note 6); JC2 recalled, but the MED cap was broken by one lens — perf #2 graded HIGH with no metric line existing to attach, while journey-walker independently held the correct MED. Never round up: the JC2 cap clause failed → miss-to-fixture note 2. **Appended (Eval 2, 2026-07-04, HEAD fb0e743):** blind half **Verified** — fixValidation PASS: exactly ONE `journey/path-complexity` finding exists for submit_order and it is journey-walker's (#25, HIGH, CORE journey + quoted C901 metric line); performance-analyzer corroborated WITHOUT filing (explicitly: "I file no journey/path-complexity findings"), handing the metric line plus a 0.3µs/call timing showing severity rides criticality, not latency; incomplete-logic filed only the LOW dead-branch residue (#26) with an explicit routing note; dead-code D12/D13 stayed on the deletion axis; architecture contributed the seam lens without re-filing. JC2's MED cap was never violated this run (no grader exceeded MED). Deviation recorded exactly, not rounded away: format_receipt's redundancy was judged structurally and journey-attached but FOLDED into JW #25 rather than filed as its own distinct MED entry (standalone filings only at LOW: IL #27, DC D13) — the consolidation pressure JW4's one-finding rule creates is exactly what swallowed JC2's distinct-entry expectation. Spec ruling queued: JW4's one-finding rule and JC2's distinct-entry expectation need an explicit compatibility ruling (Eval 2 record). |
 
 ## NV — Navigability (the machine reader as first-class maintainer)
 
@@ -199,7 +199,7 @@ unmeasured navigation tax.
 |---|---|---|---|
 | NV1 | File size taxed the machine reader unmeasured (token burn, missed edits) | Built-in non-blank-line ladder — rungs 400 [attention] / 800 [warn] / 1600 [god-file], threshold justification recorded in `cross-language-tooling.md` — writes `audit/giant_files.txt` + `giant_file_count`; architecture-reviewer triages (cohesive generated file ≠ finding; accreted god module → seam-based split recommendation with strength label). **Self-test half:** GF1 `megamodule.py` listed at the 400 rung; fixture integrity (400–799 non-blank lines); X1 vendored exclusion; count key + run-over-run stability. **Blind half:** the triage judgment; EN1 (megamodule's unused helpers flagged by dead-code layers) scored as expected noise — neither recall nor precision. | Self-test half **Verified** (§11). Blind half **Verified** (2026-07-04 eval): GF1 carried deterministically (giant_files.txt 1/1); EN1 fired exactly as registered — dead-code #2 CAUTION on the unreferenced megamodule with its stale "every job already imports this" docstring — and was scored as expected noise, neither recall nor precision. |
 | NV2 | Diverged clones are latent missed edits; no duplication signal existed | jscpd row in `cross-language-tooling.md`: optional with loud `[skip]` degrade on TARGET repos (Decision 5), REQUIRED dev dependency for this suite's own `self_test.sh` (Decision 8 — no shim-only pass); output normalized to `audit/dup_jscpd.json` with a `.err` sidecar (knip precedent). ND1 is deterministic-PRIMARY: the byte-identical `format_report_rows` pair asserted in REAL jscpd output; the dead-code agent's extract-vs-intentional-fork judgment demoted to a corroborating lens. **Self-test half:** the §0 hard-requirement gate (fails loudly without jscpd); `dup_jscpd.json` valid JSON; ND1 pair recall; `megamodule.py` absent (varied bodies / `--min-tokens` precision); byte-identical fixture-integrity check; the PATH-stripped degrade run produces the loud `[skip]` miss line. **Blind half:** the extract-vs-fork lens; EN2 (extra dead-code/duplication chatter on the pair) scored as expected noise. | Self-test half **Verified** (§0 + §11). Blind lens **Verified** (2026-07-04 eval): dead-code #13 makes the exact registered call — the `build_*` pair is an intentional per-channel fork (keep separate), `format_report_rows` is shared logic under two copies (extract to one module both import) — architecture A6 concurs; EN2 fired as registered, hedged CAUTION/needs-verification, scored as expected noise. |
-| NV3 | Commented-out code blocks — dead code in comment form — were grep-invisible | Leader-anchored `COMMENT_LINE_RE`/`CODE_COMMENT_RE` + `CO_MIN_RUN=3`/`CO_MIN_CODE=2` in `debt_patterns.sh` (code token IMMEDIATELY after the comment leader, so prose never matches); awk pass writes `audit/commented_code.txt` + `commented_code_count`; `check_new_debt.sh` warns on newly added blocks and the class gates the strict-default CLI. **Self-test half:** CO1 recall (block above `apply_discount`); N11 precision (zero `metrics.py` lines + the leader-anchoring regex unit); fixture integrity (≥ CO_MIN_CODE code-shaped lines in checkout.py); vendored exclusion; count key + stability; hook commented-block warn + prose-only silence. **Blind half:** dead-code-cleanup's delete-vs-genuine-spec-comment judgment on CO1. | Self-test half **Verified** (§11 + §5b). Blind half **not scored** by the 2026-07-04 eval — CO1's delete-vs-keep lens is not among the 17 agent-scored expected entries, and no adverse event was observed; deterministic half consistent (commented=1; zero metrics.py lines per N11). The lens stays **Pending blind eval**; not rounded up. Not exercisable by the 2026-07-04 TH4-style scratch loop — the delete-vs-genuine-spec-comment call is agent judgment with no rerunnable gate behind it, so the exercising event is the next manual blind-corpus eval (recurrence per pre-flight fix E) in which dead-code-cleanup is dispatched over the blind copy and its CO1 delete-vs-keep verdict is hand-scored against EXPECTED_FINDINGS.yaml. |
+| NV3 | Commented-out code blocks — dead code in comment form — were grep-invisible | Leader-anchored `COMMENT_LINE_RE`/`CODE_COMMENT_RE` + `CO_MIN_RUN=3`/`CO_MIN_CODE=2` in `debt_patterns.sh` (code token IMMEDIATELY after the comment leader, so prose never matches); awk pass writes `audit/commented_code.txt` + `commented_code_count`; `check_new_debt.sh` warns on newly added blocks and the class gates the strict-default CLI. **Self-test half:** CO1 recall (block above `apply_discount`); N11 precision (zero `metrics.py` lines + the leader-anchoring regex unit); fixture integrity (≥ CO_MIN_CODE code-shaped lines in checkout.py); vendored exclusion; count key + stability; hook commented-block warn + prose-only silence. **Blind half:** dead-code-cleanup's delete-vs-genuine-spec-comment judgment on CO1. | Self-test half **Verified** (§11 + §5b). Blind half **not scored** by the 2026-07-04 eval — CO1's delete-vs-keep lens is not among the 17 agent-scored expected entries, and no adverse event was observed; deterministic half consistent (commented=1; zero metrics.py lines per N11). The lens stays **Pending blind eval**; not rounded up. Not exercisable by the 2026-07-04 TH4-style scratch loop — the delete-vs-genuine-spec-comment call is agent judgment with no rerunnable gate behind it, so the exercising event is the next manual blind-corpus eval (recurrence per pre-flight fix E) in which dead-code-cleanup is dispatched over the blind copy and its CO1 delete-vs-keep verdict is hand-scored against EXPECTED_FINDINGS.yaml. **Appended (Eval 2, 2026-07-04, HEAD fb0e743 — the named exercising event):** blind lens **Verified** — fixValidation PASS: dead-code D11 rendered an explicit delete-vs-spec-comment verdict on the CO1 block (checkout.py:75-83): DELETE — "VCS owns history, not a spec-comment" — anchored to commented_code.txt 1/1 and evidenced as machine-reader hallucination bait: the dead variant references `_DISCOUNT_HISTORY` (exists nowhere; NameError if resurrected) and uses `/100.0`+round() vs the live `//100` floor; both claims verified against the blind fixture by the scorer. Hand-scored against the key: CO1 is a planted commented-out prior implementation, so delete is the correct disposition; IL #28 independently reached delete-with-confirm and added the one valuable nuance (the dead variant kept an audit trail the live one dropped — flag whether the audit requirement was lost). Verdict correct, evidence exemplary. |
 | NV4 | A name that lies (`get_user_count` returning active sessions) poisons every reader's context | MN1 fixture; `architecture-and-strictness.md`'s machine-reader subsection anchors misleading-name at MED. Agent-scored: name-vs-behavior semantics has no lexical form (§12 sweep reason — recorded so the honesty clause stays checkable). **Self-test half: none by design.** **Blind half:** MN1 recall at MED. | Self-test half: n/a by design (§12 sweep, MN1 entry). Blind half **Verified** (2026-07-04 eval): MN1 recalled at MED by four independent lenses — dead-code #12 (misleading-name anchor = MED, bodies byte-identical), incomplete-logic #15 (executed probe: 1 user, 2 sessions → returns 2), architecture A5, journey-walker #26 — name-vs-behavior semantics captured exactly. |
 | NV5 | Navigability debt had no severity home and no between-audit prevention | `architecture-and-strictness.md` gains "Locality includes the machine reader" (token burn, missed edits, hallucinated context, definition-of-done erosion) with severity anchors inside the ONE rubric: giant file / near-dup / commented block LOW–MED, MED on churn hotspots, misleading name MED, HIGH only via existing confirmation gates. The two new ratchet keys (`giant_file_count`, `commented_code_count`) are compared report-only by `/verify` (pre-1.4 baselines say "no comparable baseline", never 0); of the navigability classes only commented-out blocks join the strict-default CLI gate (fixture-locked; size/dup counts are audit-time ratchets only). **Self-test half:** the two count keys + run-over-run stability; the strict-contract behavior split (gated class warns and gates, non-gated classes never do; escape hatches `--no-strict` / `WARN_ONLY=1` exit 0; `--hook` exits 0 unconditionally). **Blind half:** severity-anchor adherence in agent output (no HIGH without a confirmation gate). | Self-test half **Verified** (§11 counts/stability; §5b strict-contract assertions). Blind half **Verified** (2026-07-04 eval): no navigability HIGH anywhere without a confirmation gate — giant/dup/commented/misleading-name findings all landed LOW–MED or hedged CAUTION; the run's one HIGH-cap deviation (perf #2 on JC2) is a JW4 path-complexity gate issue, recorded there, not a navigability-anchor violation. |
 
@@ -400,3 +400,188 @@ TH4's blind half (the `/tmp/th4_exercise` scratch loop recorded in its row,
 which supersedes the earlier "stays Pending blind eval" sentence in the
 closure-status paragraph — that sentence is retained above per append-only
 discipline, not because it is current).
+
+### Eval 2 — second blind-corpus eval (recorded 2026-07-04)
+
+This is the fresh eval the eval-currency note queued; it scores the
+POST-debt-closure tree (attrition-fixed corpus + JW4/OB4 prompt edits) and
+certifies currency per the pre-flight fix E recurrence clause. Everything
+above stays verbatim; row-status updates were appended to their cells, never
+rewritten.
+
+**Provenance.** Date and git SHA arrived from the run harness as literal
+`undefined` (same non-stamping as Eval 1); recorded 2026-07-04 from session
+context. Git verified at record time, not asserted: working tree CLEAN at
+HEAD `fb0e743` ("fixtures+agents: close recorded 1.4.0 debt (attrition, JW4,
+OB4, TH4)") — the committed pin the first record asked for; this eval scores
+that content as committed, no uncommitted-drift caveat this time. Environment:
+pytest 9.1.1 provisioned per note 5. Corpus: attrition-fixed — blind counts =
+planted counts, 8/8 in `counts.env` (including `marker_count=7` where Eval 1
+saw the documented stripper-artifact 0).
+
+**Recall 25/28.** 16/17 on the original agent-scored set — TF2, TF6, TF8,
+TQ1, TQ4, TQ5, TQ8, LG3, LG4 (now full-credit — see OB4 append), SEC3, TX1
+(CRITICAL, deliverer named, executed double-charge probe), TX2, TX3, J5, JC1,
+MN1 hit; JC2 PARTIAL (judged and journey-attached but folded into JW #25;
+distinct-entry expectation not met — recorded at JW4). 5/8 on the post-eval
+registrations, first-run recall against the fresh key:
+
+- **B4** hit — IL #18 + JW #7: `--window` parsed/echoed/ignored, static
+  `_ROWS`, MED; N6's LOG carve-out simultaneously respected.
+- **P2** hit — perf #2 MED unbounded module-level `_SESSIONS`/`_FULFILLED`
+  (service.py:14-15), no eviction, measured growth probe attached.
+- **TX4** hit with a severity under-call — filed (SEC #8 + JW #11) under the
+  correct canonical slug missing-compensation, but graded MED
+  needs-verification vs the key's HIGH-is-reachable; auditors cite the
+  in-memory backend that cannot fail mid-sequence. Rubric ruling queued:
+  does CORE-journey placement alone lift the gate?
+- **TX5** hit — refund_payment missing-dedup-guard (SEC #10 + JW #14), N8
+  contrast intact.
+- **TX6 MISSED** (partial credit) — only the secondary growth facet surfaced
+  (perf #2: "grows one id per refund webhook forever"); no agent rendered the
+  restart/multi-worker durability judgment on the process-local
+  `_PROCESSED_EVENTS` store, and three agents cited N8's guard-logic contrast
+  without questioning the store beneath it.
+- **TX7** hit — charge_card keyless charge (SEC #9 + JW #13) at exactly the
+  key's MED needs-verification cap; N9 simultaneously respected (emission
+  graded OBSERVED, no uninstrumented flag).
+- **SEC4 MISSED by all six agents** — open_session (service.py:18-25) mints a
+  session for ANY non-empty api_key and never consults validate_api_key
+  (fixture-verified: only `if not api_key: raise`). Agents circled it from
+  three sides (SEC #3 "no in-repo consumer gates access on this boolean";
+  ARCH-2 validator-has-no-callers; JW/IL/SEC all filed the credential-LOGGING
+  on the same line) but nobody connected validator-exists-and-is-skipped into
+  the authn-bypass finding.
+- **SEC5 MISSED by all six agents** — get_order_status (service.py:28-34)
+  checks session EXISTENCE only; nothing binds order_id to the session's
+  device → IDOR. Worse than silent: security #12 wrote "Session check itself
+  is present" — the exact trap. Both misses sit in a file every agent read in
+  full.
+
+3/3 corroboration lenses delivered (J3 dark-money HIGH gate explicitly
+satisfied; J4 MED cap respected — with a qualifier drift: JW marks it
+"confirmed" having walked the flow, where the key's "untraced flow →
+needs-verification" premise is now stale, refresh queued; ND1
+extract-vs-fork rendered, byte-identical via diff, ARCH-6 concurs). Legacy
+pre-1.4.0 entries fully re-surfaced with no regression (B1–B3, C1, D1, D2,
+E1, F1+DC1, P1, SEC1, SEC2, J1, J2 — SEC1's MD5 substrate scoreable again on
+the attrition-fixed corpus).
+
+**Detection-gap headline.** The three misses share one shape: SEC4, SEC5, and
+TX6 are all what-check-SHOULD-exist-here judgments on code every agent read
+in full. The suite reliably grades what code DOES (logging, emission,
+retries) and went 0-for-3 on absent authn/authz/durability checks. Next
+prompt iteration targets the cross-file which-check-should-run-here judgment.
+
+**Precision: zero hard violations.** All 12 traps held, each explicitly
+dispositioned rather than silently avoided: N1 (restructured registry.py —
+dead-code kept handle_webhook off the delete list citing the getattr
+dispatch; JW and ARCH independently warned the static-callgraph lens), N2
+(IL dispositioned the ui.py lookalike tokens), N3 ("all remedies, no
+findings"), N4, N5, N6 (IL #18 marked the report_cli prints CORRECT product
+output), N7 (in-page HUD methods), N8 (used as the correct contrast, never
+flagged), N9 (OBSERVED), N11 (1/1, prose untouched), X1. ONE borderline,
+letter not substance — N10: JW filed dump_state as #26 UNDER his
+path-complexity section (slug convoluted-branching, LOW, explicitly
+off-journey with the LOW-hygiene-ceiling rationale verbatim; perf
+corroborated the disposition). The criticality-weighting trap held perfectly
+but the categorical housing collides with N10's strict letter. Ruling queued:
+score as compliant-in-substance and reword N10, or mint a non-journey hygiene
+category for off-journey C901 hits (aligns with Eval 1's note 6 rename).
+
+**Fix validation — all four recorded debts close.** JW4 **PASS** (sole filer
+held; perf corroborated without filing — appended at the row; the JC2
+compatibility ruling is the residue). OB4 **PASS, clean** (module scope, both
+facets, MED needs-verification verbatim — appended at the row). NV3 **PASS**
+(delete verdict with fixture-verified resurrection-hazard evidence — appended
+at the row). **A/G blind recall PASS**, closing Eval 1's note-4 stripper
+artifact: A-family 7/7 — IL #9 quotes all five sync_users markers by token
+(TODO, todo, "for now", WIP, TBD), IL #10 quotes both make_report markers
+(PLACEHOLDER, NotImplementedError); dead-code's ledger acknowledges
+"markers.txt 7/7 — all markers.py — routed to incomplete-logic" and the tool
+resisted the ui.py substring bait and the vendored TODO. G-family 5/5
+suppression lines consumed with the concealed defect named in every case:
+nosec→MD5 (IL #11 + SEC #6), noqa F841→save_config no-write (IL #3), mypy
+ignore-errors + allowlist-fixture pragma→hardcoded AWS pair (IL #12 + SEC
+#7), @ts-nocheck→innerHtml typo (IL #6, correctly HIGH under the G
+hides-a-confirmed-defect condition). Both artifact files listed in
+consumption ledgers — the plants survived blind and the agents ate them.
+
+**Probes PASS with one environmental nuance** (closing most of note 5).
+Test-health executed 8 pre-declared bounded pytest probes (P1–P8: pytest
+9.1.1, read-only, `-p no:cacheprovider`, PYTHONDONTWRITEBYTECODE, run from
+/tmp, fixture untouched) and reconciled every result honestly. Probe evidence
+DID upgrade a traced-only finding: TF5 went traced→demonstrated at collection
+level (P2's ModuleNotFoundError, blast radius matching the key's folded facet
+exactly). TF2's shuffle/alone probe was BLOCKED by that same collection error
+(`requests` absent from the probe env) and the auditor reported the block
+rather than overclaiming; non-confirming probes (P3/P4 0/10 red, P8 both-TZ
+green) were reported as non-confirming with correct probability/mechanism
+reasoning. Suite-wide probe discipline upgraded severities where it counted:
+security's redelivery probe made TX1 an executed CRITICAL, IL executed 9
+probes, perf measured the quadratic. Environment fix for next run: install or
+stub `requests` in the probe env so test_shared_state.py collects and TF2 can
+be demonstrated.
+
+**Expected noise and rulings queued.** EN1–EN4 and EN6 triggered exactly as
+registered; EN5 silent (noise is optional). Queue: (a) mint **EN7** for
+dead-module chatter — six defensible candidates this run (D5 metrics, D6
+poller, D8 config, D9 ui, D23 widgets.ts, D24 leftpad) with no register to
+score against; (b) an N3 scope sentence or EN entry for conftest
+unconsumed-remedy findings (ARCH-8, DC D22 — outside N3's letter,
+substantively aligned with TF3/TF4's ignored-remedy framing); (c) pin
+TX_GUARD_RE scope — tx_guards.txt carries a megamodule.py:301 false-positive
+seed (dedupe_keep_order), correctly dismissed by JW as candidates-not-verdicts
+(fixture assertion per the N2 precedent); (d) a severity-reconciliation rule
+for the precedence chain — finalize_order carries three grades (IL HIGH
+executed = the key's LG3 answer, SEC MED-nv while claiming
+security-precedence ownership, JW TX HIGH); (e) specify final-report dedup
+for the designed TX dual-filing (JW journey-scoped + SEC file-scoped shared
+slugs on TX1/TX2/TX3/TX5/TX7) before it can count against anyone; (f)
+refresh J4's now-stale "untraced flow" premise; (g) the JW4/JC2 compatibility
+ruling and the N10 rewording above.
+
+**Extras — the next miss-to-fixture queue (11), roughly in value order:**
+
+1. registry.dispatch unknown-event → raw AttributeError /
+   reflection-without-allowlist (IL #17 with executed probe P7b; SEC #13
+   CWE-470; ARCH-3) — real, executed, unregistered; distinct from N1's
+   deletion-grading contract. Strongest registration candidate this run.
+2. registry.handle_webhook placeholder-success no-op (`{'handled': True}`,
+   zero side effects) — IL #16 + JW #8; incomplete-logic/B candidate or EN.
+3. Journey/uninstrumented grades beyond J3/J4/J5, all factually correct
+   blind: submit_payout DARK (JW #18), transfer_batch DARK (JW #19), checkout
+   order-placed dark-state-transition (JW #21), open_session log-only-auth
+   (JW #22), record_dispatch log-only-dispatch (JW #23), finalize_order
+   log-only-money (JW #24) — register or EN so per-step vitals grading scores
+   deterministically next run.
+4. web/widgets.ts GameConsoleWidget.lines unbounded buffer + import-time
+   singleton with no reset seam (perf #3 MED-nv, ARCH-9) — P2-precedent
+   resource growth on the N7 decoy file; own entry keeps the decoy's scope
+   logging-only.
+5. service.py module docstring claims public-HTTP-router mounting that exists
+   nowhere in-repo (IL #21, DC D18) — this doc-drift governed four agents'
+   severity caps; registering it stabilizes every MED-cap argument built on
+   it.
+6. billing.py:89-95 dead retry arm — LedgerTimeout defined and caught but
+   raised nowhere; docstring promises resilience nothing can trigger (IL #29,
+   DC D14, JW #12); dead-branch/doc-drift facet distinct from TX2.
+7. ui.py stubborn_retry identity return with a lying docstring (IL #24) —
+   extend EN6 or register.
+8. megamodule.ellipsize_path unreproducible docstring example (IL #30) and
+   the module docstring's "every job already imports this" vs zero importers
+   (DC D2/ARCH-5) — two low-stakes doc-hygiene candidates.
+9. node_modules/leftpad unused AND undeclared by any manifest (DC D24) —
+   agent-level hygiene beyond X1's artifact contract.
+10. Zero test files touch billing.py/checkout.py/service.py (test-health
+    orchestrator note 3) — the corpus's worst test-health fact has no
+    scoreable register entry; a test-health absence-class registration closes
+    that.
+11. ARCH-4 state-as-module-globals missing unit-of-work seam
+    (billing/checkout/service/metrics) — the architecture-shape finding
+    underlying P2 and every TX untestability argument; unregistered as a
+    shape defect.
+
+Per pre-flight fix E, the next recurrence trigger is any change to agent
+prompts, the taxonomy, or dispatched references after `fb0e743`; the SEC4/
+SEC5/TX6 detection-gap prompt work and the queued rulings above will trip it.
