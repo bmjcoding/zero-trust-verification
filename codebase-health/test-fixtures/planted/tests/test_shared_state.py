@@ -2,6 +2,11 @@
 
 import threading
 
+# PLANT TF5 (facet, post-1.4.0-eval): this module-level import of the HTTP
+# PLANT TF5: client exists only to serve the live-network test below, and it
+# PLANT TF5: breaks COLLECTION of the whole file (TF2/TF6 included) in any
+# PLANT TF5: environment without that dependency - blast-radius evidence
+# PLANT TF5: folded into TF5's entry, not a second finding.
 import requests
 
 _SETTINGS_CACHE = {}

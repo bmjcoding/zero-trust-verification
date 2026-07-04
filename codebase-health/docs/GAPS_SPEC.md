@@ -221,11 +221,13 @@ CHANGELOG 1.4.0.
 §10 — `make_blind_corpus.sh` → `/audit` over the blind copy → hand-scored
 against `test-fixtures/EXPECTED_FINDINGS.yaml`, scored by the manual
 blind-corpus process. Eval record: date — not stamped by the run harness;
-recorded 2026-07-04 from session context. Git SHA — not stamped by the
-harness; at recording time the tree is HEAD `5a3463a` plus uncommitted 1.4.0
-changes, so no single SHA pins the evaluated state. That is a gap against this
-register's own record-keeping bar: commit and re-stamp the exact SHA before
-1.4.0 is tagged.
+recorded 2026-07-04 from session context. Git SHA — re-stamped 2026-07-04: the
+evaluated 1.4.0 tree is committed as `4e9e275` ("feat: migrate codebase-health
+plugin into the suite (v1.4.0)", merged via PR #7, `707cc3e`) in
+zero-trust-verification. At eval time the same content sat uncommitted on
+`codebase-health-suite` HEAD `5a3463a` — `4e9e275` is the pin. The post-eval
+fixture registrations documented below entered the answer key AFTER this eval
+(separate commit); the next blind eval scores them fresh.
 
 **Recall 20/20.** All 17 agent-scored plants hit — TF2, TF6, TF8, TQ1, TQ4,
 TQ5, TQ8, LG3, LG4 (partial — see OB4), SEC3, TX1, TX2, TX3, J5, JC1, JC2,
@@ -308,3 +310,68 @@ changed since the last recorded eval — the 17 agent-scored expected entries
 (TF2/TF6/TF8, TQ1/TQ4/TQ5/TQ8, LG3/LG4, SEC3, TX1–TX3, J5, JC1–JC2, MN1), the
 agent-level must_not_flag traps, and the EN1–EN4 noise exclusions are scored
 nowhere else.
+
+### Post-eval registrations (2026-07-04, entered AFTER the recorded eval)
+
+Miss-to-fixture follow-through on the extras list above (this register's
+2026-07-04 blind-eval record): the corpus-registration half is done. Every
+item below entered `test-fixtures/EXPECTED_FINDINGS.yaml` AFTER the eval was
+scored — the recall/precision totals above stand against the pre-registration
+key, and the next blind eval scores these entries fresh (first-run recall,
+never regression). Each new entry's note carries the provenance line
+"Registered post-1.4.0-eval, found by blind eval."
+
+- Registered `expected` (all `expected_by: agent` — no deterministic layer
+  scores any of them): **SEC4** open_session authn bypass (`security/authn`,
+  never calls validate_api_key), **SEC5** get_order_status IDOR
+  (`security/authz`), **TX4** transfer_funds non-atomic debit/credit (slug
+  missing-compensation; distinct defect from J3 on the same symbol), **TX5**
+  refund_payment missing charge_id dedup (slug missing-dedup-guard), **TX6**
+  non-durable/unbounded `_PROCESSED_EVENTS` dedup store (symbol `<module>`,
+  slug non-durable-dedup-store, MED needs-verification), **TX7** charge_card
+  keyless charge (slug missing-idempotency-key, MED needs-verification — the
+  eval's borderline security finding 14), **B4** report_cli fake windowed
+  report (hardcoded `_ROWS`, parsed-but-ignored `--window`;
+  `incomplete-logic/B`), **P2** unbounded `_SESSIONS`/`_FULFILLED` growth
+  (`performance/resource-growth`, symbol `<module>`).
+- Folded, not registered: TF5's entry gains the module-level
+  `import requests` collection-breakage facet (same plant, one defect —
+  blast-radius evidence, not a second finding).
+- Trap-scope note extensions (letters narrowed to their intent; no ID retired,
+  every trap still scores): N8 → guard LOGIC only (store durability is TX6,
+  signature chatter is EN5); N9 → journey/uninstrumented lens only (keyless
+  charge is TX7); N6 → Category-LOG only (fake report is B4); N2 →
+  deterministic artifacts only (empty side-effect bodies are EN6).
+- New `expected_noise`: **EN5** webhook signature/authenticity absence on both
+  billing webhook handlers (transport boundary out of frame — defensible,
+  unscoreable), **EN6** ui.py genuinely-empty side-effect bodies (factually
+  correct chatter in the blind corpus). The extras list's dead-module-chatter
+  candidate (formerly floated as "EN5") remains unregistered and would take
+  EN7.
+- N3 QA closed with a fixture fix: frozen_clock's dotted-string monkeypatch
+  target resolved to a namespace-package shadow of the running test module
+  under pytest's default prepend import mode (verified by direct import
+  probe; `raising=False` kept the miss silent, so the clock never froze).
+  `tests/conftest.py` now patches via `sys.modules`; N3's precision contract
+  is unchanged.
+- `scripts/self_test.sh` gains §13, LOCK assertions only — already-green pins
+  of the new entries' seed halves and fixture substrate (charge_card def-site
+  in `vital_candidates.txt`, the module-level stores, the hardcoded `_ROWS` +
+  `--window`, the module-level import, the sys.modules patch). No new
+  detector assertions: every new entry is agent-scored, per the honesty
+  clause. Self-test 131 → 141 green (the frozen 131 unchanged).
+- Placement fix (2026-07-04 adversarial verification of this registration):
+  TX7's original fixture annotation named its slug, whose token is itself a
+  `TX_GUARD_RE` alternate — two PLANT comment lines leaked into the
+  `tx_guards.txt` seed artifact (counts.env was untouched; seeds are never
+  counted). Fixed by rewording the billing.py annotation (the slug now lives
+  only in the manifest, per the TX1 "Slugs in the manifest" precedent), the
+  constraint is recorded in TX7's manifest note (the N3 pytest-rerunfailures
+  precedent), and §13 gains one already-green pin: no PLANT comment line in
+  `tx_guards.txt`. Known pre-existing (pre-eval, unchanged): N8's
+  "CORRECT idempotency guard" comment line was already listed in
+  `tx_guards.txt` at the recorded eval and stays as-is — the eval's artifact
+  spot-checks scored against it.
+- Blind corpus regenerated via `make_blind_corpus.sh`; zero residue from the
+  new PLANT/MUST-NOT-FLAG annotations verified by token grep over
+  `test-fixtures/blind/`.
