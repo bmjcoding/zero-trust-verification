@@ -46,8 +46,10 @@ Worked dedups the chain yields: a token logged on an auth path →
 security-auditor and journey-walker → `security/transactional-integrity`, lens
 journey; a wrong-seam test that also constrains nothing →
 `test-health/T*`, lens architecture; a convoluted CORE journey step also
-flagged as a hot path → `performance`, lens `journey/path-complexity`
-(severity stays criticality-weighted). One deliberate non-dedup: a
+flagged as a hot path → `journey/path-complexity` per the slot mapping above,
+lens performance (filed solely by journey-walker — filer ownership is stated
+once in its agent prompt, which performance-analyzer cites; severity stays
+criticality-weighted). One deliberate non-dedup: a
 rubber-stamp test blessing a reachable security defect is TWO findings on two
 symbols, cross-linked, never merged. Genuinely different defects on
 the same symbol keep different slugs and stay separate.

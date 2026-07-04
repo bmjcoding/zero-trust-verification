@@ -100,10 +100,15 @@ collects hits into `audit/stdout_logging.txt` as candidates, not verdicts.)
   the finding to `security/logging` with `incomplete-logic/LOG` in lenses.
 - **Absence of structured logging / correlation IDs**: a module whose
   request-serving paths emit nothing traceable, or logs that cannot be joined
-  across a request. Report at `<module>` level, only on demonstrably
-  request-serving paths, and hard-cap MED needs-verification per the 1.4.0
-  rubric absence gate (`severity-rubric.md`, 1.4.0 amendments — this is a new
-  rule in 1.4.0, not a pre-existing one).
+  across a request. An absence finding names WHICH facets are absent —
+  structured emission, correlation/request-ID propagation — explicitly;
+  hitting one facet does not cover the other. File at the narrowest honest
+  scope: `<module>`-level when the absence is file-wide (a single-line
+  citation never stands in for a module-wide gap), and only on demonstrably
+  request-serving paths. Absence findings always carry the
+  **needs-verification** mark per the severity-rubric absence cap
+  (`severity-rubric.md`, 1.4.0 amendments — cite the amendment, never
+  restate it here).
 - Guardrails: CLI/user-facing output, `__main__` blocks, tests, dev scripts,
   and shell `echo` are CORRECT uses of stdout — not findings.
 

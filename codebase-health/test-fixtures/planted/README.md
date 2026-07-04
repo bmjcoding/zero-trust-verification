@@ -1,6 +1,6 @@
 # planted-pkg
 
-Fixture package for the codebase-health self-test. Every defect is intentional —
+Fixture package for the codebase-health self-test - every PLANT is intentional;
 ground truth lives in `EXPECTED_FINDINGS.yaml`.
 
 ## Quickstart
@@ -9,8 +9,8 @@ ground truth lives in `EXPECTED_FINDINGS.yaml`.
 from planted_pkg import quickstart
 
 # PLANT J1 (broken documented journey): `quickstart` does not exist anywhere in
-# the package. A journey-walker tracing this quickstart must report BROKEN at
-# this import step.
+# PLANT J1: the package. A journey-walker tracing this quickstart must report
+# PLANT J1: BROKEN at this import step.
 client = quickstart(api_key="sk-test")
 client.sync()
 ```
