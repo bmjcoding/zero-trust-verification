@@ -8,7 +8,8 @@ PLANT LG4: has no structured logging and no correlation/request id on any log
 PLANT LG4: line, so a production failure cannot be tied back to the request
 PLANT LG4: that caused it. Absence finding: hard-capped MED needs-verification
 PLANT LG4: per the 1.4.0 rubric absence gate. Agent-scored (nothing to grep).
-PLANT index: LG1, LG2, LG3, SEC3 also live in this file, each at its own site.
+PLANT index: LG1, LG2, LG3, SEC3, SEC4, SEC5, P2 also live in this file, each
+PLANT index: at its own site.
 """
 
 import logging
@@ -17,12 +18,21 @@ import uuid
 
 logger = logging.getLogger(__name__)
 
+# PLANT P2 (performance/resource-growth, symbol <module>): _SESSIONS and
+# PLANT P2: _FULFILLED below accrete one entry per request with no eviction,
+# PLANT P2: expiry, or cap - a long-running worker grows without bound. MED.
+# PLANT P2: Agent-scored. Registered post-1.4.0-eval (blind-eval extra).
 _SESSIONS: dict = {}
 _FULFILLED: set = set()
 
 
 def open_session(device_id: str, api_key: str) -> str:
     """Exchange a device's provisioning credential for a session id."""
+    # PLANT SEC4 (security/authn, authn bypass): the only credential check is
+    # PLANT SEC4: non-empty; auth.py's validate_api_key is never called, so a
+    # PLANT SEC4: garbage key mints a valid session. HIGH (public auth
+    # PLANT SEC4: surface). Agent-scored - cross-file "which check SHOULD run
+    # PLANT SEC4: here" judgment. Registered post-1.4.0-eval (blind-eval extra).
     if not api_key:
         raise ValueError("api_key is required")
     session_id = uuid.uuid4().hex
@@ -38,6 +48,11 @@ def open_session(device_id: str, api_key: str) -> str:
 
 def get_order_status(session_id: str, order_id: str) -> dict:
     """Return the current fulfillment state for one order."""
+    # PLANT SEC5 (security/authz, IDOR): the session is checked for EXISTENCE
+    # PLANT SEC5: only - nothing binds order_id to the session's device, so
+    # PLANT SEC5: any authenticated session can enumerate every order's
+    # PLANT SEC5: state. HIGH (missing object-ownership check). Agent-scored.
+    # PLANT SEC5: Registered post-1.4.0-eval (blind-eval extra).
     if session_id not in _SESSIONS:
         # PLANT LG1 (Category LOG, stdout-as-log-channel): print used as the
         # PLANT LG1: server path's log channel. Deterministic: LOGGING_RE,

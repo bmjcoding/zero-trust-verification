@@ -7,9 +7,16 @@
 # MUST-NOT-FLAG N3: digit anchor in FLAKY_RE. Any line of this file in
 # MUST-NOT-FLAG N3: test_flakiness.txt or test_vacuity.txt, or any agent
 # MUST-NOT-FLAG N3: test-health finding on it, is a precision failure.
+# MUST-NOT-FLAG N3 (QA, post-1.4.0-eval): frozen_clock's original
+# MUST-NOT-FLAG N3: dotted-string patch target resolved to a
+# MUST-NOT-FLAG N3: namespace-package shadow of the running test module under
+# MUST-NOT-FLAG N3: pytest's default prepend import mode, and raising=False
+# MUST-NOT-FLAG N3: kept the miss silent; it now patches via sys.modules.
+# MUST-NOT-FLAG N3: The precision contract is unchanged.
 
 import asyncio
 import random
+import sys
 from datetime import datetime, timezone
 
 import pytest
@@ -40,7 +47,15 @@ def frozen_clock(monkeypatch):
         def now(cls, tz=None):
             return FROZEN_NOW.astimezone(tz) if tz else FROZEN_NOW.replace(tzinfo=None)
 
-    monkeypatch.setattr("tests.test_clock_random.datetime", _FrozenDatetime, raising=False)
+    # Patch the module object pytest actually executes. A dotted-string
+    # target that names the tests package is import-mode-sensitive: with no
+    # tests/__init__.py the running module is top-level test_clock_random,
+    # and a package-path import lands on a namespace-package shadow copy the
+    # tests never read. sys.modules finds the loaded module under either
+    # name.
+    for name, module in list(sys.modules.items()):
+        if name.rpartition(".")[2] == "test_clock_random" and module is not None:
+            monkeypatch.setattr(module, "datetime", _FrozenDatetime, raising=False)
     return FROZEN_NOW
 
 

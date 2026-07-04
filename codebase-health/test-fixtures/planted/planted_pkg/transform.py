@@ -24,4 +24,4 @@ def classify(kind: str) -> str:
     elif kind == "org":
         return "company"
     # PLANT D2 (partial input coverage): 'service' documented but unhandled,
-    # and no else: raise - silently returns None for it. Category D.
+    # PLANT D2: and no else raise - silently returns None for it. Category D.

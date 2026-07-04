@@ -113,10 +113,17 @@ Findings (severity per the `cleanup-audit` skill's
   money-movement or auth path, with the trace attached as evidence; everything
   else hard-caps at MED, needs-verification riding on untraced/unconfirmed
   reachability, no judgment escape above the cap.
-- **`journey/path-complexity`** (slug `convoluted-branching`):
-  criticality-weighted, never raw-metric — HIGH requires a CORE step AND an
-  attached deterministic metric line or quoted structural redundancy; the same
-  metric off-journey is LOW hygiene; judgment-only caps at MED.
+- **`journey/path-complexity`** (slug `convoluted-branching`): **journey-walker
+  is the SOLE filer of `journey/path-complexity` findings — it holds the trace;
+  performance-analyzer contributes metric lines and corroborates, and never
+  files.** This sentence is the one canonical statement of that ownership —
+  performance-analyzer's ownership note and the worked dedup example in
+  `references/audit-state-and-verify.md` cite it, nothing restates it. Severity
+  is criticality-weighted per the `journey/path-complexity` rule in the
+  `cleanup-audit` skill's `references/severity-rubric.md` (canonical — cite it,
+  never restate it); under that rule, a path-complexity finding with NEITHER a
+  deterministic metric line NOR quoted structural redundancy attached
+  (judgment-only) is capped MED.
 - **Critical-step defects** are taxonomy Category TX — category
   `security/transactional-integrity` (shared with security-auditor; the
   precedence chain in `references/audit-state-and-verify.md` dedups to one

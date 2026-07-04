@@ -20,6 +20,11 @@
 # MUST-NOT-FLAG N2: * TEST_SKIP_RE - queue.skip(3) is anchored out by the
 # MUST-NOT-FLAG N2:   (it|test|describe|xit) receiver list; any line of this
 # MUST-NOT-FLAG N2:   file in test_skips.txt is a precision failure.
+# MUST-NOT-FLAG N2 (scope, post-1.4.0-eval): N2 constrains ONLY the four
+# MUST-NOT-FLAG N2: deterministic artifacts above - the genuinely-empty
+# MUST-NOT-FLAG N2: bodies of on_swipe/wipe_cache/imprint are EN6 expected
+# MUST-NOT-FLAG N2: noise for agent no-op findings, neither recall nor
+# MUST-NOT-FLAG N2: precision.
 
 AUTHORED_BY = "shell-team"
 wire_format = "msgpack"
