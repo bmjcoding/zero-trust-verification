@@ -12,11 +12,12 @@
 ## Dependencies and landing order
 
 `AV3-15 (host adapter) gates the self-hosted DELIVERY of everything` — draining this
-register on this GitHub repo hits Hard Contract 11 at the first `pr-open`. No item's
-*content* depends on AV3-15, but until it (or hand-draining) exists, nothing ships via
-autopilot itself. Landing order for green-between-items:
-**15 (if approved) → 06 → 07 → 01 → 02 → 03 → 04 → 08 → 09 → 10 → 05 → 11 → 12 → 13 →
-14 → 16a → 16b → 17.** AV3-16 is split (16a rides 01/06; 16b is conditional on 15).
+register on this GitHub repo hits Hard Contract 11 at the first `pr-open`. **AV3-15 is
+APPROVED (ADR 0013, 2026-07-04): autopilot is host-agnostic by contract** — it lands
+first and is hand-built (the one permitted bootstrap, as with the manifest schema).
+Landing order for green-between-items:
+**15 → 06 → 07 → 01 → 02 → 03 → 04 → 08 → 09 → 10 → 05 → 11 → 12 → 13 →
+14 → 16a → 16b → 17.** AV3-16 is split (16a rides 01/06; 16b rides 15).
 
 ## A. Manifest consumption
 
@@ -169,17 +170,20 @@ journey-bearing per the manifest.
 **Acceptance:** `[det]` runbook-template deliverable slot + validator-prompt rule
 pinned by lint. `[drain]` the check firing (agent-judged).
 
-## E. Host adapter — FLAGGED FOR BAILEY (priority call)
+## E. Host adapter [ADR 0013 — approved]
 
-### AV3-15 — Host adapter: GitHub backend behind the existing subcommand surface
-`scripts/host.sh` dispatch (BITBUCKET_DC | GITHUB) exposing the current surface
-(`pr-open[-–draft]`, `pr-ready`, `pr-state`, `pr-comment`, `pr-merge`, `build-status`,
-…); `bitbucket.sh` becomes the DC backend; a `gh`-CLI backend implements the same
-contract; probe detects host from `origin`. Hard Contract 11 rewrites to "the host
-adapter is the single PR/build surface." Exists to let the suite drain its own
-registers here; DC remains the enterprise target.
-**Acceptance:** `[det]` the T01-class mock matrix runs against both backends (gh argv
-shim). Decision recorded in the PR review, either way.
+### AV3-15 — Host-agnostic contract: `host.sh` dispatch, DC + GitHub backends
+Autopilot is git-host agnostic by contract (ADR 0013): `scripts/host.sh` dispatch
+(BITBUCKET_DC | GITHUB, detected from `origin`) exposes the full surface
+(`pr-open [--draft]`, `pr-ready`, `pr-state`, `pr-comment`, `pr-merge`,
+`build-status`, …); `bitbucket.sh` becomes the DC backend; a `gh`-CLI backend
+implements the identical contract. DC inside enterprise walls; GitHub here and for community
+distribution — the adapter is permanent architecture, not a dogfooding workaround.
+Hard Contract 11 rewrites to "the host adapter is the single PR/build surface"
+(AV3-16b). Secret handling and loop-safety are per-backend properties behind the
+surface.
+**Acceptance:** `[det]` the T01-class mock matrix runs against BOTH backends (gh argv
+shim for the GitHub side); backend-detection fixtures for both origin URL shapes.
 
 ## F. Meta
 
@@ -189,7 +193,7 @@ scope narrowed; `--merge` revision-regen mode documented), reference index updat
 CHANGELOG v3.0.0 cites assertion IDs (M3 gate).
 **Acceptance:** `[det]` lint: planted one-PR-per-Subtask phrasing red.
 
-### AV3-16b — SKILL.md rewrite, host half [conditional on AV3-15]
+### AV3-16b — SKILL.md rewrite, host half [rides AV3-15; ADR 0013]
 Hard Contract 11 → host-adapter wording; L-rule for legacy host phrasing.
 **Acceptance:** `[det]` planted "Bitbucket DC is the source-of-truth host" red.
 
