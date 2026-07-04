@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
+  "name": "codebase-health",
+  "version": "1.4.0",
+  "description": "Closed-loop codebase health: audit any large codebase (dead/unused code, redundancy, doc hygiene, partially-implemented logic, test-suite health (flaky/vacuous tests), logging/observability, transactional integrity, security, performance, architecture shape, AI-navigability, and business-critical user journeys) with seven specialist agents to measured coverage - then verify fixes with evidence via /verify (closing tests rerun 5x before FIXED), fingerprinted findings, a debt ratchet, and a warn-only prevention hook whose CI surface is strict by default. Deterministic tools find evidence; LLM agents make the judgment; nothing counts until verified. Language-agnostic with tool packs for Python, TS, Rust, Go.",
+  "author": {
+    "name": "bailey"
+  },
+  "license": "MIT",
+  "keywords": [
+    "cleanup",
+    "dead-code",
+    "refactor",
+    "security",
+    "performance",
+    "audit",
+    "incomplete-logic",
+    "technical-debt",
+    "architecture",
+    "verification",
+    "user-journeys",
+    "test-health",
+    "flaky-tests",
+    "observability",
+    "idempotency"
+  ]
+}

@@ -1,0 +1,4 @@
+[project]
+name = "planted-pkg"
+version = "0.1.0"
+description = "Planted-defect fixture for the codebase-health suite self-test. Every defect here is intentional ground truth - see EXPECTED_FINDINGS.yaml."

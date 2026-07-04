@@ -1,0 +1,632 @@
+# Ground truth for the planted-defect corpus in planted/.
+#
+# This manifest deliberately lives OUTSIDE planted/ — it names every marker it
+# expects, so scanning it alongside the corpus would let assertions pass off
+# the answer key instead of the plants (a vacuous pass the adversarial review
+# actually caught).
+#
+# Two consumers:
+#   1. scripts/self_test.sh — asserts every `expected_by: deterministic` entry
+#      mechanically (grep-level recall) and every `must_not_flag` exclusion.
+#   2. Agent-level eval — run /audit against a BLIND copy of the corpus
+#      (`scripts/make_blind_corpus.sh` strips the PLANT annotations; the
+#      annotated original is a reading-comprehension test, not an eval) and
+#      compare the report to the `expected_by: agent` entries.
+#      Recall = found/expected; a must_not_flag violation is a precision
+#      failure. Do this after any change to agent prompts, the taxonomy, or
+#      any reference a dispatched agent consumes — and it MUST have been done
+#      before any release in which one of those changed (date + git SHA
+#      recorded in GAPS_SPEC; the Wave 5 release checklist blocks without a
+#      current eval — pre-flight fix E, SPEC_1.4.0).
+#
+# A third register, `expected_noise:` (EN1–EN4, pre-flight fix F), names the
+# findings the 1.4.0 fixture bulk legitimately triggers in EXISTING detectors.
+# Blind-eval hand-scoring counts those as neither recall nor precision events;
+# self_test.sh ignores them. must_not_flag would be the wrong instrument —
+# those detector hits are CORRECT behavior.
+#
+# The miss-to-fixture rule (references/audit-state-and-verify.md): every
+# real-world miss gets planted here BEFORE the detection gap is fixed.
+
+expected:
+  - id: A1
+    category: incomplete-logic/A
+    path: planted_pkg/markers.py
+    symbol: sync_users
+    marker: "TODO"
+    expected_by: deterministic
+  - id: A2
+    category: incomplete-logic/A
+    path: planted_pkg/markers.py
+    symbol: sync_users
+    marker: "todo (lowercase)"
+    expected_by: deterministic
+  - id: A3
+    category: incomplete-logic/A
+    path: planted_pkg/markers.py
+    symbol: sync_users
+    marker: "for now"
+    expected_by: deterministic
+  - id: A4
+    category: incomplete-logic/A
+    path: planted_pkg/markers.py
+    symbol: sync_users
+    marker: "WIP"
+    expected_by: deterministic
+  - id: A5
+    category: incomplete-logic/A
+    path: planted_pkg/markers.py
+    symbol: sync_users
+    marker: "TBD"
+    expected_by: deterministic
+  - id: A6
+    category: incomplete-logic/A
+    path: planted_pkg/markers.py
+    symbol: make_report
+    marker: "PLACEHOLDER"
+    expected_by: deterministic
+  - id: A7
+    category: incomplete-logic/A
+    path: planted_pkg/markers.py
+    symbol: make_report
+    marker: "NotImplementedError"
+    expected_by: deterministic
+  - id: G1
+    category: incomplete-logic/G
+    path: planted_pkg/auth.py
+    symbol: hash_password
+    marker: "nosec"
+    expected_by: deterministic
+  - id: G2
+    category: incomplete-logic/G
+    path: planted_pkg/storage.py
+    symbol: save_config
+    marker: "noqa"
+    expected_by: deterministic
+  - id: G3
+    category: incomplete-logic/G
+    path: planted_pkg/config.py
+    symbol: <module>
+    marker: "mypy: ignore-errors (file-level)"
+    expected_by: deterministic
+  - id: G4
+    category: incomplete-logic/G
+    path: web/app.ts
+    symbol: <module>
+    marker: "@ts-nocheck (file-level)"
+    expected_by: deterministic
+  - id: B1
+    category: incomplete-logic/B
+    path: planted_pkg/auth.py
+    symbol: validate_api_key
+    note: fake validator - accepts any non-empty string; severity HIGH (public API)
+    expected_by: agent
+  - id: B2
+    category: incomplete-logic/B
+    path: planted_pkg/storage.py
+    symbol: load_config
+    note: swallowed failure - corrupt JSON silently becomes {}
+    expected_by: agent
+  - id: B3
+    category: incomplete-logic/B
+    path: planted_pkg/transform.py
+    symbol: transform_record
+    note: passthrough "transform" returns input untouched
+    expected_by: agent
+  - id: C1
+    category: incomplete-logic/C
+    path: planted_pkg/storage.py
+    symbol: save_config
+    note: silent no-op - serializes but never writes to disk
+    expected_by: agent
+  - id: D1
+    category: incomplete-logic/D
+    path: planted_pkg/transform.py
+    symbol: fetch_batch
+    note: async function that never awaits
+    expected_by: agent
+  - id: D2
+    category: incomplete-logic/D
+    path: planted_pkg/transform.py
+    symbol: classify
+    note: documented 'service' case unhandled, no else raise
+    expected_by: agent
+  - id: E1
+    category: incomplete-logic/E
+    path: planted_pkg/transform.py
+    symbol: transform_record
+    note: half-wired - never exported/registered in __init__.__all__
+    expected_by: agent
+  - id: F1
+    category: doc-hygiene/F
+    path: planted_pkg/dead.py
+    symbol: legacy_format_price
+    note: historical "we used to..." docstring
+    expected_by: agent
+  - id: DC1
+    category: dead-code
+    path: planted_pkg/dead.py
+    symbol: legacy_format_price
+    note: zero references anywhere
+    expected_by: agent
+  - id: P1
+    category: performance/algorithmic
+    path: planted_pkg/slow.py
+    symbol: find_duplicates
+    note: O(n^2) scan; HIGH only with a measurement attached
+    expected_by: agent
+  - id: SEC1
+    category: security/crypto
+    path: planted_pkg/auth.py
+    symbol: hash_password
+    note: MD5 for passwords (and the '# nosec' hiding it)
+    expected_by: agent
+  - id: SEC2
+    category: security/secrets
+    path: planted_pkg/config.py
+    symbol: <module>
+    note: hardcoded AWS key pair; gitleaks-shaped (deterministic when gitleaks installed)
+    expected_by: agent
+  - id: J1
+    category: journey/broken-workflow
+    path: README.md
+    symbol: quickstart
+    note: README quickstart imports a function that does not exist
+    expected_by: agent
+  - id: J2
+    category: journey/docs-drift
+    path: README.md
+    symbol: retry_count
+    note: documented config key no code reads
+    expected_by: agent
+
+  # ---- 1.4.0 additions (Gap Closure Spec §8 / appendix fixtureIdPlan) ----
+  # test-health: nondeterminism TF1–TF10 (deterministic: TF1/3/4/5/7/9/10)
+  - id: TF1
+    category: test-health/T1
+    path: tests/test_sync_flaky.py
+    symbol: test_flush_completes_before_read
+    marker: "time.sleep(0.2) as the only synchronization with the drain worker"
+    expected_by: deterministic
+  - id: TF2
+    category: test-health/T2
+    path: tests/test_shared_state.py
+    symbol: test_settings_cache_serves_repeat_loads
+    note: order-dependence - asserts on the module-level _SETTINGS_CACHE that
+      only the preceding test populates; fails under shuffled order or run
+      alone. Confirmed by the bounded shuffled-order probe, not any regex.
+    expected_by: agent
+  - id: TF3
+    category: test-health/T3
+    path: tests/test_clock_random.py
+    symbol: test_payload_ids_are_unique
+    marker: "random.randint (unseeded module RNG; the conftest rng fixture is the ignored remedy)"
+    expected_by: deterministic
+  - id: TF4
+    category: test-health/T4
+    path: tests/test_clock_random.py
+    symbol: test_report_stamp_matches_generation_day
+    marker: "datetime.now() (read twice - helper stamp + in-test compare; both lines are this ONE plant)"
+    expected_by: deterministic
+  - id: TF5
+    category: test-health/T5
+    path: tests/test_shared_state.py
+    symbol: test_status_endpoint_reports_ok
+    marker: "requests.get with a literal https:// URL"
+    note: live HTTP to a production status endpoint inside a unit test.
+      TRACE-ONLY for the agent (never executed - the unsafety IS the finding).
+      Variable-URL forms of T5 stay agent-caught per the documented FLAKY_RE
+      residual.
+    expected_by: deterministic
+  - id: TF6
+    category: test-health/T6
+    path: tests/test_shared_state.py
+    symbol: test_concurrent_writers_all_land
+    note: unjoined-thread race - four writer threads started, the assert fires
+      with no join(), plus an unsynchronized dict increment.
+      Thread-lifecycle reasoning; start-without-join is precision-hostile to
+      grep (agent).
+    expected_by: agent
+  - id: TF7
+    category: test-health/T7
+    path: tests/test_sync_flaky.py
+    symbol: test_interleaved_consumers_preserve_order
+    marker: "@pytest.mark.flaky(reruns=3) - retry-until-pass; hits BOTH FLAKY_RE alternates"
+    expected_by: deterministic
+  - id: TF8
+    category: test-health/T8
+    path: tests/test_sync_flaky.py
+    symbol: test_flush_handles_shutdown_flag
+    note: conditional/guarded assert - the shutdown sentinel is enqueued
+      BEFORE the work items, so `out` is always empty and `if out:` never
+      lets the assertion run; green while constraining nothing. Assert
+      reachability is block-structural (agent).
+    expected_by: agent
+  - id: TF9
+    category: test-health/T1
+    path: web/app.spec.ts
+    symbol: "it('renders the ready markup')"
+    marker: "setTimeout( wrapping the assertion in a .spec.ts (250ms wait for a synchronous render)"
+    expected_by: deterministic
+  - id: TF10
+    category: test-health/T3
+    path: web/app.spec.ts
+    symbol: "it('accepts any widget id')"
+    marker: "Math.random( - a failing widget id can never be replayed"
+    expected_by: deterministic
+  # test-health: vacuity TQ1–TQ8 (deterministic: TQ2/3/6/7)
+  - id: TQ1
+    category: test-health/T8
+    path: tests/test_auth.py
+    symbol: test_validate_api_key_smoke
+    note: assertion-free call-and-pray, and the SOLE executing coverage of the
+      B1 fake validator (validate_api_key); HIGH per the test-health gate
+      (vacuity-by-construction + sole coverage of a public auth symbol) - the
+      HIGH-gate exemplar.
+    expected_by: agent
+  - id: TQ2
+    category: test-health/T9
+    path: tests/test_auth.py
+    symbol: test_key_signature_verified
+    marker: "assert True (TEST_VACUOUS_RE)"
+    expected_by: deterministic
+  - id: TQ3
+    category: test-health/T9
+    path: web/app.test.ts
+    symbol: "test('renders without throwing')"
+    marker: "expect(true).toBe(true) (TEST_VACUOUS_RE)"
+    expected_by: deterministic
+  - id: TQ4
+    category: test-health/T10
+    path: tests/test_auth.py
+    symbol: test_hash_password_produces_hex_digest
+    note: mocks the unit under test - hash_password itself is patched
+      (mock.patch.object), so both assertions check the mock's canned return
+      value and call record; the real digest logic never executes and could
+      be deleted without the test going red.
+    expected_by: agent
+  - id: TQ5
+    category: test-health/T9
+    path: tests/test_storage.py
+    symbol: test_load_config_roundtrip
+    note: identity tautology - the closing assertion is
+      `assert result == result`, true for any value, so load_config is
+      unconstrained. Agent-owned - ERE has no backreferences, and hardcoding
+      the planted literal in a detector would score the answer key, not the
+      plant.
+    expected_by: agent
+  - id: TQ6
+    category: test-health/T12
+    path: tests/test_auth.py
+    symbol: test_rejects_empty_key
+    marker: "@pytest.mark.skip (TEST_SKIP_RE) - the file's one genuine auth assertion, disabled"
+    expected_by: deterministic
+  - id: TQ7
+    category: test-health/T12
+    path: web/app.test.ts
+    symbol: "it.skip('shows the ok badge after render')"
+    marker: "it.skip (TEST_SKIP_RE)"
+    expected_by: deterministic
+  - id: TQ8
+    category: test-health/T11
+    path: web/app.test.ts
+    symbol: "it('matches the render snapshot')"
+    note: snapshot rubber-stamp - the committed stamp in
+      web/__snapshots__/app.test.ts.snap is an EMPTY div blessing app.ts's
+      innerHtml property typo (render assigns a nonexistent property, so the
+      DOM stays empty); green exactly as long as the bug survives.
+      Cross-file judgment; the skipped TQ7 test is the assertion that would
+      have caught it.
+    expected_by: agent
+  # logging & observability LG1–LG5 (taxonomy Category LOG) + SEC3
+  - id: LG1
+    category: incomplete-logic/LOG
+    path: planted_pkg/service.py
+    symbol: get_order_status
+    marker: "print( on a request path (LOGGING_RE, non-test path -> stdout_logging.txt); MED (server path)"
+    expected_by: deterministic
+  - id: LG2
+    category: incomplete-logic/LOG
+    path: planted_pkg/service.py
+    symbol: record_dispatch
+    marker: "sys.stdout.write( as a server-path log call (LOGGING_RE); MED"
+    expected_by: deterministic
+  - id: LG3
+    category: incomplete-logic/LOG
+    path: planted_pkg/service.py
+    symbol: finalize_order
+    note: log-and-swallow - the except arm logs and proceeds, so the order is
+      marked fulfilled with no payment captured; _charge raises
+      unconditionally, so reachability on a payment path is confirmed ->
+      HIGH. Agent-scored - swallow-vs-reraise is decided by what FOLLOWS the
+      log line (block-level, not line-level).
+    expected_by: agent
+  - id: LG4
+    category: incomplete-logic/LOG
+    path: planted_pkg/service.py
+    symbol: <module>
+    note: absence - request-serving module (public HTTP handlers) with no
+      structured logging and no correlation/request id on any log line;
+      hard-capped MED needs-verification per the 1.4.0 rubric absence gate.
+    expected_by: agent
+  - id: LG5
+    category: incomplete-logic/LOG
+    path: web/app.ts
+    symbol: render
+    marker: "console.log( inside render() (LOGGING_RE); the G4 plant in the same file is undisturbed"
+    expected_by: deterministic
+  - id: SEC3
+    category: security/logging
+    path: planted_pkg/service.py
+    symbol: open_session
+    note: secret api_key value written verbatim to the app log (CWE-532);
+      lens incomplete-logic/LOG per precedence. Agent-scored - the defect is
+      dataflow (a secret VALUE reaching a log sink); lexical log-plus-token
+      matching drowns in pagination/CSRF-token false positives.
+    expected_by: agent
+  # transactional integrity TX1–TX3 (taxonomy Category TX)
+  - id: TX1
+    category: security/transactional-integrity
+    path: planted_pkg/billing.py
+    symbol: handle_payment_webhook
+    note: non-idempotent money-movement webhook - PSP redelivery is documented
+      and nothing checks event["id"] before the ledger charge, so a replayed
+      delivery charges twice. Slugs non-idempotent-handler /
+      missing-dedup-guard; CRITICAL reachable (the duplicate deliverer is
+      nameable); contrast the correctly guarded handle_refund_webhook (N8).
+    expected_by: agent
+  - id: TX2
+    category: security/transactional-integrity
+    path: planted_pkg/billing.py
+    symbol: submit_payout
+    note: unsafe retry - `for attempt in range(3)` re-posts a keyless payout
+      on LedgerTimeout; a timeout does not imply failure, so the vendor can
+      be paid up to three times. Slug unsafe-retry; the loop's presence in
+      audit/tx_retries.txt is the deterministic seed corroboration.
+    expected_by: agent
+  - id: TX3
+    category: security/transactional-integrity
+    path: planted_pkg/billing.py
+    symbol: transfer_batch
+    note: missing compensating action - the batch debit commits first and a
+      mid-loop credit failure strands the debited funds with no re-credit
+      and no audit trail. Slug missing-compensation.
+    expected_by: agent
+  # business vitals: V1–V3 deterministic seeds + J3–J5 (J series continues)
+  - id: V1
+    category: business-vitals/seed
+    path: planted_pkg/billing.py
+    symbol: transfer_funds
+    marker: "def transfer_funds( def-site listed in audit/vital_candidates.txt (VITAL_RE recall)"
+    expected_by: deterministic
+  - id: V2
+    category: business-vitals/seed
+    path: planted_pkg/billing.py
+    symbol: approve_loan
+    marker: "def approve_loan( def-site listed in audit/vital_candidates.txt (state-transition verb)"
+    expected_by: deterministic
+  - id: V3
+    category: business-vitals/seed
+    path: planted_pkg/billing.py
+    symbol: emit_event (charge_card call site)
+    marker: "emit_event(\"payment.charged\", ...) call line listed in audit/telemetry.txt (TELEMETRY_RE)"
+    expected_by: deterministic
+  - id: J3
+    category: journey/uninstrumented
+    path: planted_pkg/billing.py
+    symbol: transfer_funds
+    note: dark money movement on the documented CORE '## Transfers' README
+      journey. Deterministic per the SPEC_1.4.0 §12 sweep - seed arithmetic
+      (def-site IN vital_candidates.txt AND absent from telemetry.txt) plus
+      the README anchor, all asserted in self_test §10/§12. HIGH reachable
+      per the Decision-4 gate (traced CORE money path); journey-walker's
+      DARK grade is the corroborating lens, not the score. Slug
+      dark-money-movement.
+    expected_by: deterministic
+  - id: J4
+    category: journey/uninstrumented
+    path: planted_pkg/billing.py
+    symbol: approve_loan
+    note: dark business state transition (SUBMITTED->APPROVED, approver
+      stored, no emission/audit line/log) - same seed arithmetic as J3;
+      untraced flow, so severity hard-caps MED needs-verification
+      (Decision 4); the agent walk is the lens.
+    expected_by: deterministic
+  - id: J5
+    category: journey/uninstrumented
+    path: planted_pkg/billing.py
+    symbol: refund_payment
+    note: LOG-ONLY vital - the refund leaves one prose _LOG.info line (no
+      stable dot-namespaced event name, identifiers buried in printf prose).
+      Grading LOG-ONLY vs DARK vs OBSERVED is the semantic emission judgment
+      (agent); severity MED. Its seed half (IN vital_candidates.txt, absent
+      from telemetry.txt) is deterministically asserted in self_test §10.
+      Slug log-only-refund.
+    expected_by: agent
+  # journey complexity JC1–JC2
+  - id: JC1
+    category: journey/path-complexity
+    path: planted_pkg/checkout.py
+    symbol: submit_order
+    note: convoluted branching on the CORE order journey (README '## Submitting
+      an order') - C901 ~15 with a re-tested qty condition and a coupon
+      ladder re-deriving already-settled shipping. HIGH requires the CORE
+      step in journeys.json AND the attached metric line
+      (criticality-weighted, never raw metric - N10 is the off-journey
+      twin); the metric half is ruff-conditional in self_test §12. Slug
+      convoluted-branching.
+    expected_by: agent
+  - id: JC2
+    category: journey/path-complexity
+    path: planted_pkg/checkout.py
+    symbol: format_receipt
+    note: redundant branching that is metric-INVISIBLE by construction (C901
+      absence asserted, ruff-conditional) - byte-identical qty arms plus a
+      condition submit_order already guarantees; pure structural judgment on
+      the same CORE journey. MED cap.
+    expected_by: agent
+  # navigability GF1 / ND1 / CO1 / MN1
+  - id: GF1
+    category: navigability/giant-file
+    path: planted_pkg/megamodule.py
+    symbol: <module>
+    marker: "~470 non-blank lines - the 400 [attention] rung of the size ladder -> audit/giant_files.txt"
+    note: helper bodies deliberately varied so megamodule.py stays ABSENT from
+      dup_jscpd.json at --min-tokens 50. Vulture/dead-code chatter on its
+      uncalled helpers is EN1 (expected noise), out of scope for GF1
+      scoring, which grades the size-ladder artifact only.
+    expected_by: deterministic
+  - id: ND1
+    category: navigability/near-duplicate
+    path: planted_pkg/report_email.py
+    symbol: format_report_rows
+    note: byte-identical clone of report_slack.py:format_report_rows (~120
+      jscpd tokens, over the --min-tokens 50 floor); the pair must appear in
+      dup_jscpd.json - deterministic per Decision 8 (jscpd is a REQUIRED dev
+      dependency for self_test.sh, no shim-only pass). The dead-code agent's
+      extract-vs-intentional-fork judgment is a corroborating lens; EN2
+      covers chatter beyond the pair itself.
+    expected_by: deterministic
+  - id: CO1
+    category: navigability/commented-code
+    path: planted_pkg/checkout.py
+    symbol: apply_discount
+    marker: "9-line commented-out old implementation directly above apply_discount (>= CO_MIN_RUN consecutive comment lines, >= CO_MIN_CODE code-shaped per CODE_COMMENT_RE; no marker/suppression/LOGGING_RE tokens) -> audit/commented_code.txt"
+    expected_by: deterministic
+  - id: MN1
+    category: navigability/misleading-name
+    path: planted_pkg/metrics.py
+    symbol: get_user_count
+    note: name and docstring promise distinct active users; the body returns
+      len(_ACTIVE_SESSIONS) - a SESSION count (one user with three tabs
+      reports as three "users"); the honest get_session_count sits right
+      beside it and len(set(_ACTIVE_SESSIONS.values())) is what the name
+      promises. Name-vs-behavior semantics, no lexical form - kept agent per
+      the §12 determinism sweep.
+    expected_by: agent
+
+must_not_flag:
+  - id: N1
+    path: planted_pkg/registry.py
+    symbol: handle_webhook
+    note: zero static references BUT dynamically dispatched via getattr -
+      grading it SAFE-to-delete is a precision failure (DANGER/CAUTION correct)
+  - id: N2
+    path: planted_pkg/ui.py
+    note: innocent identifiers (on_swipe/wipe_cache=WIP, HACKATHON=HACK,
+      stubborn=STUB, XXXL=XXX, placeholder_text, todos) - any line of this file
+      in markers.txt is a word-boundary precision failure. EXTENDED 1.4.0 - the
+      file now also guards LOGGING_RE (blueprint()/imprint() bury the print
+      token), VITAL_RE (recharge_battery_icon/turbocharged_scroll bury charge,
+      AUTHORED_BY buries auth, credits_remaining pins whole-word verb
+      anchoring, wire_format pins the bare-'wire' exclusion), and TEST_SKIP_RE
+      (queue.skip(3) - receiver anchoring); any ui.py line in
+      stdout_logging.txt, vital_candidates.txt, or test_skips.txt is the same
+      class of precision failure
+  # ---- 1.4.0 additions N3–N11 (one meaning per ID, per §fixtureIdPlan) ----
+  - id: N3
+    path: tests/conftest.py
+    note: the REMEDIES file - seeded random.Random(1234) fixture, frozen-clock
+      monkeypatch (subclassed datetime, no wall-clock read), tmp_path-isolated
+      config_path, an `await asyncio.sleep(0)` cooperative-yield helper, a
+      canned-data fixture consumed by real assertions in test_sync_flaky.py,
+      and a literal reruns=0 line (pytest_configure comment +
+      config.option.reruns = 0) pinning FLAKY_RE's \breruns=[1-9] digit anchor
+      per pre-flight fix H. The string pytest-rerunfailures is deliberately
+      absent (it is itself a FLAKY_RE alternate). Any conftest.py line in
+      test_flakiness.txt or test_vacuity.txt, or any agent test-health flag on
+      it, is a precision failure
+  - id: N4
+    path: planted_pkg/poller.py
+    note: production bounded polling - time.sleep between deadline-capped
+      attempts (monotonic clock) plus jittered exponential backoff via
+      random.random; both correct HERE. Deliberately contains NO 'for attempt
+      in range' loop so tx_retries.txt stays clean, and no money verbs so
+      vital_candidates.txt stays clean. Any poller.py line in
+      test_flakiness.txt is a TEST_PATH_RE scoping failure, not a detection
+      win
+  - id: N5
+    path: tests/test_transform.py
+    note: real behavior-constraining tests - specific inputs pinned to
+      specific expected outputs, every assertion capable of failing (the
+      asyncio.run order check included - asyncio.sleep is deliberately
+      outside FLAKY_RE). Any line of this file in test_vacuity.txt, or an
+      agent vacuity finding on it, is a precision failure
+  - id: N6
+    path: planted_pkg/report_cli.py
+    note: print-as-product-output in a CLI main (stdout IS the product
+      surface), plus a pprint( boundary decoy that must match nothing.
+      Deterministic listing of the print lines in stdout_logging.txt is
+      CORRECT (candidates, not verdicts - self-test asserts presence as the
+      precondition); an agent Category LOG finding on this file is the
+      precision failure
+  - id: N7
+    path: web/widgets.ts
+    note: game_console.log/info boundary trap (an in-page HUD console widget,
+      never the browser console) plus a sprintf decoy - the underscore and
+      the leading word character defeat the \b anchors in LOGGING_RE; any
+      widgets.ts line in stdout_logging.txt is a precision failure
+  - id: N8
+    path: planted_pkg/billing.py
+    symbol: handle_refund_webhook
+    note: CORRECT idempotency guard - event["id"] is checked against
+      _PROCESSED_EVENTS BEFORE the ledger write, so a replayed delivery is a
+      recorded duplicate no-op. Any Category-TX finding here is a precision
+      failure; the self-test asserts the guard line IS in audit/tx_guards.txt
+  - id: N9
+    path: planted_pkg/billing.py
+    symbol: charge_card (+ emit_event)
+    note: fully instrumented vital - emit_event REALLY logs via
+      logging.getLogger("business").info(name, extra=fields), not a
+      Category-B stub, and the emission carries a stable dot-namespaced name
+      plus identifiers. A journey/uninstrumented flag here is a precision
+      failure; it appears as OBSERVED in the vitals table (V3 asserts the
+      emission deterministically)
+  - id: N10
+    path: planted_pkg/debughelpers.py
+    symbol: dump_state
+    note: same C901 profile as checkout.submit_order (>10) but on NO
+      documented journey (the README never mentions it - asserted in
+      self_test §12). A journey/path-complexity finding or any HIGH
+      complexity grade is a criticality-weighting precision failure (LOW
+      hygiene ceiling). Its exported-but-uncalled dead-code chatter is
+      expected_noise EN3, not a violation
+  - id: N11
+    path: planted_pkg/metrics.py
+    note: prose comment block above record_session contains code words
+      mid-sentence (return, if, import) - any metrics.py line in
+      commented_code.txt is a CODE_COMMENT_RE leader-anchoring precision
+      failure (the code token must sit IMMEDIATELY after the comment leader)
+  - id: X1
+    path: node_modules/leftpad/index.js
+    note: vendored TODO - must be excluded from markers.txt entirely.
+      EXTENDED 1.4.0 - vendored files must be absent from ALL deterministic
+      artifacts, explicitly including giant_files.txt, commented_code.txt,
+      dup_jscpd.json, test_flakiness.txt, test_vacuity.txt, test_skips.txt,
+      stdout_logging.txt, vital_candidates.txt, and telemetry.txt
+
+# Findings the 1.4.0 fixture bulk legitimately triggers in EXISTING detectors
+# (pre-flight fix F). Hand-scoring the blind eval counts these as neither
+# recall nor precision events; self_test.sh ignores them entirely. They are
+# NOT must_not_flag entries - these detector hits are CORRECT behavior.
+expected_noise:
+  - id: EN1
+    path: planted_pkg/megamodule.py
+    note: its ~470 lines of unused helpers WILL be flagged by vulture/dead-code
+      layers; expected, and out of scope for GF1 scoring (GF1 grades the
+      size-ladder artifact only)
+  - id: EN2
+    path: planted_pkg/report_email.py + planted_pkg/report_slack.py
+    note: dead-code/duplication layers may flag either byte-identical
+      format_report_rows as unused or duplicate beyond the ND1 pair itself;
+      expected
+  - id: EN3
+    path: planted_pkg/debughelpers.py
+    symbol: dump_state
+    note: exported but uncalled - a legitimate dead-code candidate. N10
+      constrains ONLY journey/path-complexity criticality-weighting; a
+      dead-code flag on it is expected noise, not a violation
+  - id: EN4
+    path: tests/ (the new tree)
+    note: coverage ingestion and dead-code cross-references will mention the
+      new test files (e.g. uncovered fixture helpers); expected
