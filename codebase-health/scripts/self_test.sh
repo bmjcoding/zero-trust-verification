@@ -444,6 +444,37 @@ else
   echo "  [skip] ruff not installed — 3 C901 journey-fixture integrity checks skipped"
 fi
 
+echo "== 13. post-1.4.0-eval registration LOCKS (already-green pins only) =="
+# LOCK section (miss-to-fixture, post-1.4.0-eval registrations): every
+# assertion below pins behavior that was ALREADY green when added — existing
+# seed artifacts and fixture substrate for the blind-eval extras registered in
+# EXPECTED_FINDINGS.yaml (SEC4/SEC5/B4/P2/TX4-TX7, the TF5 collection facet,
+# the N3 frozen_clock QA fix). The defects themselves are agent-scored (blind
+# eval only, per the honesty clause) — NO detector behavior is asserted here;
+# these locks only keep the substrate and seed halves from drifting out from
+# under the new answer-key entries. The red-first rule does not apply to
+# locks: they are pins of green behavior, not new detection assertions.
+# LOCK TX7 seed half: charge_card def-site was already a vital candidate.
+assert_grep "$VC" 'billing\.py:[0-9]+:.*def charge_card\(' "LOCK TX7 seed: charge_card def-site in vital_candidates.txt (already-green pin)"
+# LOCK TX6 substrate: the dedup store is a module-level in-memory set.
+assert_grep "$WORK/planted/planted_pkg/billing.py" '^_PROCESSED_EVENTS: set = set\(\)' "LOCK TX6 substrate: module-level in-memory _PROCESSED_EVENTS set present"
+# LOCK P2 substrate: the two module-level stores exist (unbounded by construction).
+assert_grep "$WORK/planted/planted_pkg/service.py" '^_SESSIONS: dict = \{\}'   "LOCK P2 substrate: module-level _SESSIONS store present in service.py"
+assert_grep "$WORK/planted/planted_pkg/service.py" '^_FULFILLED: set = set\(\)' "LOCK P2 substrate: module-level _FULFILLED store present in service.py"
+# LOCK B4 substrate: hardcoded rows + the parsed-but-never-applied --window flag.
+assert_grep "$WORK/planted/planted_pkg/report_cli.py" '^_ROWS = \[' "LOCK B4 substrate: hardcoded _ROWS constant present in report_cli.py"
+assert_grep "$WORK/planted/planted_pkg/report_cli.py" '\-\-window'  "LOCK B4 substrate: --window flag still parsed (and never applied to _ROWS)"
+# LOCK TF5 facet substrate: the HTTP-client import stays module-level.
+assert_grep "$WORK/planted/tests/test_shared_state.py" '^import requests' "LOCK TF5 facet: module-level HTTP-client import present in test_shared_state.py"
+# LOCK TX7 placement: the TX7 slug token is a TX_GUARD_RE alternate, so the
+# fixture annotation must never name it — no PLANT comment line may leak into
+# the tx_guards.txt seed artifact (green after the 2026-07-04 placement fix).
+assert_not_grep "$TXG" '# PLANT' "LOCK TX7 placement: no PLANT annotation line leaks into tx_guards.txt (slug token kept out of the fixture comment)"
+# LOCK N3 QA fix: frozen_clock patches via sys.modules, never the
+# import-mode-sensitive dotted string (green at time of adding).
+assert_grep     "$WORK/planted/tests/conftest.py" 'sys\.modules' "LOCK N3 QA: frozen_clock patches via sys.modules (import-mode-proof)"
+assert_not_grep "$WORK/planted/tests/conftest.py" '"tests\.test_clock_random\.datetime"' "LOCK N3 QA: import-mode-sensitive dotted-string target gone from conftest"
+
 echo
 echo "== self-test: $PASS passed, $FAIL failed =="
 [ "$FAIL" -eq 0 ]

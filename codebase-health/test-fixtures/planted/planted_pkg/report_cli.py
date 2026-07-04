@@ -5,6 +5,8 @@ MUST-NOT-FLAG N6: listing of these lines in stdout_logging.txt is CORRECT
 MUST-NOT-FLAG N6: (candidates, not verdicts; self-test asserts presence); an
 MUST-NOT-FLAG N6: agent Category LOG finding on this file is the precision
 MUST-NOT-FLAG N6: failure. Guardrail: CLI/user-facing output is correct use.
+MUST-NOT-FLAG N6 (scope, post-1.4.0-eval): N6 constrains ONLY Category-LOG
+MUST-NOT-FLAG N6: findings - the fake windowed report below is plant B4.
 
 Usage:
     python -m planted_pkg.report_cli --window 7
@@ -13,6 +15,11 @@ Usage:
 import argparse
 from pprint import pprint
 
+# PLANT B4 (incomplete-logic/B, fake windowed report): _ROWS below is a
+# PLANT B4: hardcoded constant and main() never applies --window to it - the
+# PLANT B4: header echoes the flag, then every window gets the same three
+# PLANT B4: rows. MED. Agent-scored. Registered post-1.4.0-eval (blind-eval
+# PLANT B4: extra).
 _ROWS = [
     ("orders_shipped", 128),
     ("orders_returned", 7),

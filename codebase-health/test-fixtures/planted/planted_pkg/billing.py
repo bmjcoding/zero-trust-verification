@@ -3,7 +3,7 @@
 Every ledger write goes through the in-memory `_post_to_ledger`, so this whole
 module is safe to execute — the README "Transfers" snippet runs green.
 """
-# PLANTS J3, J4, J5, TX1, TX2, TX3 and MUST-NOT-FLAG N8, N9 live here, plus the
+# PLANTS J3, J4, J5, TX1-TX7 and MUST-NOT-FLAG N8, N9 live here, plus the
 # PLANT V1-V3 deterministic seeds. Ground truth: ../../EXPECTED_FINDINGS.yaml.
 
 import logging
@@ -17,6 +17,13 @@ _LEDGER: list = []
 _LOAN_STATES: dict = {}
 
 # Webhook event ids already handled by handle_refund_webhook.
+# PLANT TX6 (security/transactional-integrity, symbol <module>): this dedup
+# PLANT TX6: store is a process-local in-memory set - a restart or a second
+# PLANT TX6: worker forgets every id and replays PSP redeliveries as fresh
+# PLANT TX6: events; it also grows without bound. Slug
+# PLANT TX6: non-durable-dedup-store; MED needs-verification. N8 still
+# PLANT TX6: protects the guard LOGIC in handle_refund_webhook - this plant
+# PLANT TX6: scores the STORE. Registered post-1.4.0-eval (blind-eval extra).
 _PROCESSED_EVENTS: set = set()
 
 
@@ -52,6 +59,14 @@ def transfer_funds(source: str, dest: str, amount_cents: int) -> dict:
     # PLANT J3: lines here in telemetry.txt; the README anchor makes it CORE, so
     # PLANT J3: HIGH is reachable per the Decision-4 gate. The journey-walker's
     # PLANT J3: DARK grade is the corroborating lens, not the score.
+    # PLANT TX4 (security/transactional-integrity): the debit and credit below
+    # PLANT TX4: are two uncoordinated ledger writes - no transaction, no
+    # PLANT TX4: compensating action - so a backend failure between them (this
+    # PLANT TX4: module's own LedgerTimeout names the mode) strands the
+    # PLANT TX4: debited funds. Slug missing-compensation; CORE '## Transfers'
+    # PLANT TX4: journey, HIGH reachable. Distinct defect from J3 - same
+    # PLANT TX4: symbol, different slug. Registered post-1.4.0-eval
+    # PLANT TX4: (blind-eval extra).
     if amount_cents <= 0:
         raise ValueError("transfer amount must be positive")
     debit_id = _post_to_ledger("debit", source, -amount_cents)
@@ -83,6 +98,11 @@ def refund_payment(charge_id: str, account: str, amount_cents: int) -> dict:
     # PLANT J5: prose line is not an emission (LOG-ONLY, not DARK, not OBSERVED;
     # PLANT J5: severity MED) is the agent's call. Seed half is deterministic:
     # PLANT J5: def-site in vital_candidates.txt AND zero lines in telemetry.txt.
+    # PLANT TX5 (security/transactional-integrity): nothing records or checks
+    # PLANT TX5: charge_id, so the same charge can be refunded any number of
+    # PLANT TX5: times by a retrying caller or a double-submitted request.
+    # PLANT TX5: Slug missing-dedup-guard. Registered post-1.4.0-eval
+    # PLANT TX5: (blind-eval extra).
     entry_id = _post_to_ledger("refund", account, -amount_cents)
     _LOG.info("processed refund of %d cents for charge %s", amount_cents, charge_id)
     return {"refund_entry": entry_id, "charge_id": charge_id, "status": "refunded"}
@@ -96,6 +116,18 @@ def charge_card(account: str, amount_cents: int, card_token: str) -> dict:
     # MUST-NOT-FLAG N9: journey/uninstrumented is a precision failure. The card
     # MUST-NOT-FLAG N9: token is deliberately never logged (SEC3 lives in
     # MUST-NOT-FLAG N9: service.py, not here).
+    # MUST-NOT-FLAG N9 (scope, post-1.4.0-eval): N9 covers ONLY the
+    # MUST-NOT-FLAG N9: journey/uninstrumented lens - the keyless-charge facet
+    # MUST-NOT-FLAG N9: is plant TX7 below.
+    # PLANT TX7 (security/transactional-integrity): the charge is keyless - no
+    # PLANT TX7: client-supplied retry-collapse key parameter, nothing
+    # PLANT TX7: ledger-side to fold a caller's retry into one charge. Slug in
+    # PLANT TX7: the manifest only - its token is itself a TX_GUARD_RE
+    # PLANT TX7: alternate, so naming it here would leak this comment into
+    # PLANT TX7: tx_guards.txt (the TX1 'Slugs in the manifest' precedent).
+    # PLANT TX7: MED needs-verification (direct-call function, no in-repo
+    # PLANT TX7: duplicate deliverer nameable). Registered post-1.4.0-eval
+    # PLANT TX7: (blind-eval extra).
     if not card_token:
         raise ValueError("a card token is required")
     entry_id = _post_to_ledger("charge", account, amount_cents)
@@ -165,6 +197,10 @@ def handle_refund_webhook(event: dict) -> dict:
     # MUST-NOT-FLAG N8: redelivered webhook is a recorded no-op. A Category-TX
     # MUST-NOT-FLAG N8: finding here is a precision failure; the guard line is
     # MUST-NOT-FLAG N8: asserted PRESENT in tx_guards.txt by the self-test.
+    # MUST-NOT-FLAG N8 (scope, post-1.4.0-eval): N8 protects the guard LOGIC
+    # MUST-NOT-FLAG N8: only - the STORE's durability is plant TX6 at the
+    # MUST-NOT-FLAG N8: module-level set, and signature-verification chatter
+    # MUST-NOT-FLAG N8: on either webhook handler is EN5 expected noise.
     event_id = event["id"]
     if event_id in _PROCESSED_EVENTS:
         return {"status": "duplicate", "event_id": event_id}

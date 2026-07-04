@@ -216,7 +216,11 @@ expected:
     note: live HTTP to a production status endpoint inside a unit test.
       TRACE-ONLY for the agent (never executed - the unsafety IS the finding).
       Variable-URL forms of T5 stay agent-caught per the documented FLAKY_RE
-      residual.
+      residual. Post-1.4.0-eval facet, found by blind eval and folded here
+      (same plant, one defect) - the module-level import of the HTTP client
+      breaks COLLECTION of the whole file (TF2/TF6 included) in any
+      environment without that dependency; blast-radius evidence, not a
+      second finding.
     expected_by: deterministic
   - id: TF6
     category: test-health/T6
@@ -505,6 +509,108 @@ expected:
       the §12 determinism sweep.
     expected_by: agent
 
+  # ---- post-1.4.0-eval registrations (miss-to-fixture rule) ----
+  # Extras the 2026-07-04 blind eval found beyond the then-current answer key
+  # (GAPS_SPEC 1.4.0 closure status, extras list). Every entry below entered
+  # the key AFTER that recorded eval, so the next blind eval scores them fresh
+  # (first-run recall, never regression). All agent-scored - no new detectors;
+  # self_test §13 LOCK-pins only their seed halves and fixture substrate.
+  - id: SEC4
+    category: security/authn
+    path: planted_pkg/service.py
+    symbol: open_session
+    note: authn bypass - the public session-creation handler accepts any
+      non-empty api_key and never consults the key store (auth.py's
+      validate_api_key exists and is never called), so a garbage credential
+      mints a valid session. HIGH (public auth surface). Agent-scored -
+      "which check SHOULD run here" is cross-file judgment. Registered
+      post-1.4.0-eval, found by blind eval.
+    expected_by: agent
+  - id: SEC5
+    category: security/authz
+    path: planted_pkg/service.py
+    symbol: get_order_status
+    note: IDOR - the session is checked for EXISTENCE only; nothing binds
+      order_id to the session's device, so any authenticated session can
+      enumerate every order's fulfillment state. HIGH (missing
+      object-ownership check per the security checklist's AuthN/AuthZ
+      bullet). Registered post-1.4.0-eval, found by blind eval.
+    expected_by: agent
+  - id: B4
+    category: incomplete-logic/B
+    path: planted_pkg/report_cli.py
+    symbol: main
+    note: fake windowed report - --window is parsed and echoed in the header
+      line, then never applied; _ROWS is a hardcoded module constant, so
+      every window prints the same three rows. MED. N6 is untouched - it
+      constrains ONLY Category-LOG findings on this file (the print calls
+      stay correct CLI output). Registered post-1.4.0-eval, found by blind
+      eval.
+    expected_by: agent
+  - id: P2
+    category: performance/resource-growth
+    path: planted_pkg/service.py
+    symbol: <module>
+    note: unbounded growth - module-level _SESSIONS and _FULFILLED accrete
+      one entry per request with no eviction, expiry, or cap, so a
+      long-running worker's memory grows monotonically with traffic. MED
+      (per the P1 precedent, HIGH needs a measurement attached). Registered
+      post-1.4.0-eval, found by blind eval.
+    expected_by: agent
+  - id: TX4
+    category: security/transactional-integrity
+    path: planted_pkg/billing.py
+    symbol: transfer_funds
+    note: non-atomic debit/credit - the two ledger posts are separate
+      uncoordinated writes (no transaction, no compensating action), so a
+      backend failure between them (this module's own LedgerTimeout names
+      the mode) strands the debited funds. Slug missing-compensation
+      (canonical); on the CORE README '## Transfers' journey, so HIGH is
+      reachable. Distinct defect from J3 - same symbol, different slug.
+      Registered post-1.4.0-eval, found by blind eval.
+    expected_by: agent
+  - id: TX5
+    category: security/transactional-integrity
+    path: planted_pkg/billing.py
+    symbol: refund_payment
+    note: missing dedup guard - nothing records or checks charge_id, so the
+      same charge can be refunded any number of times (a retrying caller or
+      a double-submitted request pays out twice). Slug missing-dedup-guard
+      (canonical); contrast handle_refund_webhook (N8), which guards EVENT
+      redelivery and is the only dedup anywhere on the refund path.
+      Registered post-1.4.0-eval, found by blind eval.
+    expected_by: agent
+  - id: TX6
+    category: security/transactional-integrity
+    path: planted_pkg/billing.py
+    symbol: <module>
+    note: non-durable dedup store - _PROCESSED_EVENTS is a process-local
+      in-memory set, so N8's (correct) guard logic holds only within one
+      process lifetime; a restart or a second worker replays PSP
+      redeliveries as fresh events, and the set also grows without bound.
+      Slug non-durable-dedup-store; MED needs-verification (deployment
+      context decides). N8 still protects the guard LOGIC in
+      handle_refund_webhook - this entry scores the STORE. Registered
+      post-1.4.0-eval, found by blind eval.
+    expected_by: agent
+  - id: TX7
+    category: security/transactional-integrity
+    path: planted_pkg/billing.py
+    symbol: charge_card
+    note: keyless charge - no idempotency key parameter and nothing
+      ledger-side to collapse a caller's retry into one charge
+      (submit_payout shows the retry idiom lives in this codebase); the SDK
+      idempotency_key= guardrail names the remedy. Slug
+      missing-idempotency-key; the slug token is deliberately absent from
+      the fixture annotation - it is itself a TX_GUARD_RE alternate and
+      would leak the PLANT comment into tx_guards.txt (the N3
+      pytest-rerunfailures precedent). MED needs-verification (direct-call
+      function, no in-repo duplicate deliverer nameable). N9 is untouched - it
+      constrains ONLY journey/uninstrumented flags here (the eval's
+      borderline security finding 14 was this exact call). Registered
+      post-1.4.0-eval, found by blind eval.
+    expected_by: agent
+
 must_not_flag:
   - id: N1
     path: planted_pkg/registry.py
@@ -522,7 +628,10 @@ must_not_flag:
       anchoring, wire_format pins the bare-'wire' exclusion), and TEST_SKIP_RE
       (queue.skip(3) - receiver anchoring); any ui.py line in
       stdout_logging.txt, vital_candidates.txt, or test_skips.txt is the same
-      class of precision failure
+      class of precision failure. SCOPE (post-1.4.0-eval) - N2 constrains
+      ONLY the deterministic artifacts named above; the genuinely-empty
+      side-effect bodies (on_swipe/wipe_cache/imprint) are EN6 expected
+      noise for agent no-op findings, neither recall nor precision
   # ---- 1.4.0 additions N3–N11 (one meaning per ID, per §fixtureIdPlan) ----
   - id: N3
     path: tests/conftest.py
@@ -535,7 +644,14 @@ must_not_flag:
       per pre-flight fix H. The string pytest-rerunfailures is deliberately
       absent (it is itself a FLAKY_RE alternate). Any conftest.py line in
       test_flakiness.txt or test_vacuity.txt, or any agent test-health flag on
-      it, is a precision failure
+      it, is a precision failure. QA'd post-1.4.0-eval (blind-eval extra) -
+      frozen_clock's original dotted-string monkeypatch target resolved to a
+      namespace-package SHADOW of the running test module under pytest's
+      default prepend import mode (tests/ has no __init__.py, so the running
+      module is top-level test_clock_random), and raising=False kept the
+      miss silent; verified by direct import probe and FIXED - the fixture
+      now patches via sys.modules so the patch lands on whichever module
+      object pytest actually executes. The precision contract is unchanged
   - id: N4
     path: planted_pkg/poller.py
     note: production bounded polling - time.sleep between deadline-capped
@@ -559,7 +675,9 @@ must_not_flag:
       Deterministic listing of the print lines in stdout_logging.txt is
       CORRECT (candidates, not verdicts - self-test asserts presence as the
       precondition); an agent Category LOG finding on this file is the
-      precision failure
+      precision failure. SCOPE (post-1.4.0-eval) - N6 constrains ONLY
+      Category-LOG findings; the hardcoded-_ROWS / ignored---window fake
+      report is a REAL defect, registered as B4
   - id: N7
     path: web/widgets.ts
     note: game_console.log/info boundary trap (an in-page HUD console widget,
@@ -571,8 +689,12 @@ must_not_flag:
     symbol: handle_refund_webhook
     note: CORRECT idempotency guard - event["id"] is checked against
       _PROCESSED_EVENTS BEFORE the ledger write, so a replayed delivery is a
-      recorded duplicate no-op. Any Category-TX finding here is a precision
-      failure; the self-test asserts the guard line IS in audit/tx_guards.txt
+      recorded duplicate no-op. A non-idempotent-handler / missing-dedup-guard
+      flag here is a precision failure; the self-test asserts the guard line
+      IS in audit/tx_guards.txt. SCOPE (post-1.4.0-eval) - N8 protects the
+      guard LOGIC only; the STORE's durability is a separate registered
+      defect (TX6, symbol <module>), and webhook signature/authenticity
+      chatter on either handler is EN5 expected noise
   - id: N9
     path: planted_pkg/billing.py
     symbol: charge_card (+ emit_event)
@@ -581,7 +703,9 @@ must_not_flag:
       Category-B stub, and the emission carries a stable dot-namespaced name
       plus identifiers. A journey/uninstrumented flag here is a precision
       failure; it appears as OBSERVED in the vitals table (V3 asserts the
-      emission deterministically)
+      emission deterministically). SCOPE (post-1.4.0-eval) - N9 constrains
+      ONLY the journey/uninstrumented lens; the keyless-charge idempotency
+      facet is a separate registered defect (TX7)
   - id: N10
     path: planted_pkg/debughelpers.py
     symbol: dump_state
@@ -630,3 +754,20 @@ expected_noise:
     path: tests/ (the new tree)
     note: coverage ingestion and dead-code cross-references will mention the
       new test files (e.g. uncovered fixture helpers); expected
+  # ---- post-1.4.0-eval additions (miss-to-fixture; the extras list's
+  # dead-module-chatter candidate stays unregistered and would take EN7) ----
+  - id: EN5
+    path: planted_pkg/billing.py
+    symbol: handle_payment_webhook + handle_refund_webhook
+    note: webhook signature/authenticity verification absent - both handlers
+      receive already-parsed event dicts, and the transport boundary that
+      would carry signature material is out of frame in this fixture, so the
+      observation is defensible but unscoreable; neither recall nor
+      precision. Registered post-1.4.0-eval, found by blind eval.
+  - id: EN6
+    path: planted_pkg/ui.py
+    note: genuinely-empty side-effect bodies (on_swipe, wipe_cache, imprint)
+      are factually empty in the blind corpus, so a silent-no-op /
+      Category-C-shaped agent flag is correct on its face; scored as neither
+      recall nor precision. N2's deterministic artifact contract is
+      unaffected. Registered post-1.4.0-eval, found by blind eval.
