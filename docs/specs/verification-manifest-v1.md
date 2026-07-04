@@ -51,7 +51,10 @@ manifest_revision: 1         # integer; REQUIRED; first finalized revision is 1;
 spec:
   path: ./loan-pricing-adr.md   # relative to the manifest file
   title: "Loan pricing engine"
-  spec_hash: "sha256:<64 lowercase hex>"   # §9 defines the exact input bytes
+  spec_hash: "sha256:<64 lowercase hex>"   # §9 defines the exact input bytes; REQUIRED iff
+                                           # completeness: complete — MAY be absent while
+                                           # incomplete (mid-session, the Spec prose may not
+                                           # be committed yet)
 completeness: complete       # complete | incomplete   (top-level; per-entry state is
                              # `lifecycle:` — deliberately different field names)
 incomplete_fields: []        # non-empty iff incomplete; entry grammar §10
@@ -72,7 +75,7 @@ behaviors: []                # §5
 ```
 
 **Required/optional table (top-level):** `schema_version`, `manifest_revision`, `spec`
-(with `path`, `title`, `spec_hash`), `completeness`, `observability.profile`,
+(with `path`, `title`; `spec_hash` required iff complete), `completeness`, `observability.profile`,
 `environments` (≥1 entry), `journeys`, `behaviors` are REQUIRED (empty lists legal —
 but see §10 rule 0). `incomplete_fields` REQUIRED iff incomplete. `interrogation`
 optional; when present, per-entry fields as annotated above.
@@ -94,6 +97,9 @@ journeys:
                              # drift is an audit finding
     criticality_reason: "Money movement; customer-facing rate commitment"
     confirmation: confirmed  # confirmed | proposed (criticality-scoped rigor; §10 rule 4)
+    confirmed_by: DL-001     # REQUIRED for effectively-CORE entries with confirmation:
+                             # confirmed — references an interrogation.log entry with
+                             # resolved_by: human (§10 rule 8); optional otherwise
     steps:
       - name: "Lock request accepted"
         vital_class: state-transition   # REQUIRED on every step; one of
@@ -132,6 +138,7 @@ behaviors:
                              # optional, defaulting to the journey's. §10 rules apply to
                              # EFFECTIVE criticality (after inheritance).
     confirmation: confirmed  # §10 rule 4 applies to effective criticality
+    confirmed_by: DL-001     # as on journeys: REQUIRED when effectively-CORE + confirmed (§10 rule 8)
     given: "A rate lock created 46 days ago with a 45-day term"
     when: "The borrower requests to exercise the lock"
     then: "The request is rejected with RateLockExpired and vital rate_lock.expired is emitted"
@@ -154,9 +161,10 @@ the PR Gate's agent layer. It is NOT part of `incomplete_fields`.
   - The numeric suffix is the FINAL hyphen-delimited token, always exactly 3 digits
     (`001`–`999`); the slug is everything between the type prefix and the suffix.
     At 999, allocate a new slug — suffixes never grow a fourth digit.
-- IDs are **never reused and never renumbered**. Reuse/renumber detection requires
-  history and is therefore owned by the **PR Gate** (diffing committed revisions), not
-  the single-file validator (§11).
+- IDs are **never reused and never renumbered**. Reservation scope is **main's lineage**:
+  revisions on never-merged branches do not reserve IDs (a Spec rejected at product
+  approval frees them). Reuse/renumber detection requires history and is therefore owned
+  by the **PR Gate** (diffing main-lineage revisions), not the single-file validator (§11).
 - Amendment = a new `manifest_revision` landing by PR, produced by a spec-tier session.
 - Removal is a **tombstone**: `lifecycle: withdrawn` + non-empty `withdrawn_reason`
   (§10 rule 7). Tombstoned IDs remain reserved forever. The memory-rot facet depends on
@@ -234,6 +242,10 @@ criticality (§5).
    spec-tier session obligation — optionally evidenced via `exchange_ref` — NOT a
    validator rule; it is not checkable from the file.)
 7. *(mechanical)* Every withdrawn entry has non-empty `withdrawn_reason`.
+8. *(mechanical)* Every effectively-CORE active entry with `confirmation: confirmed` has
+   `confirmed_by` referencing an existing `interrogation.log` entry with
+   `resolved_by: human`. (Makes the no-agent-path-to-confirmed-CORE contract
+   file-checkable; the spec-gen tier is the enforcement point, this rule is the backstop.)
 
 **`incomplete_fields` entry grammar:** `"rule-<n>: <path>"` where `<path>` is a
 JSONPath-like locator using IDs, e.g.
