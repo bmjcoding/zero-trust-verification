@@ -1,5 +1,6 @@
-// @ts-nocheck  <- PLANT G4: file-level TS suppression - every type error in this
-// file is hidden. The strongest Category G form on the TS side.
+// @ts-nocheck
+// PLANT G4: file-level TS suppression on the line above - every type error
+// PLANT G4: in this file is hidden. The strongest Category G form on the TS side.
 export function render(el) {
   // PLANT LG5 (Category LOG, stdout-as-log-channel): console.log used as the
   // PLANT LG5: render path's log channel. Deterministic: LOGGING_RE, and

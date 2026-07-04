@@ -1,9 +1,9 @@
-"""Dynamic-dispatch trap. MUST-NOT-FLAG N1 lives here.
+"""Webhook event handlers and dispatch."""
 
-`handle_webhook` has zero static references - dead-code tools will flag it -
-but it is dispatched dynamically via getattr below. A correct audit grades it
-CAUTION/DANGER (dynamic ref), never SAFE-to-delete.
-"""
+# MUST-NOT-FLAG N1: `handle_webhook` has zero static references - dead-code
+# MUST-NOT-FLAG N1: tools will flag it - but it is dispatched dynamically via
+# MUST-NOT-FLAG N1: getattr below. A correct audit grades it CAUTION/DANGER
+# MUST-NOT-FLAG N1: (dynamic ref), never SAFE-to-delete.
 
 import sys
 
