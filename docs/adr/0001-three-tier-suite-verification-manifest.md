@@ -3,6 +3,7 @@
 ---
 status: accepted
 date: 2026-07-03
+amended-by: 0011 (Marshal joins as a fourth independently installable plugin)
 ---
 
 The spec-generation, autopilot, and codebase-health tiers consolidate into this repo, packaged as **one marketplace hosting three independently installable plugins** (the `.claude-plugin/marketplace.json` pattern; codebase-health-suite migrates in after its final polish). The tiers integrate through a shared machine-readable **Verification Manifest** produced by the spec tier: acceptance behaviors with stable IDs, journey map with criticality, required vitals, and idempotency requirements. Autopilot's planner maps every Subtask to manifest behavior IDs; the audit's journey-walker verifies the implementation against the same manifest — so verification is against the spec's ground truth, not the implementer's self-report. Every consumer pins `schema_version` and degrades gracefully when the manifest is absent, preserving each tier's ability to run standalone.
