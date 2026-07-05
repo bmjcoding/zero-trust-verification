@@ -287,9 +287,27 @@ for field in behavior_ids predicted_hours; do
 done
 (( l18_bad == 0 )) && ok L18
 
+# --- L19: Runbook PR is the bookkeeping home; file-surface block format (AV3-08) --
+# The rolling tracker PR is retired: bookkeeping lands on the Runbook PR
+# (autopilot/<slug>/runbook) under both no_force_push settings, and G7 emits a
+# grep-able predicted-file-surface block delimited by literal marker comments.
+l19_bad=0
+# (a) the file-surface block markers are pinned where they are emitted/documented.
+grep -q 'autopilot:file-surface:begin' "$ROOT/references/runbook-template.md" || { violation L19 "runbook-template.md missing the file-surface block markers"; l19_bad=1; }
+grep -q 'autopilot:file-surface:begin' "$ROOT/references/generate-lifecycle.md" || { violation L19 "generate-lifecycle.md G7 missing the file-surface block markers"; l19_bad=1; }
+# (b) the Runbook PR branch is named as the bookkeeping home.
+grep -q 'autopilot/<slug>/runbook' "$ROOT/references/drain-lifecycle.md" || { violation L19 "drain-lifecycle.md does not name the Runbook PR branch autopilot/<slug>/runbook"; l19_bad=1; }
+# (c) no doc reasserts the retired rolling-tracker-PR framing as active — any
+#     surviving mention must be flagged 'retired' on the same line.
+if hits=$(grep -nE 'rolling tracker PR' "${DOCS[@]}" 2>/dev/null | grep -vi 'retired'); then
+  violation L19 "active 'rolling tracker PR' framing (retired by AV3-08): $(tr '\n' ' ' <<<"$hits")"
+  l19_bad=1
+fi
+(( l19_bad == 0 )) && ok L19
+
 if (( FAIL == 1 )); then
   echo "lint_consistency: FAIL" >&2
   exit 1
 fi
-echo "lint_consistency: PASS (18 rules)"
+echo "lint_consistency: PASS (19 rules)"
 exit 0

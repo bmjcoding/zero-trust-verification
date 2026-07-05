@@ -59,7 +59,7 @@ On `STATUS: DRAINED | HUMAN_NEEDED | STOPPED`:
 
 1. `CronDelete` the previous cron.
 2. Release the `session_lock` (clear both `session_lock` and `session_lock_expires_at`).
-3. Commit the terminal tracker state via the rolling tracker PR one last time (under `branching.no_force_push: true`: append a `status_change` delta to the batched queue instead — see `references/tracker-delta-batching.md`).
+3. Commit the terminal tracker state to the Runbook PR (`autopilot/<slug>/runbook`, AV3-08) one last time (under `branching.no_force_push: true`: append a `status_change` delta to the batched queue for the final D7.1a flush instead — see `references/tracker-delta-batching.md`).
 4. For `DRAINED`: render `MERGE-ORDER.md` with stacked-PR merge-strategy annotations (AP-10 — every stacked PR must merge as a merge-commit, not squash).
 
 

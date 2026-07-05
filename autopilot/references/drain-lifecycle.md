@@ -30,7 +30,7 @@ Read the tracker's frontmatter. Compute `now_iso = $(date -u +%Y-%m-%dT%H:%M:%SZ
 | `session_lock: <other>` + `session_lock_expires_at <= now` | Treat as crashed: claim the lock ourselves. Add a `## Drift Notes` entry: "session lock expired from <other>; reclaimed by <this>". |
 
 
-Commit the tracker delta via the rolling tracker PR (under `branching.no_force_push: false`) OR append the delta as `delta_kind: session_lock` to `## Pending Tracker Deltas (batched)` (under `branching.no_force_push: true`) before doing any other work.
+Land the tracker delta on the **Runbook PR** (`autopilot/<slug>/runbook`, AV3-08) before doing any other work: under `branching.no_force_push: false` commit it directly to the runbook branch; under `branching.no_force_push: true` append it as `delta_kind: session_lock` to `## Pending Tracker Deltas (batched)` for the next D7.1a flush to the runbook branch.
 
 
 > **Known limitation (batched-delta mode).** Under `branching.no_force_push: true` the lock write stays in the local tracker file until the next D7.1a fold lands — a second session draining from a DIFFERENT clone cannot see it. AP-4's session lock is therefore checkout-local in that mode; the cross-clone guard is the branch-namespace check (`git ls-remote origin 'refs/heads/autopilot/<slug>/*'` showing branches you didn't create) plus operator discipline. Documented, not solved, in v2.4.0.
@@ -88,7 +88,7 @@ Recovery is NOT plain `--resume` (it would re-plan nothing against the new revis
 `git branch --show-current` MUST match either:
 - `autopilot/<slug>/setup`
 - `autopilot/<slug>/<story-id>` — the **Story branch** (PR-per-Story, AV3-06 / ADR 0007): one Story = one branch = one PR, and each Subtask of that Story is a commit series on it. (Pre-v3 per-Subtask branches `autopilot/<slug>/<subtask-id>` are retired.)
-- `autopilot/<slug>/tracker` (only under `branching.no_force_push: false`)
+- `autopilot/<slug>/runbook` — the **Runbook PR branch** (AV3-08): carries the runbook + tracker and is the single bookkeeping home (the pre-v3 rolling tracker branch `autopilot/<slug>/tracker` is retired).
 - The runbook's single feature branch (only under `branching.single_branch_single_pr: true`)
 
 
@@ -165,8 +165,8 @@ Otherwise: write the chosen Subtask's full block to `in_progress` in the tracker
 **Tracker commit routing (AP-23).**
 
 
-- Under `branching.no_force_push: false`: commit the tracker delta via the rolling tracker PR.
-- Under `branching.no_force_push: true`: append the delta as `delta_kind: in_progress_claim` to `## Pending Tracker Deltas (batched)` with a `diff_summary` describing the claim. Do NOT commit directly — the D7.1a fold will land the queue's contents atomically with the next Subtask PR.
+- Under `branching.no_force_push: false`: commit the tracker delta directly to the Runbook PR branch (`autopilot/<slug>/runbook`, AV3-08).
+- Under `branching.no_force_push: true`: append the delta as `delta_kind: in_progress_claim` to `## Pending Tracker Deltas (batched)` with a `diff_summary` describing the claim. Do NOT commit directly — the D7.1a fold flushes the queue to the Runbook PR branch.
 
 
 Refresh heartbeat (AP-6).
@@ -362,17 +362,16 @@ When a final commit IS needed (e.g., for `kind: docs | config | refactor`), foll
 - HEREDOC for formatting.
 
 
-**Step D7.1a — Tracker-delta fold (AP-23).** Runs only under `branching.no_force_push: true`. Read the tracker's `## Pending Tracker Deltas (batched)` section. If it is `_(empty)_`, skip. Otherwise:
+**Step D7.1a — Tracker-delta fold to the Runbook PR (AP-23 / AV3-08).** Runs only under `branching.no_force_push: true`. Read the tracker's `## Pending Tracker Deltas (batched)` section. If it is `_(empty)_`, skip. Otherwise flush the queue to the **Runbook PR branch** (`autopilot/<slug>/runbook`) — the single bookkeeping home, kept OFF the Story branch so the tracker never self-intersects a Story's claim surface (AV3-09):
 
 
 1. Build a `Tracker deltas folded in:` block for the commit body listing each pending entry's `delta_kind` + `diff_summary` (one line per entry).
-2. Apply every entry's `body:` field to the tracker file (mutations accumulated in-order).
+2. Apply every entry's `body:` field to the tracker file on the runbook branch (mutations accumulated in-order).
 3. Flush the queue: replace the section body with `_(empty)_`.
-4. Stage the tracker file alongside `owned_files[]`. This is the ONLY commit in the fire that stages the tracker file directly.
-5. The final commit lands: impl edit + cumulative tracker mutations + queue flush, atomically.
+4. Commit the tracker file on `autopilot/<slug>/runbook` with the folded-in block as the commit body. This is an APPEND (no force-push), so it holds under both `no_force_push` settings; the Story PR carries only code. The impl commit on the Story branch and this bookkeeping commit on the runbook branch are now separate PRs.
 
 
-Under `branching.no_force_push: false` this step is a no-op — tracker bookkeeping stays on the rolling tracker PR.
+Under `branching.no_force_push: false` the delta was already committed directly to the runbook branch at claim time (D2), so this batched fold is skipped.
 
 
 **Step D7.2 — Push.** `git push -u origin <branch>`. Transient failure → 1 retry. Auth failure → `[BLOCKED: bitbucket-token-missing]` (impl), no retry.
@@ -399,8 +398,8 @@ Under `branching.single_branch_single_pr: true`, the coarser collapse still appl
 **Step D7.4 — Tracker update.** Set `in_progress.pr_number = <num>` (the Story PR — the same number for every Subtask of the Story), `in_progress.awaiting_ci = true`, `in_progress.pushed_at = <iso8601>`, `in_progress.pushed_sha = <HEAD sha just pushed>` (consumed by D7.5's `ci_check.sh --sha`), `in_progress.ci_check_count = 0`, `last_heartbeat_at = <now>`. Also record the Story's `last_pushed_sha = pushed_sha` on the Story's tracker entry: the NEXT Subtask of this Story reads it as its `prev_pushed_sha` (the D6.2 audit base — AV3-06). The Story's first Subtask has no predecessor, so its audit base is `origin/<trunk>`.
 
 
-- Under `branching.no_force_push: false`: commit via rolling tracker PR.
-- Under `branching.no_force_push: true`: append `delta_kind: status_change` to the queue. The next Subtask's D7.1a fold will land it. Between now and then, D2 will surface the pending entry on hydrate.
+- Under `branching.no_force_push: false`: commit the status delta directly to the Runbook PR branch (`autopilot/<slug>/runbook`, AV3-08).
+- Under `branching.no_force_push: true`: append `delta_kind: status_change` to the queue. The next Subtask's D7.1a fold lands it on the runbook branch. Between now and then, D2 will surface the pending entry on hydrate.
 
 
 ### D7.3a — Stacked PR merge strategy (AP-10)
@@ -490,7 +489,7 @@ Tracker tracks `consecutive_impl_blocks: N` and `consecutive_ci_blocks: N` at th
 G5 already-shipped Subtasks do NOT affect either counter — they're marked Done at GENERATE-time before any drain has started.
 
 
-External faults (`foreign-commits-on-branch`, `trunk-renamed`, `tracker-pr-blocked`, `unexpected-branch-shape`, `ci-check-usage-error`) route straight to `HUMAN_NEEDED` and never touch counters.
+External faults (`foreign-commits-on-branch`, `trunk-renamed`, `runbook-pr-blocked`, `unexpected-branch-shape`, `ci-check-usage-error`) route straight to `HUMAN_NEEDED` and never touch counters.
 
 
 The caps are runbook-configured: `budget.max_impl_blocks` (default 3) and `budget.max_ci_blocks` (default 2 — CI flakes are usually environmental; retrying past 2 burns budget). At `consecutive_impl_blocks >= budget.max_impl_blocks` OR `consecutive_ci_blocks >= budget.max_ci_blocks`:
@@ -514,24 +513,21 @@ The caps are runbook-configured: `budget.max_impl_blocks` (default 3) and `budge
 | `STOPPED` | Hard fault (dirty trunk, missing runbook, concurrent drain detected) | Deleted |
 
 
-# Tracker-PR availability
+# Runbook-PR availability (AV3-08)
 
 
-Every fire under `branching.no_force_push: false` writes its tracker delta through the rolling tracker PR (`autopilot/<slug>/tracker`). If that PR becomes unmergeable mid-drain, the loop has no place to land bookkeeping commits and must surface for human triage rather than silently diverging.
+Every fire lands its tracker bookkeeping on the **Runbook PR** (`autopilot/<slug>/runbook`) — the single bookkeeping home under BOTH `no_force_push` settings (the pre-v3 rolling tracker PR is retired). If that PR becomes unmergeable mid-drain, the loop has no place to land bookkeeping and must surface for human triage rather than silently diverging.
 
 
-Under `branching.no_force_push: true` this section does not apply — bookkeeping lands via the AP-23 batched-delta queue, and there is no rolling tracker PR to poll.
+At the top of D1 (after D1.0/D1.1, before D2), check the Runbook PR state via `bash ${SKILL_DIR}/scripts/host.sh pr-state --branch autopilot/<slug>/runbook`. The observable states are exactly what the adapter emits — `OPEN | MERGED | DECLINED | NONE` (mergeability is NOT observable through `pr-state` — a conflicted Runbook PR surfaces later as a failed push, not here):
 
 
-At the top of D1 (after D1.0/D1.1, before D2), when `branching.no_force_push: false`, check the tracker PR state via `bash ${SKILL_DIR}/scripts/host.sh pr-state --branch autopilot/<slug>/tracker`. The observable states are exactly what the adapter emits — `OPEN | MERGED | DECLINED | NONE` (a draft tracker PR would read `DRAFT`; mergeability is NOT observable through `pr-state` — a conflicted tracker PR surfaces later as a failed push/merge, not here):
-
-
-| Tracker PR state | Action |
+| Runbook PR state | Action |
 |---|---|
 | `OPEN` | Normal — continue. |
-| `NONE` | No PR exists for the tracker branch (e.g. a prior fire pushed the branch but crashed before PR creation, or the PR was deleted). If the remote branch exists, open the rolling tracker PR (`pr-open`); if not, branch `autopilot/<slug>/tracker` from `origin/<trunk>`, push, and open it. Add a `## Drift Notes` entry; continue. |
-| `DECLINED` | Write `STATUS: HUMAN_NEEDED — tracker-pr-blocked` citing the tracker PR URL, `CronDelete`, exit. (External fault: no counter increment.) |
-| `MERGED` | Re-open the rolling tracker PR pattern by branching `autopilot/<slug>/tracker` from `origin/<trunk>` and pushing; continue. |
+| `NONE` | No PR exists for the runbook branch (e.g. a prior fire pushed the branch but crashed before PR creation, or the PR was deleted). If the remote branch exists, open the Runbook PR (`host.sh pr-open`); if not, branch `autopilot/<slug>/runbook` from `origin/<trunk>`, push the runbook + tracker, and open it with the predicted file-surface block (G7). Add a `## Drift Notes` entry; continue. |
+| `DECLINED` | Write `STATUS: HUMAN_NEEDED — runbook-pr-blocked` citing the Runbook PR URL, `CronDelete`, exit. (External fault: no counter increment.) |
+| `MERGED` | The operator/Marshal merged the Runbook PR early — re-open the bookkeeping home by branching `autopilot/<slug>/runbook` from `origin/<trunk>` and pushing; continue. |
 
 
 # End-of-drain output
@@ -541,6 +537,7 @@ When `STATUS: DRAINED` is written, the final fire produces `MERGE-ORDER.md` next
 
 
 - DAG-topological list of Story PRs with dependency annotations (DAG root / depends on / stacked, with the merge-commit-not-squash flag highlighted for stacked Story PRs)
+- The **Runbook PR** (`autopilot/<slug>/runbook`) as the FINAL entry — the operator (or the Marshal, once built) merges it; autopilot NEVER merges its own PRs (Hard Contract 4 spirit). On `HUMAN_NEEDED`/`PAUSED` it is listed with a disposition alongside the dangling draft Story PRs.
 - Drain start SHA, current `origin/<trunk>` SHA + commit delta
 - Mid-drain rebase count
 - Hot-file serialization count
