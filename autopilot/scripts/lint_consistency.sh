@@ -315,9 +315,22 @@ grep -q '## Behavior coverage' "$dlc" || { violation L20 "drain-lifecycle.md doe
 grep -q 'autopilot:behavior-coverage' "$dlc" || { violation L20 "the Behavior coverage block is missing its grep-able marker (autopilot:behavior-coverage)"; l20_bad=1; }
 (( l20_bad == 0 )) && ok L20
 
+# --- L21: implementer anti-flakiness contract + design-validator routing (AV3-11) --
+# The five anti-flakiness rules live in the implementer prompt; the design
+# validator routes violations (test quality is design's remit). Pin both so a
+# rule can't be dropped from the prompt or silently un-routed.
+l21_bad=0
+l21_imp="$ROOT/references/implementer-prompt.md"
+l21_val="$ROOT/references/validator-prompts.md"
+for phrase in 'ANTI-FLAKINESS' 'sleeps for synchronization' 'Seeded randomness' 'Injected clock' 'Faked transport' 'Order-independent'; do
+  grep -qF "$phrase" "$l21_imp" || { violation L21 "implementer-prompt.md missing anti-flakiness rule: $phrase"; l21_bad=1; }
+done
+grep -qF 'Anti-flakiness contract' "$l21_val" || { violation L21 "design validator does not route the anti-flakiness contract"; l21_bad=1; }
+(( l21_bad == 0 )) && ok L21
+
 if (( FAIL == 1 )); then
   echo "lint_consistency: FAIL" >&2
   exit 1
 fi
-echo "lint_consistency: PASS (20 rules)"
+echo "lint_consistency: PASS (21 rules)"
 exit 0

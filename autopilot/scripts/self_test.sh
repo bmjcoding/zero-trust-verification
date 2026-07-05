@@ -1628,10 +1628,10 @@ assert_contains H50 "unrecognised origin names the override knob" "AUTOPILOT_HOS
 ( cd "$GH_REPO_DIR" && bash "$HERE/host.sh" bogus-sub >/dev/null 2>&1 ); rc=$?
 assert_eq H50 "unknown subcommand -> usage 64" "64" "$rc"
 
-echo "== consistency lint (L1-L20) =="
+echo "== consistency lint (L1-L21) =="
 
 if bash "$HERE/lint_consistency.sh" >/dev/null 2>&1; then
-  pass LINT "lint_consistency.sh passes (20 rules)"
+  pass LINT "lint_consistency.sh passes (21 rules)"
 else
   fail LINT "lint_consistency.sh reports violations (run it directly for detail)"
 fi
@@ -1690,6 +1690,17 @@ if bash "$planted20/scripts/lint_consistency.sh" >/dev/null 2>&1; then
   fail L20 "L20 did NOT red a dropped Behavior-coverage marker"
 else
   pass L20 "L20 reds a dropped Behavior-coverage marker"
+fi
+
+# L21 must red an implementer prompt that drops an anti-flakiness rule.
+planted21="$SANDBOX/planted-lint-21"
+cp -R "$ROOT" "$planted21"
+grep -v 'Faked transport' "$planted21/references/implementer-prompt.md" > "$planted21/references/imp.tmp"
+mv "$planted21/references/imp.tmp" "$planted21/references/implementer-prompt.md"
+if bash "$planted21/scripts/lint_consistency.sh" >/dev/null 2>&1; then
+  fail L21 "L21 did NOT red a dropped anti-flakiness rule"
+else
+  pass L21 "L21 reds a dropped anti-flakiness rule"
 fi
 
 echo
