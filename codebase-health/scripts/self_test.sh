@@ -600,6 +600,9 @@ if have_validator; then
   assert_grep "$WORK/join.out" 'ROW emission .*fpsrc=app/payments\.py:capture:manifest-emission-drift'                "CH-03 CH-AMEND-A: step row uses path:symbol fingerprint"
   assert_grep "$WORK/join.out" 'ROW criticality .*fpsrc=app/payments\.py:Payment capture:manifest-criticality-drift'  "CH-03 CH-AMEND-A: journey row uses <source-no-line>:<name> fingerprint (line stripped)"
   assert_not_grep "$WORK/join.out" 'fpsrc=app/payments\.py:12'  "CH-03 CH-AMEND-A: no line numbers leak into any fingerprint (audit-state-and-verify.md)"
+  # the fp= hash is the canonical first-12-hex of sha1(path:symbol:slug) — recompute it independently.
+  EXP_FP="$(printf '%s' 'app/payments.py:capture:manifest-emission-drift' | { command -v sha1sum >/dev/null 2>&1 && sha1sum || shasum -a 1; } | cut -c1-12)"
+  assert_grep "$WORK/join.out" "fp=$EXP_FP" "CH-03: emission fp == first-12-hex sha1(path:symbol:slug), independently recomputed"
 
   # ── emission lattice (rows 3+4): intent OBSERVED / LOG-ONLY × {OBSERVED,LOG-ONLY,DARK}
   mut "s['emission_grade']='LOG-ONLY'" "$WORK/j.json"; JOIN "$MREF" "$WORK/j.json"; row_is emission FAIL "CH-03 emission(OBSERVED): grade LOG-ONLY -> FAIL"
@@ -609,7 +612,8 @@ if have_validator; then
   mut "s['emission_grade']='DARK'"     "$WORK/j.json"; JOIN "$WORK/m_logonly.yaml" "$WORK/j.json"; row_is emission FAIL "CH-03 emission(LOG-ONLY): grade DARK -> FAIL (DARK never satisfies)"
   # emission severity: DARK on a traced CORE money path -> HIGH (severity-rubric 1.4.0 amendment)
   mut "s['emission_grade']='DARK'"     "$WORK/j.json"; JOIN "$MREF" "$WORK/j.json"
-  assert_grep "$WORK/join.out" '^ROW emission FAIL sev=HIGH' "CH-03 emission severity: DARK on traced CORE money path -> HIGH"
+  assert_grep     "$WORK/join.out" '^ROW emission FAIL sev=HIGH'                "CH-03 emission severity: DARK on traced CORE money path -> HIGH"
+  assert_not_grep "$WORK/join.out" '^ROW emission FAIL sev=HIGH.*needs-verification' "CH-03: a confirmed HIGH carries NO needs-verification mark (rubric; annotation not inverted)"
 
   # ── seam lattice (row 5) ──────────────────────────────────────────────────
   mut "s['alert_seam']='dashboard-only'" "$WORK/j.json"; JOIN "$MREF" "$WORK/j.json"; row_is seam FAIL "CH-03 seam(paged): discovered dashboard-only -> FAIL"
@@ -672,6 +676,7 @@ if have_validator; then
   "${PYRUN[@]}" -c "import json; d=json.load(open('$JREF')); j=d['journeys'][0]; j['criticality']='SUPPORTING'; j['steps'][0]['emission_grade']='DARK'; json.dump(d,open('$WORK/j_untraced.json','w'))"
   bash "$JOINSH" "$MREF" "$WORK/j_untraced.json" > "$WORK/cap.out" 2>&1
   assert_grep     "$WORK/cap.out" '^ROW emission FAIL sev=MED'  "CH-08 cap: DARK on an untraced step under the payments profile stays MED"
+  assert_grep     "$WORK/cap.out" '^ROW emission FAIL sev=MED .*needs-verification' "CH-08: an untraced/unconfirmed capped MED absence carries needs-verification (rubric)"
   assert_not_grep "$WORK/cap.out" '^ROW emission FAIL sev=HIGH' "CH-08 cap: the profile cannot lift an untraced absence to HIGH (1.4.0 rubric gate holds)"
 else
   echo "  [skip] validate_manifest.sh absent — CH-08 profile-awareness checks skipped (blocked-on the spec-gen validator drain)"
@@ -720,7 +725,7 @@ ROT="$WORK/rot"; mkdir -p "$ROT"
   mkdir -p docs/adr src
   printf 'def transfer_funds(a, b):\n    return a + b\n\ndef keep_me():\n    return 1\n\ndef orphan_helper():\n    return 9\n' > src/billing.py
   printf 'def test_legacy_capture():\n    assert True\n' > src/legacy_test.py
-  printf '# ADR 0001: money movement\ntransfer_funds is the money-movement entrypoint.\n' > docs/adr/0001-x.md
+  printf '# ADR 0001: money movement\ntransfer_funds is the money-movement entrypoint; keep_me is a stable helper.\n' > docs/adr/0001-x.md
   printf '{ "schema_version": 2, "journeys": [ {"name":"Transfers","steps":[{"path":"src/billing.py","symbol":"transfer_funds","vital_class":"money"}]} ] }\n' > journeys.json
   cat > manifest.yaml <<'YAML'
 schema_version: 1
@@ -743,14 +748,19 @@ YAML
   rm src/legacy_test.py
   git add -A && git commit -qm change )
 RBASE="$(cd "$ROT" && git rev-parse HEAD~1)"
-( cd "$ROT" && bash "$SKILL_SCRIPTS/check_memory_rot.sh" "$RBASE" --manifest manifest.yaml --journeys journeys.json ) > "$WORK/rot.out" 2>&1
+( cd "$ROT" && bash "$SKILL_SCRIPTS/check_memory_rot.sh" "$RBASE" --manifest manifest.yaml --journeys journeys.json ) > "$WORK/rot.out" 2>&1; rot_rc=$?
 assert_grep     "$WORK/rot.out" "\[FINDING blocking\] memory-rot-dangling-ref: 'transfer_funds'" "CH-05: deleted symbol still referenced by manifest/journeys/ADR -> memory-rot-dangling-ref (blocking)"
 assert_grep     "$WORK/rot.out" "fpsrc=src/billing\.py:transfer_funds:memory-rot-dangling-ref"    "CH-05: finding carries a path:symbol:slug fingerprint (no line number)"
 assert_grep     "$WORK/rot.out" "rot-suppressed tombstone. 'test_legacy_capture'"                 "CH-05: lifecycle:withdrawn tombstone suppresses the rot finding (MS §6)"
 assert_not_grep "$WORK/rot.out" "memory-rot-dangling-ref: 'test_legacy_capture'"                  "CH-05: tombstoned deletion emits NO dangling-ref finding"
-assert_grep     "$WORK/rot.out" "rot-suppressed alias. rename: 'keep_me'"                         "CH-05: renamed/moved symbol is aliased (git-follow/symbol-grep), not flagged"
-assert_not_grep "$WORK/rot.out" "memory-rot-dangling-ref: 'keep_me'"                              "CH-05: renamed symbol emits NO dangling-ref finding (rename is not closure)"
+assert_grep     "$WORK/rot.out" "rot-suppressed alias. rename: 'keep_me'"                         "CH-05: renamed/moved symbol (referenced by the ADR) is aliased, not flagged"
+assert_not_grep "$WORK/rot.out" "memory-rot-dangling-ref: 'keep_me'"                              "CH-05: renamed symbol emits NO dangling-ref finding (rename is not closure; load-bearing — ADR references keep_me)"
 assert_not_grep "$WORK/rot.out" "memory-rot-dangling-ref: 'orphan_helper'"                        "CH-05: cleanly-deleted unreferenced symbol emits NO finding (precision)"
+# CH-05 blocking class raises the CI-surface exit (mirrors CH-06/CH-09) so
+# pr_gate's aggregate high-water can consult it — not silently exit-0.
+if [ "$rot_rc" -eq 1 ]; then ok "CH-05: a dangling-ref finding exits 1 (ADR-0004 blocking; pr_gate aggregates it)"; else fail "CH-05: dangling-ref must exit 1 [rc=$rot_rc]"; fi
+( cd "$ROT" && bash "$SKILL_SCRIPTS/check_memory_rot.sh" HEAD --manifest manifest.yaml --journeys journeys.json ) >/dev/null 2>&1; rc=$?
+if [ "$rc" -eq 0 ]; then ok "CH-05: no deletions (HEAD==worktree) -> no finding, exit 0"; else fail "CH-05: clean diff must exit 0 [rc=$rc]"; fi
 
 echo "== 20. CH-06 behavior-ID coverage — claimed vs proven (MS §13.11; ADR 0004) =="
 # git fixture: a RED commit proves B-pay-001; a real test node proves B-pay-002;
@@ -797,6 +807,21 @@ assert_not_grep "$WORK/bcov_clean.out" 'FINDING blocking' "CH-06: no blocking fi
 ( cd "$BCOV" && bash "$SKILL_SCRIPTS/check_behavior_coverage.sh" /no/such/manifest.yaml pr_mixed.md "$BCBASE" ) > "$WORK/bcov_nomani.out" 2>&1; rc=$?
 assert_grep "$WORK/bcov_nomani.out" '\[note\] no manifest' "CH-06 degrade: manifest absent -> loud [note] (MS §11)"
 if [ "$rc" -eq 0 ]; then ok "CH-06 degrade: manifest-absent never blocks (exit 0)"; else fail "CH-06 degrade: manifest-absent never blocks [rc=$rc]"; fi
+# PROOF INTEGRITY (adversarial fix): a bare MENTION of the test node (a comment,
+# no real def/it/test) must NOT count as proof — else the gate is trivially defeated.
+printf '# TODO: someday write test_ghost for the ghost path\n' > "$BCOV/tests/test_ghost.py"
+cat >> "$BCOV/manifest.yaml" <<'YAML'
+  - id: B-pay-004
+YAML
+cat > "$BCOV/pr_ghost.md" <<'MD'
+# PR
+## Behavior coverage
+- B-pay-004: tests/test_ghost.py::test_ghost
+MD
+( cd "$BCOV" && bash "$SKILL_SCRIPTS/check_behavior_coverage.sh" manifest.yaml pr_ghost.md "$BCBASE" ) > "$WORK/bcov_ghost.out" 2>&1; rc=$?
+assert_grep     "$WORK/bcov_ghost.out" '\[FINDING blocking\] behavior-claimed-unproven: behavior B-pay-004' "CH-06 proof integrity: a comment-only mention of the test node does NOT prove -> blocking"
+assert_not_grep "$WORK/bcov_ghost.out" 'B-pay-004 proven via test-node'                                    "CH-06 proof integrity: no false 'proven via test-node' on a comment-only mention"
+if [ "$rc" -eq 1 ]; then ok "CH-06 proof integrity: fabricated coverage claim gates (exit 1)"; else fail "CH-06 proof integrity: fabricated claim must gate [rc=$rc]"; fi
 
 echo "== 21. CH-07 SG-8 provenance + main-lineage ID reservation (spec-gen SG-8; MS §6) =="
 # git fixture: main seeds the manifest (reserving B-main-001); a never-merged
@@ -988,6 +1013,67 @@ behaviors:
 YAML
 hist_run
 assert_grep "$WORK/hist.out" '\[FINDING blocking\] id-tombstone-reuse: B-pay-003' "CH-09: reusing a tombstoned (withdrawn) ID -> blocking (MS §6, reserved forever)"
+
+# cross-kind guard (adversarial fix): a journey `name` and a behavior `title`
+# that share a label must NOT collide in the renumber check. Prior lists the
+# BEHAVIOR first (so an unfiltered label lookup would attribute the journey's
+# renumber to the behavior). Renumbering only the journey must name the JOURNEY.
+HX="$WORK/histx"; mkdir -p "$HX"
+( cd "$HX"
+  git init -q -b main && git config user.email t@t && git config user.name t
+  cat > manifest.yaml <<'YAML'
+schema_version: 1
+manifest_revision: 1
+completeness: incomplete
+incomplete_fields: ["spec.spec_hash"]
+behaviors:
+  - id: B-cap-001
+    title: "Capture"
+    lifecycle: active
+journeys:
+  - id: J-cap-001
+    name: "Capture"
+    lifecycle: active
+YAML
+  git add -A && git commit -qm base )
+HXBASE="$(cd "$HX" && git rev-parse HEAD)"
+cat > "$HX/manifest.yaml" <<'YAML'
+schema_version: 1
+manifest_revision: 2
+completeness: incomplete
+incomplete_fields: ["spec.spec_hash"]
+behaviors:
+  - id: B-cap-001
+    title: "Capture"
+    lifecycle: active
+journeys:
+  - id: J-cap-002
+    name: "Capture"
+    lifecycle: active
+YAML
+( cd "$HX" && bash "$SKILL_SCRIPTS/check_manifest_history.sh" manifest.yaml "$HXBASE" ) > "$WORK/histx.out" 2>&1
+assert_grep     "$WORK/histx.out" 'id-renumber: entry .Capture. renumbered J-cap-001 -> J-cap-002' "CH-09 cross-kind: renumber names the JOURNEY (J-cap-001 -> J-cap-002)"
+assert_not_grep "$WORK/histx.out" 'renumbered B-cap-001'                                            "CH-09 cross-kind: a shared label does NOT attribute the journey renumber to the behavior"
+
+# non-integer revision (adversarial fix): a schema-defect revision must be said
+# out loud and skipped, never routed around with a bogus '[clean] monotonic'.
+cat > "$HX/manifest.yaml" <<'YAML'
+schema_version: 1
+manifest_revision: 1.2
+completeness: incomplete
+incomplete_fields: ["spec.spec_hash"]
+behaviors:
+  - id: B-cap-001
+    title: "Capture edited"
+    lifecycle: active
+journeys:
+  - id: J-cap-001
+    name: "Capture"
+    lifecycle: active
+YAML
+( cd "$HX" && bash "$SKILL_SCRIPTS/check_manifest_history.sh" manifest.yaml "$HXBASE" ) > "$WORK/histni.out" 2>&1
+assert_grep     "$WORK/histni.out" 'manifest_revision non-integer' "CH-09: non-integer manifest_revision -> loud note, monotonicity skipped (not routed around)"
+assert_not_grep "$WORK/histni.out" '\[clean\] manifest_revision'   "CH-09: a non-integer revision never prints a bogus '[clean] ... monotonic'"
 
 # incomplete manifest: spec_hash check skipped (⟨MS-AMEND-1⟩)
 write_manifest <<YAML

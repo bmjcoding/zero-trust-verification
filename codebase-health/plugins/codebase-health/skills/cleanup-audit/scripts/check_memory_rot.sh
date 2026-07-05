@@ -145,4 +145,10 @@ while IFS= read -r s; do
 done <<< "$removed_syms"
 
 echo "==> memory-rot done — $findings dangling-ref finding(s). (Semantic-drift layer is agent-owned, comment-only — ADR 0004.)"
-exit 0
+# memory-rot-dangling-ref is the ADR-0004 BLOCKING class: a real dangling ref
+# raises the CI-surface exit so a human-wired gate — and pr_gate's aggregate
+# high-water — can consult it, exactly like check_behavior_coverage.sh (CH-06)
+# and check_manifest_history.sh (CH-09) do for their blocking classes. Still a
+# reporter: nothing is mutated, and this facet never runs on the warn-only hook
+# surface (which stays exit-0 unconditionally).
+[ "$findings" -eq 0 ] && exit 0 || exit 1

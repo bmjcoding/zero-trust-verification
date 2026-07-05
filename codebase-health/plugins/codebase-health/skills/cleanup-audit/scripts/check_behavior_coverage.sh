@@ -88,10 +88,14 @@ while IFS= read -r line; do
   if [ -n "$GITLOG" ] && printf '%s\n' "$GITLOG" | grep -E "RED" | grep -qE "(^|[^A-Za-z0-9_])$bid([^A-Za-z0-9_]|$)"; then
     proven="RED-commit"
   fi
-  # test-node evidence: the node's file exists and defines the named test.
+  # test-node evidence: the node's file exists AND actually DEFINES the named
+  # test — a def/func/fn, or an it()/test()/describe() declaration. A bare
+  # mention (a comment, a TODO, a string) must NOT count as proof, or the
+  # "who checks the checker" gate is trivially defeated by claiming a test that
+  # was never written (evidence, not self-report — ADR 0003).
   if [ -z "$proven" ] && [ -n "$node" ]; then
     nf="${node%%::*}"; nn="${node##*::}"
-    if [ -f "$nf" ] && grep -qE "(def|it|test)[^A-Za-z0-9_]*$nn\b|\b$nn\b" "$nf" 2>/dev/null; then
+    if [ -f "$nf" ] && grep -qE "(^|[^A-Za-z0-9_])(def|func|fn)[[:space:]]+$nn\b|(^|[^A-Za-z0-9_])(it|test|describe)[[:space:]]*\([^)]*$nn" "$nf" 2>/dev/null; then
       proven="test-node"
     fi
   fi

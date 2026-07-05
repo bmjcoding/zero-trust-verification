@@ -106,6 +106,13 @@ if [ -n "$PRIOR" ]; then
   content_changed=0
   [ "$(printf '%s' "$PRIOR")" != "$(cat "$MANIFEST")" ] && content_changed=1
   if [ -n "$cur_rev" ] && [ -n "$prior_rev" ]; then
+   case "$cur_rev$prior_rev" in
+    *[!0-9]*)
+      # The schema requires an integer revision; a non-integer is a schema
+      # defect. Say so and skip the arithmetic — never route around it silently
+      # by printing a bogus "[clean] monotonic" (invariant 6).
+      echo "[note] manifest_revision non-integer (cur='$cur_rev' prior='$prior_rev') — monotonicity check skipped; a non-integer revision is a schema defect (fix the manifest)" ;;
+    *)
     if [ "$content_changed" -eq 1 ] && [ "$cur_rev" -le "$prior_rev" ]; then
       echo "[FINDING] manifest-revision-non-monotonic: manifest changed but revision $cur_rev <= prior $prior_rev — a content change must bump the revision (MS §3/§13.11) fpsrc=$MANIFEST:<module>:manifest-revision-non-monotonic"
     elif [ "$cur_rev" -gt $((prior_rev + 1)) ]; then
@@ -113,6 +120,8 @@ if [ -n "$PRIOR" ]; then
     else
       echo "[clean] manifest_revision: $prior_rev -> $cur_rev monotonic"
     fi
+    ;;
+   esac
   fi
 else
   echo "[note] manifest_revision: no prior revision at $BASE — first appearance on this lineage (nothing to compare)"
@@ -138,10 +147,14 @@ if [ -n "$PRIOR" ]; then
       id_findings=$((id_findings+1))
     fi
   done <<< "$CUR_MAP"
-  # renumber: same label, different ID.
+  # renumber: same label, different ID — but ONLY within the same J/B kind. A
+  # journey `name` and a behavior `title` frequently share a short phrase; a
+  # cross-kind label match would attribute one entry's renumber to an unrelated
+  # ID (a false blocking finding). Filter the prior lookup by the id's kind.
   while IFS="$(printf '\t')" read -r id label life; do
     [ -n "$label" ] || continue
-    pid="$(printf '%s\n' "$PRIOR_MAP" | awk -F'\t' -v l="$label" '$2==l{print $1; exit}')"
+    kind="$(printf '%s' "$id" | cut -c1)"
+    pid="$(printf '%s\n' "$PRIOR_MAP" | awk -F'\t' -v l="$label" -v k="$kind" 'substr($1,1,1)==k && $2==l{print $1; exit}')"
     if [ -n "$pid" ] && [ "$pid" != "$id" ]; then
       echo "[FINDING blocking] id-renumber: entry '$label' renumbered $pid -> $id vs the prior revision (MS §11 blocking class) fpsrc=$MANIFEST:$id:id-renumber"
       id_findings=$((id_findings+1))
