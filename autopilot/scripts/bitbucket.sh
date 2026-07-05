@@ -111,10 +111,14 @@ SIDECAR_MODE=0
 SIDECAR_BASE=""
 SIDECAR_PLATFORM_ID=""
 # sidecar_detect.sh emits `MODE=... PLATFORMS="..." URL="..."`. Parse without
-# eval (the values are env-derived; eval would be an injection surface).
-MODE=$(sed -n 's/^.*\bMODE=\([a-z]*\).*$/\1/p' <<<"$MODE_LINE")
-PLATFORMS=$(sed -n 's/^.*\bPLATFORMS="\([^"]*\)".*$/\1/p' <<<"$MODE_LINE")
-URL=$(sed -n 's/^.*\bURL="\([^"]*\)".*$/\1/p' <<<"$MODE_LINE")
+# eval (the values are env-derived; eval would be an injection surface). The
+# key tokens are single-occurrence in the controlled mode-line, so an anchored
+# match is unambiguous WITHOUT a `\b` word boundary — and `\b` is a GNU-sed
+# extension BSD/macOS sed does not honour (it would silently yield empty and
+# force every call to local mode). Portable across GNU and BSD sed.
+MODE=$(sed -n 's/^.*MODE=\([a-z]*\).*$/\1/p' <<<"$MODE_LINE")
+PLATFORMS=$(sed -n 's/^.*PLATFORMS="\([^"]*\)".*$/\1/p' <<<"$MODE_LINE")
+URL=$(sed -n 's/^.*URL="\([^"]*\)".*$/\1/p' <<<"$MODE_LINE")
 if [[ "${MODE:-local}" == "sidecar" ]]; then
   # "bitbucketdc" is the contract-canonical platform id (sidecar-contract.md);
   # "bitbucket" is accepted for legacy sidecars. The matched id is used as the
@@ -210,13 +214,17 @@ bb_curl() {
   for attempt in 1 2; do
     prepare_curl_auth
     tmp_raw="$(mktemp)"; tmp_hdr="$(mktemp)"; rc=0
+    # ${arr[@]+"${arr[@]}"} guard: bash 3.2 (the macOS default shell) treats a
+    # bare "${empty[@]}" as an unbound-variable error under set -u. CURL_AUTH is
+    # empty in sidecar-mode-without-CA, and extra[] is empty on every GET, so
+    # both MUST use the alternate-expansion guard to stay portable.
     http_code=$(curl -sS --max-time 30 \
       -X "$method" \
       -o "$tmp_raw" \
       -D "$tmp_hdr" \
       -w '%{http_code}' \
-      "${CURL_AUTH[@]}" \
-      "${extra[@]}" \
+      ${CURL_AUTH[@]+"${CURL_AUTH[@]}"} \
+      ${extra[@]+"${extra[@]}"} \
       -H 'Accept: application/json' \
       "$@" \
       "$url") || rc=$?
