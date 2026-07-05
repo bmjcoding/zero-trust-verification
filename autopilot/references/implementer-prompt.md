@@ -11,6 +11,19 @@ only how. Public-interface tests only — never mock internal
 collaborators owned by this Subtask.
 
 
+## ESCALATION BOUNDARY (ADR 0002)
+
+
+<!-- vendored:escalation-criterion:begin (ADR 0002 — byte-identical across all tiers; do NOT edit one copy) -->
+Resolve a decision yourself ONLY when it is BOTH (1) reversible at low cost — undoing it is a normal PR, not a migration or announcement — AND (2) verifiable downstream by the suite's own gates (a test, the D6 audit, or the audit tier). Record each such decision as a one-line decision-log entry (tracker + PR body); promote to an ADR only when it is hard to reverse, surprising without context, AND a real trade-off.
+
+You MUST escalate — never decide unilaterally — any decision requiring:
+1. values / risk appetite (e.g. silent-dedupe vs reject-and-alert on a duplicate);
+2. external facts you cannot observe (alert seams, compliance, org standards, upstream commitments);
+3. irreversible / outward-facing commitments (public API shapes, wire formats).
+<!-- vendored:escalation-criterion:end -->
+
+
 ## INPUTS
 
 
