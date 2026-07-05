@@ -137,8 +137,9 @@ For each Story emitted in G2, spawn a `general-purpose` agent with the role prom
 1. Reads the Story's `evidence` block (file refs, ADR section refs)
 2. Runs `Read`, `Glob`, `Grep` to verify what already exists in the repo vs. what's missing
 3. Decomposes the Story into Subtasks (1–8 files each, <500 LOC delta each)
-4. Emits the full tier-2 schema per Subtask (includes `test_name_hint:` per behavior — AP-9)
-5. Captures `audited_sha:` at planner-spawn time so D3.0 can detect post-plan drift — AP-5
+4. Emits the full tier-2 schema per Subtask (includes `test_name_hint:` per behavior — AP-9, `predicted_hours:` — AV3-07, and `behavior_ids:` — AV3-02)
+5. Maps every active manifest Behavior to ≥1 Subtask via `behavior_ids:` (required for `kind: code | test-only`; `[]` for refactor/config/docs). Skipped for manifest-less drains.
+6. Captures `audited_sha:` at planner-spawn time so D3.0 can detect post-plan drift — AP-5
 
 
 Run all planners in parallel (one Agent message, multiple tool calls). Validate each output against the schema; missing required fields → re-prompt that planner ONCE. Second failure → mark that Story `[GENERATE-FAILED: planner-schema]` and continue with the rest.
@@ -202,11 +203,11 @@ Validate every `depends_on[]` entry against the union of all planner-emitted Sub
 Topo-sort all Subtasks. Detect cycles → `[GENERATE-FAILED: dependency-cycle]`. Detect ownership overlap (same file in two non-dependent Subtasks) → `[GENERATE-FAILED: ownership-overlap]`.
 
 
-**Story-sizing gate (ADR 0012 / AV3-07).** Render the union of planner output to `plan.json` and run `bash ${SKILL_DIR}/scripts/validate_plan_mapping.sh <plan.json>` (the manifest arg is added by AV3-02's behavior-ID mapping). It enforces, deterministically:
-- every Subtask's `predicted_hours` is an integer within its `estimated_size` ceiling (S≤4, M≤16, L≤48) → `[GENERATE-FAILED: story-size-inconsistent: <subtask-id>]`;
-- every Story's Subtasks sum to ≤48 predicted hours → `[GENERATE-FAILED: story-oversized: <story-id>]`.
+**Plan-mapping + sizing gate (ADR 0012 / AV3-07 + MS §13.6 / AV3-02).** Render the union of planner output to `plan.json` and run `bash ${SKILL_DIR}/scripts/validate_plan_mapping.sh <plan.json> [<manifest.yaml>]` (pass the manifest for manifest-backed drains; omit it for manifest-less). It enforces, deterministically:
+- **Sizing (always):** every Subtask's `predicted_hours` is an integer within its `estimated_size` ceiling (S≤4, M≤16, L≤48) → `[GENERATE-FAILED: story-size-inconsistent: <subtask-id>]`; every Story's Subtasks sum to ≤48 predicted hours → `[GENERATE-FAILED: story-oversized: <story-id>]`.
+- **Behavior mapping (manifest only):** every `kind: code | test-only` Subtask maps ≥1 Behavior ID → `[GENERATE-FAILED: unmapped-subtask: <subtask-id>]`; every mapped ID is active in the manifest → `[GENERATE-FAILED: unknown-behavior: <behavior-id>]`; every active manifest Behavior is owned by ≥1 Subtask → `[GENERATE-FAILED: unowned-behavior: <behavior-id>]`. (`refactor`/`config`/`docs` Subtasks are mapping-exempt.)
 
-The gate is deterministic-over-a-declared-prediction (the Marshal owns actuals, ADR 0012). On `story-oversized`, re-spawn the offending Story's planner with an instruction to split it into sequential, independently mergeable Stories; each becomes its own Story branch/PR downstream (AV3-06). The runbook records the resulting behavior-IDs-per-Story table (G7) so the audit can distinguish intentionally-not-yet-wired work from Memory Rot.
+The sizing gate is deterministic-over-a-declared-prediction (the Marshal owns actuals, ADR 0012). On `story-oversized`, re-spawn the offending Story's planner to split it into sequential, independently mergeable Stories; each becomes its own Story branch/PR downstream (AV3-06). On a mapping refusal, re-spawn the planner with the offending ID(s). The runbook records the resulting behavior-IDs-per-Story ledger (G7) so the audit can distinguish intentionally-not-yet-wired work from Memory Rot.
 
 
 ## Step G5 — Already-shipped detection

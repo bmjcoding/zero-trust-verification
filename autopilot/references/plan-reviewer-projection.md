@@ -25,6 +25,7 @@ This list is the SINGLE canonical allow-list — G3.5, D3.2, and the rationale d
 ```yaml
 - id: <slug>
   parent_story: <story_id>
+  behavior_ids: [<B-...>]         # AV3-02: mapping completeness is reviewable structure
   kind: <code | test-only | refactor | docs | config>
   owned_files:
     - <repo-relative-path>

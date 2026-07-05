@@ -273,9 +273,23 @@ grep -q 'PR-per-Story' "$ROOT/SKILL.md" || { violation L17 "SKILL.md does not ca
 grep -q 'autopilot/<slug>/<story-id>' "$ROOT/references/drain-lifecycle.md" || { violation L17 "drain-lifecycle.md does not name the Story branch autopilot/<slug>/<story-id>"; l17_bad=1; }
 (( l17_bad == 0 )) && ok L17
 
+# --- L18: AP-3 projection allow-list tracks the AV3 planner schema (AV3-02/07) -
+# The reviewer projection (AP-3) is what plan review judges from; a planner-schema
+# field the projection omits is invisible to the reviewer. Pin the AV3 additions —
+# behavior_ids (AV3-02) and predicted_hours (AV3-07) — in BOTH the planner schema
+# and the projection allow-list so they cannot drift apart.
+l18_bad=0
+l18_proj="$ROOT/references/plan-reviewer-projection.md"
+l18_plan="$ROOT/references/planner-prompt.md"
+for field in behavior_ids predicted_hours; do
+  grep -q "${field}:" "$l18_proj" || { violation L18 "AP-3 allow-list missing '${field}:' (plan review can't see it)"; l18_bad=1; }
+  grep -q "${field}:" "$l18_plan" || { violation L18 "planner schema missing '${field}:'"; l18_bad=1; }
+done
+(( l18_bad == 0 )) && ok L18
+
 if (( FAIL == 1 )); then
   echo "lint_consistency: FAIL" >&2
   exit 1
 fi
-echo "lint_consistency: PASS (17 rules)"
+echo "lint_consistency: PASS (18 rules)"
 exit 0

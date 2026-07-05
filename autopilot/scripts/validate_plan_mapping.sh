@@ -86,11 +86,53 @@ done < <(jq -r '
   | [ .[0].s, (map(.h) | add) ] | @tsv' "$PLAN")
 
 # ---------------------------------------------------------------------------
-# AV3-02 — Subtask <-> Behavior-ID mapping (only when a manifest is supplied).
-# Populated in the AV3-02 landing; the block is a no-op until then.
+# AV3-02 — Subtask <-> Behavior-ID mapping (MS §13.6). Only when a manifest is
+# supplied; manifest-less inputs keep v2.4.0 semantics (no behavior_ids).
 # ---------------------------------------------------------------------------
 if [[ -n "$MANIFEST" ]]; then
-  : # AV3-02 extension point (behavior-id mapping) — added in that item.
+  [[ -f "$MANIFEST" ]] || { echo "validate_plan_mapping: manifest not found: $MANIFEST" >&2; exit 64; }
+
+  # Active manifest Behavior IDs (lifecycle: active only) — the ownership universe.
+  # Walk the top-level `behaviors:` block; each item opens with `- id: B-...` and
+  # carries a `lifecycle:` line. Withdrawn tombstones are excluded. No YAML lib —
+  # the manifest format is regular (bash 3.2 + BSD awk safe).
+  active_behaviors="$(awk '
+    /^[A-Za-z_]/ { inb = ($0 ~ /^behaviors:/) }
+    inb && /^[[:space:]]*-[[:space:]]*id:[[:space:]]*/ {
+      id=$0; sub(/^[[:space:]]*-[[:space:]]*id:[[:space:]]*/,"",id);
+      sub(/[[:space:]]*#.*/,"",id); gsub(/["'"'"']/,"",id); gsub(/[[:space:]]/,"",id);
+      cur=id
+    }
+    inb && /^[[:space:]]*lifecycle:[[:space:]]*/ {
+      l=$0; sub(/^[[:space:]]*lifecycle:[[:space:]]*/,"",l);
+      sub(/[[:space:]]*#.*/,"",l); gsub(/[[:space:]]/,"",l);
+      if (cur != "") { if (l == "active") print cur; cur="" }
+    }
+  ' "$MANIFEST")"
+
+  # 1. Every code/test-only Subtask maps at least one Behavior ID
+  #    (refactor/config/docs are exempt).
+  while IFS="$(printf '\t')" read -r sid kind bcount; do
+    [[ -z "$sid" ]] && continue
+    case "$kind" in
+      code|test-only) (( bcount >= 1 )) || fail unmapped-subtask "$sid" ;;
+    esac
+  done < <(jq -r '.subtasks[] | [.id, (.kind // ""), ((.behavior_ids // []) | length)] | @tsv' "$PLAN")
+
+  # The set of Behavior IDs the plan claims to cover.
+  mapped="$(jq -r '.subtasks[] | (.behavior_ids // [])[]' "$PLAN" | sort -u)"
+
+  # 2. Every mapped Behavior ID exists and is active in the manifest.
+  while IFS= read -r bid; do
+    [[ -z "$bid" ]] && continue
+    grep -qxF "$bid" <<<"$active_behaviors" || fail unknown-behavior "$bid"
+  done <<< "$mapped"
+
+  # 3. Every active manifest Behavior is owned by at least one Subtask.
+  while IFS= read -r bid; do
+    [[ -z "$bid" ]] && continue
+    grep -qxF "$bid" <<<"$mapped" || fail unowned-behavior "$bid"
+  done <<< "$active_behaviors"
 fi
 
 echo "OK"

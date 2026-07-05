@@ -37,6 +37,11 @@ audited_sha: <40-char SHA from input 4>
 subtasks:
   - id: <slug>                   # unique within the drain (planner namespace; <Story-slug>.<n>)
     parent_story: <story_id>
+    behavior_ids: [<B-...>]      # AV3-02 / MS §13.6: the active manifest Behavior IDs THIS
+                                 # Subtask delivers. REQUIRED (>=1) for kind code|test-only;
+                                 # MUST be [] for refactor|config|docs. Every active Behavior
+                                 # in the manifest must be owned by >=1 Subtask. Omit entirely
+                                 # for manifest-less drains (v2.4.0 semantics).
     title: <one-line, < 80 chars>
     kind: <code | test-only | refactor | docs | config>
     source_ref: <doc-path>:<section>  # may be more specific than Story's source_ref

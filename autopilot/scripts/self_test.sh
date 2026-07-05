@@ -808,7 +808,7 @@ assert_eq "AV3-06.6" "missing --base is usage error 64" "64" "$rc"
 acs --id B2 --base deadbeefdeadbeef >/dev/null 2>&1; rc=$?
 assert_eq "AV3-06.6" "unknown base ref is usage error 64" "64" "$rc"
 
-echo "== validate_plan_mapping.sh (AV3-07 48h Story sizing) =="
+echo "== validate_plan_mapping.sh (AV3-07 sizing + AV3-02 behavior-mapping) =="
 
 VPM="$HERE/validate_plan_mapping.sh"
 vpm() { bash "$VPM" "$@"; }
@@ -867,6 +867,80 @@ vpm >/dev/null 2>&1; rc=$?
 assert_eq "AV3-07.6" "no plan arg is usage error 64" "64" "$rc"
 vpm "$SANDBOX/does-not-exist.json" >/dev/null 2>&1; rc=$?
 assert_eq "AV3-07.6" "absent plan file is usage error 64" "64" "$rc"
+
+# --- AV3-02: Subtask <-> Behavior-ID mapping (validate_plan_mapping.sh + manifest) --
+cat > "$SANDBOX/manifest.yaml" <<'Y'
+schema_version: 1
+manifest_revision: 1
+observability:
+  profile: payments
+environments: [dev, prod]
+behaviors:
+  - id: B-x-001
+    title: "one"
+    lifecycle: active
+    given: "g"
+    when: "w"
+    then: "t"
+  - id: B-x-002
+    title: "two"
+    lifecycle: active
+    given: "g"
+    when: "w"
+    then: "t"
+  - id: B-x-003
+    title: "gone"
+    lifecycle: withdrawn
+    withdrawn_reason: "superseded"
+Y
+MF="$SANDBOX/manifest.yaml"
+
+cat > "$SANDBOX/map_valid.json" <<'J'
+{"subtasks":[
+  {"id":"A1","parent_story":"S","kind":"code","estimated_size":"S","predicted_hours":3,"behavior_ids":["B-x-001"]},
+  {"id":"A2","parent_story":"S","kind":"test-only","estimated_size":"S","predicted_hours":2,"behavior_ids":["B-x-002"]},
+  {"id":"A3","parent_story":"S","kind":"refactor","estimated_size":"S","predicted_hours":2,"behavior_ids":[]}
+]}
+J
+# AV3-02.1 — full active coverage + a refactor Subtask exempt from mapping is valid.
+out=$(vpm "$SANDBOX/map_valid.json" "$MF" 2>&1); rc=$?
+assert_eq "AV3-02.1" "mapped plan (refactor exempt) is valid" "0" "$rc"
+assert_eq "AV3-02.1" "valid mapped plan prints OK" "OK" "$out"
+
+cat > "$SANDBOX/map_unmapped.json" <<'J'
+{"subtasks":[
+  {"id":"A1","parent_story":"S","kind":"code","estimated_size":"S","predicted_hours":3,"behavior_ids":[]},
+  {"id":"A2","parent_story":"S","kind":"code","estimated_size":"S","predicted_hours":2,"behavior_ids":["B-x-001","B-x-002"]}
+]}
+J
+# AV3-02.2 — a code Subtask with no Behavior IDs is unmapped-subtask.
+out=$(vpm "$SANDBOX/map_unmapped.json" "$MF" 2>&1); rc=$?
+assert_eq "AV3-02.2" "unmapped code Subtask refused" "1" "$rc"
+assert_eq "AV3-02.2" "unmapped cites the subtask-id" "[GENERATE-FAILED: unmapped-subtask: A1]" "$out"
+
+cat > "$SANDBOX/map_unowned.json" <<'J'
+{"subtasks":[{"id":"A1","parent_story":"S","kind":"code","estimated_size":"S","predicted_hours":3,"behavior_ids":["B-x-001"]}]}
+J
+# AV3-02.3 — an active manifest Behavior owned by no Subtask is unowned-behavior.
+out=$(vpm "$SANDBOX/map_unowned.json" "$MF" 2>&1); rc=$?
+assert_eq "AV3-02.3" "unowned active Behavior refused" "1" "$rc"
+assert_eq "AV3-02.3" "unowned cites the behavior-id" "[GENERATE-FAILED: unowned-behavior: B-x-002]" "$out"
+
+cat > "$SANDBOX/map_unknown.json" <<'J'
+{"subtasks":[
+  {"id":"A1","parent_story":"S","kind":"code","estimated_size":"S","predicted_hours":3,"behavior_ids":["B-x-001"]},
+  {"id":"A2","parent_story":"S","kind":"code","estimated_size":"S","predicted_hours":2,"behavior_ids":["B-x-002","B-x-003"]}
+]}
+J
+# AV3-02.4 — mapping a withdrawn / nonexistent Behavior is unknown-behavior
+# (B-x-003 is a tombstone; the active universe excludes it).
+out=$(vpm "$SANDBOX/map_unknown.json" "$MF" 2>&1); rc=$?
+assert_eq "AV3-02.4" "mapping a withdrawn Behavior refused" "1" "$rc"
+assert_eq "AV3-02.4" "unknown cites the behavior-id" "[GENERATE-FAILED: unknown-behavior: B-x-003]" "$out"
+
+# AV3-02.5 — manifest-LESS input keeps v2.4.0 semantics: no behavior_ids required.
+out=$(vpm "$SANDBOX/map_unmapped.json" 2>&1); rc=$?
+assert_eq "AV3-02.5" "manifest-less plan needs no behavior_ids" "0" "$rc"
 
 echo "== detect_input_mode.sh (AV3-01 mode inference) =="
 
@@ -1222,10 +1296,10 @@ assert_contains H50 "unrecognised origin names the override knob" "AUTOPILOT_HOS
 ( cd "$GH_REPO_DIR" && bash "$HERE/host.sh" bogus-sub >/dev/null 2>&1 ); rc=$?
 assert_eq H50 "unknown subcommand -> usage 64" "64" "$rc"
 
-echo "== consistency lint (L1-L17) =="
+echo "== consistency lint (L1-L18) =="
 
 if bash "$HERE/lint_consistency.sh" >/dev/null 2>&1; then
-  pass LINT "lint_consistency.sh passes (17 rules)"
+  pass LINT "lint_consistency.sh passes (18 rules)"
 else
   fail LINT "lint_consistency.sh reports violations (run it directly for detail)"
 fi
@@ -1250,6 +1324,18 @@ if bash "$planted17/scripts/lint_consistency.sh" >/dev/null 2>&1; then
   fail L17 "L17 did NOT red a planted 'one PR per Subtask' line"
 else
   pass L17 "L17 reds planted 'one PR per Subtask' framing"
+fi
+
+# L18 must red an AP-3 allow-list that drops a pinned planner-schema field:
+# fresh copy, strip behavior_ids from the projection, expect the copied lint to red.
+planted18="$SANDBOX/planted-lint-18"
+cp -R "$ROOT" "$planted18"
+grep -v 'behavior_ids:' "$planted18/references/plan-reviewer-projection.md" > "$planted18/references/proj.tmp"
+mv "$planted18/references/proj.tmp" "$planted18/references/plan-reviewer-projection.md"
+if bash "$planted18/scripts/lint_consistency.sh" >/dev/null 2>&1; then
+  fail L18 "L18 did NOT red an AP-3 allow-list missing behavior_ids"
+else
+  pass L18 "L18 reds an AP-3 allow-list that drops behavior_ids"
 fi
 
 echo
