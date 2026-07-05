@@ -986,6 +986,69 @@ assert_eq "AV3-01.7" "manifest without validator-exit is usage error 64" "64" "$
 dim --intent bogus >/dev/null 2>&1; rc=$?
 assert_eq "AV3-01.7" "unknown intent is usage error 64" "64" "$rc"
 
+echo "== validate_manifest.sh --union (AV3-03 multi-doc union) =="
+
+VMU="$HERE/validate_manifest.sh"
+# write a minimal manifest: <path> <profile> <environments-inline> <journey-id> <behavior-id>
+write_manifest() {
+  cat > "$1" <<Y
+schema_version: 1
+manifest_revision: 1
+observability:
+  profile: $2
+environments: [$3]
+journeys:
+  - id: $4
+    lifecycle: active
+    steps:
+      - name: "s"
+        vital_class: null
+behaviors:
+  - id: $5
+    lifecycle: active
+    given: g
+    when: w
+    then: t
+Y
+}
+write_manifest "$SANDBOX/u_a.yaml"        payments "dev, prod"       J-a-001 B-a-001
+write_manifest "$SANDBOX/u_b.yaml"        payments "dev, prod"       J-b-001 B-b-001
+write_manifest "$SANDBOX/u_collide.yaml"  payments "dev, prod"       J-a-001 B-c-001
+write_manifest "$SANDBOX/u_prof.yaml"     fraud   "dev, prod"       J-d-001 B-d-001
+write_manifest "$SANDBOX/u_env.yaml"      payments "dev, test, prod" J-e-001 B-e-001
+write_manifest "$SANDBOX/u_order.yaml"    payments "prod, dev"       J-f-001 B-f-001
+vmu() { bash "$VMU" "$@"; }
+
+# AV3-03.1 — two coherent manifests (disjoint IDs, same profile+environments).
+out=$(vmu --union "$SANDBOX/u_a.yaml" "$SANDBOX/u_b.yaml" 2>&1); rc=$?
+assert_eq "AV3-03.1" "coherent union exits 0" "0" "$rc"
+assert_eq "AV3-03.1" "coherent union prints OK" "OK" "$out"
+
+# AV3-03.2 — a Journey/Behavior ID shared across manifests is a union collision.
+out=$(vmu --union "$SANDBOX/u_a.yaml" "$SANDBOX/u_collide.yaml" 2>&1); rc=$?
+assert_eq "AV3-03.2" "id collision refused" "1" "$rc"
+assert_eq "AV3-03.2" "collision cites the id" "[GENERATE-FAILED: manifest-id-collision: J-a-001]" "$out"
+
+# AV3-03.3 — mismatched observability.profile across the union.
+out=$(vmu --union "$SANDBOX/u_a.yaml" "$SANDBOX/u_prof.yaml" 2>&1); rc=$?
+assert_eq "AV3-03.3" "profile mismatch refused" "1" "$rc"
+assert_eq "AV3-03.3" "profile mismatch token" "[GENERATE-FAILED: manifest-union-mismatch: profile]" "$out"
+
+# AV3-03.4 — mismatched environments across the union.
+out=$(vmu --union "$SANDBOX/u_a.yaml" "$SANDBOX/u_env.yaml" 2>&1); rc=$?
+assert_eq "AV3-03.4" "environments mismatch refused" "1" "$rc"
+assert_eq "AV3-03.4" "environments mismatch token" "[GENERATE-FAILED: manifest-union-mismatch: environments]" "$out"
+
+# AV3-03.5 — environments compared as a SET: same members, different order = OK.
+out=$(vmu --union "$SANDBOX/u_a.yaml" "$SANDBOX/u_order.yaml" 2>&1); rc=$?
+assert_eq "AV3-03.5" "environments set-equality (order-insensitive) is coherent" "0" "$rc"
+
+# AV3-03.6 — usage guardrails.
+vmu "$SANDBOX/u_a.yaml" "$SANDBOX/u_b.yaml" >/dev/null 2>&1; rc=$?
+assert_eq "AV3-03.6" "missing --union is usage error 64" "64" "$rc"
+vmu --union "$SANDBOX/u_a.yaml" >/dev/null 2>&1; rc=$?
+assert_eq "AV3-03.6" "a union of one is usage error 64" "64" "$rc"
+
 echo "== secret_get.sh (T25) =="
 
 # T25 — candidate list matches the documented resolver conventions

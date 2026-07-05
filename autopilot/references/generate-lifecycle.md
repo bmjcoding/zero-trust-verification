@@ -203,6 +203,13 @@ Validate every `depends_on[]` entry against the union of all planner-emitted Sub
 Topo-sort all Subtasks. Detect cycles → `[GENERATE-FAILED: dependency-cycle]`. Detect ownership overlap (same file in two non-dependent Subtasks) → `[GENERATE-FAILED: ownership-overlap]`.
 
 
+**Manifest union validation (MS §2 / AV3-03).** For a multi-doc invocation (`--generate @a.md @b.md`), one Spec ships one manifest but the union must be coherent. Run `bash ${SKILL_DIR}/scripts/validate_manifest.sh --union <a.manifest.yaml> <b.manifest.yaml> ...`:
+- a Journey/Behavior ID shared across the unioned manifests → `[GENERATE-FAILED: manifest-id-collision: <id>]` (interrogation-log `DL-###` IDs are per-manifest scope and are NOT unioned);
+- a differing `observability.profile` or `environments` set across the manifests → `[GENERATE-FAILED: manifest-union-mismatch: <profile|environments>]`.
+
+Single-doc drains skip this. `STRAIGHT_THROUGH` (G0) requires the union to pass for multi-doc input.
+
+
 **Plan-mapping + sizing gate (ADR 0012 / AV3-07 + MS §13.6 / AV3-02).** Render the union of planner output to `plan.json` and run `bash ${SKILL_DIR}/scripts/validate_plan_mapping.sh <plan.json> [<manifest.yaml>]` (pass the manifest for manifest-backed drains; omit it for manifest-less). It enforces, deterministically:
 - **Sizing (always):** every Subtask's `predicted_hours` is an integer within its `estimated_size` ceiling (S≤4, M≤16, L≤48) → `[GENERATE-FAILED: story-size-inconsistent: <subtask-id>]`; every Story's Subtasks sum to ≤48 predicted hours → `[GENERATE-FAILED: story-oversized: <story-id>]`.
 - **Behavior mapping (manifest only):** every `kind: code | test-only` Subtask maps ≥1 Behavior ID → `[GENERATE-FAILED: unmapped-subtask: <subtask-id>]`; every mapped ID is active in the manifest → `[GENERATE-FAILED: unknown-behavior: <behavior-id>]`; every active manifest Behavior is owned by ≥1 Subtask → `[GENERATE-FAILED: unowned-behavior: <behavior-id>]`. (`refactor`/`config`/`docs` Subtasks are mapping-exempt.)
