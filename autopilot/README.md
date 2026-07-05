@@ -14,7 +14,7 @@ Given a runbook (a YAML+Markdown file describing a unit of work, its goal, its c
 2. Reviews the plan structure (not its content) for ownership disjointness, dependency acyclicity, and test coverage.
 3. Implements each subtask via TDD cycles: `test: <id>.<n> RED — ...` commit, then `feat: <id>.<n> GREEN — ...` commit, per cycle.
 4. Runs all configured validators in parallel on each subtask's diff. Spawns fix subtasks for findings; escapes contradictions to a human.
-5. Opens a stacked PR per subtask against Bitbucket DC, polls CI, merges with `merge-commit` strategy to preserve cycle history.
+5. Opens one draft PR per Story (PR-per-Story; each Subtask is a commit series on the Story branch), flips it ready when the Story is done, polls CI, and stacks cross-Story dependencies with the `merge-commit` strategy to preserve cycle history — through the host adapter (`scripts/host.sh`), Bitbucket DC or GitHub.
 6. Logs every step to an append-only tracker with session lock and heartbeat.
 
 ## When to use

@@ -87,10 +87,10 @@ For one-off tasks use `/loop` instead. Autopilot is for multi-task autonomous dr
 ## Hard contracts (non-negotiable)
 
 
-1. **One Subtask per drain fire.** Hard contract. Each fire = one tracker delta = one PR or one `[BLOCKED]` reason. No batching (the AP-23 tracker-delta queue is orthogonal — it batches bookkeeping, not Subtasks).
+1. **One Subtask per drain fire; one Story per PR (PR-per-Story — AV3-06 / ADR 0007).** Each fire is still exactly one Subtask end-to-end, but its commit series lands on the **Story branch** `autopilot/<slug>/<story-id>`, and the PR granularity is the **Story**, never the Subtask: a draft Story PR is opened on the Story's first Subtask, kept draft until every one of that Story's Subtasks is `[x] Done`, then flipped ready-for-review. Subtasks are the Story's commit series, not separate PRs. No batching of Subtasks (the AP-23 tracker-delta queue is orthogonal — it batches bookkeeping, not Subtasks).
 2. **Vanilla Claude Code agents only.** `Explore`, `Plan`, `general-purpose`. No dependency on user-defined `~/.claude/agents/`.
 3. **Role-via-prompt, not role-via-subagent_type.** All role differentiation lives in inline prompts in the generated runbook.
-4. **Direct-to-main never.** Every commit lands via PR, including tracker bookkeeping (rolling tracker PR OR batched deltas folded into the next Subtask PR — see `references/tracker-delta-batching.md`).
+4. **Direct-to-main never.** Every commit lands via a PR — code via the Story PR, tracker bookkeeping via the rolling tracker PR OR the AP-23 batched-delta queue folded into the next Story PR (see `references/tracker-delta-batching.md`). Autopilot never merges its own PRs.
 5. **TDD vertical slice with per-cycle local commits.** Code subtasks do RED → GREEN per behavior; each RED is `test: <id>.<n> RED`, each GREEN is `feat: <id>.<n> GREEN`. D6 verifies via `git log`. AP-1.
 6. **Non-overlapping file ownership** within a drain — guaranteed by the planner.
 7. **No `--no-verify`, no rebases of trunk. `--force` is logged.** AP-11.
@@ -137,7 +137,7 @@ Extract work from spec documents, plan Subtasks, review the plan, write the runb
 ### DRAIN mode (D1..D8)
 
 
-Each fire is one Subtask end-to-end. Per-fire scope is HARD: one Subtask, one PR (or one `[BLOCKED]`), then exit after writing the next cron and updating the tracker. Full step text: `references/drain-lifecycle.md`.
+Each fire is one Subtask end-to-end. Per-fire scope is HARD: one Subtask — its commit series lands on the Story branch, opening or updating the draft Story PR (PR-per-Story) — or one `[BLOCKED]` reason, then exit after writing the next cron and updating the tracker. Full step text: `references/drain-lifecycle.md`.
 
 
 | Step | Purpose | Key contract |

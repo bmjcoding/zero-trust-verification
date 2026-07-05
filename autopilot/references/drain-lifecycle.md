@@ -63,7 +63,7 @@ This step stops fires re-deriving the same workarounds from scratch every 5 minu
 
 `git branch --show-current` MUST match either:
 - `autopilot/<slug>/setup`
-- `autopilot/<slug>/<subtask-id>`
+- `autopilot/<slug>/<story-id>` — the **Story branch** (PR-per-Story, AV3-06 / ADR 0007): one Story = one branch = one PR, and each Subtask of that Story is a commit series on it. (Pre-v3 per-Subtask branches `autopilot/<slug>/<subtask-id>` are retired.)
 - `autopilot/<slug>/tracker` (only under `branching.no_force_push: false`)
 - The runbook's single feature branch (only under `branching.single_branch_single_pr: true`)
 
@@ -102,14 +102,14 @@ If `in_progress.last_heartbeat_at > 90 min old` → treat as crashed; apply RESU
 | `in_progress` block in tracker | Action |
 |---|---|
 | `git symbolic-ref refs/remotes/origin/HEAD` differs from the trunk baked into the runbook | Trunk renamed mid-drain — write `STATUS: HUMAN_NEEDED — trunk-renamed` citing old vs new trunk, `CronDelete`, exit. (External fault: no counter increment.) |
-| Local branch `autopilot/<slug>/<subtask-id>` has commits whose author email is not `git config user.email` | Foreign push detected — write `STATUS: HUMAN_NEEDED — foreign-commits-on-branch` listing the offending SHAs, `CronDelete`, exit. (External fault: no counter increment.) |
+| Local Story branch `autopilot/<slug>/<story-id>` has commits (beyond `prev_pushed_sha`) whose author email is not `git config user.email` | Foreign push detected — write `STATUS: HUMAN_NEEDED — foreign-commits-on-branch` listing the offending SHAs, `CronDelete`, exit. (External fault: no counter increment.) |
 | Empty / null | Normal — proceed to D2. |
 | `awaiting_ci: true`, `pr_number` set, and PR state (`pr-state --num <pr_number>`) = `MERGED` | PR was merged externally — mark Subtask `[x] Done` with PR URL + merge commit SHA, reset both counters to 0, clear `in_progress`, re-arm at `*/5`, exit fire. |
 | `awaiting_ci: true`, `pr_number` set, and PR state = `DECLINED` | PR was declined externally — write `[BLOCKED: pr-declined]` (ci) on Subtask citing the PR URL, increment `consecutive_ci_blocks`, clear `in_progress`, re-arm at `*/30`, exit fire. |
 | `awaiting_ci: true`, `pr_number` set, PR state = `OPEN`, and `ci.skip_wait: false` | CI-poll mode — run `bash ${SKILL_DIR}/scripts/ci_check.sh --sha <in_progress.pushed_sha> --pr <pr_number> --once`; act on result (D7.5). **Hard contract: after D7.5 completes, exit the fire regardless of outcome. Do NOT continue to D2 in the same fire.** |
 | `awaiting_ci: true`, `pr_number` set, PR state = `OPEN`, and `ci.skip_wait: true` | The PR is awaiting operator merge (no CI polling); re-arm at `*/30`, exit. |
-| `subtask_id` set (not awaiting CI), branch exists locally with commits ahead of base | RESUME — rebase on base, re-run Step D6 test gate; if green → push + open PR (D7); if red → spawn ONE `general-purpose` quality fix attempt; then push or `[BLOCKED: resume-failed]` (impl). |
-| `subtask_id` set, branch missing or empty | ABANDON — clear `in_progress`, write `[BLOCKED: orphan-resume]` (impl) on that Subtask, continue to D2 with the next Subtask. |
+| `subtask_id` set (not awaiting CI), the Subtask's Story branch exists locally with commits ahead of `prev_pushed_sha` | RESUME — rebase the Story branch on base, re-run Step D6 test gate over `prev_pushed_sha..HEAD`; if green → push + open-or-update the Story PR (D7: draft `pr-open` if this is the Story's first Subtask, else the draft Story PR already exists); if red → spawn ONE `general-purpose` quality fix attempt; then push or `[BLOCKED: resume-failed]` (impl). |
+| `subtask_id` set, Story branch missing or empty | ABANDON — clear `in_progress`, write `[BLOCKED: orphan-resume]` (impl) on that Subtask, continue to D2 with the next Subtask. |
 
 
 Refuse the fire if `STATUS != ACTIVE`. On terminal statuses the cron has already been deleted (Hard Contract §9); if a fire runs anyway (manual invocation, stray cron), no-op WITHOUT re-arming. Recovery from `PAUSED` is exclusively via `/autopilot --resume` — do not hand-flip `STATUS` back to `ACTIVE` (Resume refuses an already-ACTIVE tracker, so a hand-flip strands the drain with no cron and no resume path).
@@ -124,6 +124,9 @@ External churn > 100 commits since drain start → write `## Drift Notes` warnin
 Topo-walk the DAG. Pick the lowest-ID Subtask where:
 - Status is `[ ]` (not `[x]`, not `[BLOCKED]`)
 - All `depends_on[]` Subtasks are `[x] Done`
+
+
+**Story affinity (AV3-06).** PR-per-Story caps the drain at **one open (draft) Story PR at a time**. If a Story already has an open draft PR — i.e. some of its Subtasks are `[x] Done` and at least one is still `[ ]`, and it is not blocked — restrict selection to that Story's remaining eligible Subtasks: finish (or block out) the open Story before opening another. Only when the open Story has no eligible Subtask left (all its `[ ]` Subtasks are dependency- or claim-blocked) may D2 start a Subtask in a different Story. This keeps the branch/PR count bounded and the Story PR reviewable as a coherent unit. When two Stories are both fully open (none started), the lowest-ID Subtask's Story wins and becomes the open Story.
 
 
 If no eligible Subtask:
@@ -184,14 +187,16 @@ Refresh heartbeat (AP-6).
 ## Step D4 — Implement (TDD vertical slice with per-cycle commits — AP-1)
 
 
-Branch from the appropriate base per the DAG-aware branching rule:
-- `depends_on: []` → branch from `origin/<trunk>`
-- `depends_on: [X]` and X is `[x] Done` → branch from `origin/<trunk>` (X is in trunk)
-- `depends_on: [X]` and X is in-flight (rolling PR or batched queue) → branch from `autopilot/<slug>/<X-id>` tip → produces a stacked PR
-- Under `branching.single_branch_single_pr: true` → always branch from (or reset onto) the drain's single feature branch
+Work happens on the Subtask's **Story branch** `autopilot/<slug>/<story-id>` (PR-per-Story, AV3-06). Whether to create it or continue on it depends on where the Subtask sits in its Story:
+- **First Subtask of the Story** (the Story branch does not yet exist) → create it from the appropriate base per the DAG-aware branching rule:
+  - the Story has no cross-Story dependency on an in-flight Story → branch from `origin/<trunk>`
+  - the Story depends on another Story that is `[x] Done` (already merged to trunk) → branch from `origin/<trunk>`
+  - the Story depends on another Story that is in-flight (its Story PR still open) → branch from that Story's branch tip `autopilot/<slug>/<dep-story-id>` → produces a **stacked Story PR** (merge-commit strategy, D7.3a)
+- **A later Subtask of the same Story** (the Story branch already exists, carrying the prior Subtasks' commits) → `git checkout autopilot/<slug>/<story-id>` and continue the commit series on it; do NOT branch anew. D6.2 audits only `prev_pushed_sha..HEAD` so the accumulated prior commits are not re-audited.
+- Under `branching.single_branch_single_pr: true` → always branch from (or reset onto) the drain's single feature branch.
 
 
-`git checkout -b autopilot/<slug>/<subtask-id>` (or `git checkout <single-feature-branch>` under the single-branch mode).
+`git checkout -b autopilot/<slug>/<story-id>` on the Story's first Subtask, `git checkout autopilot/<slug>/<story-id>` for a later one (or `git checkout <single-feature-branch>` under the single-branch mode).
 
 
 Spawn ONE `general-purpose` agent with the role prompt at `references/implementer-prompt.md` inlined verbatim, plus the runbook's `gates:` command table (the implementer runs tests through `gates.test_scoped`, never a hardcoded runner). The number of TDD cycles may not exceed `budget.max_cycles_per_subtask`; hitting the cap mid-Subtask → `[BLOCKED: cycle-budget-exhausted]` (impl). The prompt enforces:
@@ -274,12 +279,18 @@ Run the runbook's `gates:` commands (see `references/runbook-template.md` §gate
 The implementer's report is no longer the source of truth for TDD compliance — git log is.
 
 
+**Audit range = `prev_pushed_sha..HEAD`, NOT `origin/<base>..HEAD` (AV3-06).** Under PR-per-Story the Story branch accumulates every prior Subtask's commit series, so `origin/<base>..HEAD` would sweep in commits belonging to already-audited Subtasks and false-flag `tdd-scope-leak`. The audit range is bounded to *this* Subtask's commits: `in_progress.prev_pushed_sha..HEAD` (the SHA the Story branch pointed at when the previous Subtask finished pushing; `origin/<trunk>..HEAD` for the Story's very first Subtask, where `prev_pushed_sha` is null). The range arithmetic **and** the shape checks below are extracted to `scripts/audit_commit_shape.sh` so they are deterministically self-tested (AV3-06.1–.6):
+
+
 ```bash
-git log --oneline origin/<base>..HEAD --pretty=format:"%s"
+bash ${SKILL_DIR}/scripts/audit_commit_shape.sh \
+  --id <subtask-id> --base <prev_pushed_sha-or-origin/<trunk>> \
+  --kind <code|test-only|refactor|docs|config> [--jira-key <KEY>]
+# -> "OK" exit 0, or "[BLOCKED: <reason>] <detail>" exit 1 (D6.2 catalog below)
 ```
 
 
-Expected shape for `kind: code | test-only`:
+Expected shape for `kind: code | test-only` (the script enforces exactly this):
 - For each behavior `<n>` in `behaviors_to_test[]`, exactly one `test: <id>.<n> RED — ...` commit AND exactly one `feat: <id>.<n> GREEN — ...` commit, in that order.
 - Under `enforce_jira_key: true`, every commit subject must include `[<JIRA-KEY>]` in the required position.
 - Optional `refactor: <id> — ...` commits at the end.
@@ -307,7 +318,7 @@ Failure dispatch matches Step D5 (typed BLOCKED, increment `consecutive_impl_blo
 ## Step D7 — Pre-push rebase + commit + PR
 
 
-**Step D7.0 — Pre-push rebase.** `git fetch origin && git rebase origin/<base>`. If clean, continue. If conflicts, follow the protocol at `references/conflict-resolution.md` (inlined Pocock-style). Budget: 3 hunks across 2 files max — past that, `[BLOCKED: rebase-too-large]` (impl), no retry (planning failure; needs human).
+**Step D7.0 — Pre-push rebase.** `git fetch origin && git rebase origin/<base>`, where `<base>` is the Story's branching base from D4 (`origin/<trunk>`, or the dependency Story's branch tip for a stacked Story). The unit being rebased is the **Story branch** (AV3-06) — the replay carries every prior Subtask's commit series that already lives on it, not just the current Subtask's. If clean, continue. If conflicts, follow the protocol at `references/conflict-resolution.md` (inlined Pocock-style). Budget: 3 hunks across 2 files max — past that, `[BLOCKED: rebase-too-large]` (impl), no retry (planning failure; needs human — but see AV3-10 for the claim-loss re-plan carve-out).
 
 
 During conflict resolution, run `gates.test_scoped` against changed paths only — never the full suite (AP-15).
@@ -343,16 +354,25 @@ Under `branching.no_force_push: false` this step is a no-op — tracker bookkeep
 **Step D7.2 — Push.** `git push -u origin <branch>`. Transient failure → 1 retry. Auth failure → `[BLOCKED: bitbucket-token-missing]` (impl), no retry.
 
 
-**Step D7.3 — PR.** `bash ${SKILL_DIR}/scripts/host.sh pr-open --title "<commit-subject>" --src <head-branch> --dest <base-branch> --body-file <body-file>` returns the PR number on stdout (host.sh dispatches to the detected backend — never call a backend directly, Hard Contract 11). Dest = the rebase base from D7.0. Body file = Summary + Test plan + TDD sequence + Checklist sections.
+**Step D7.3 — Story PR (draft-open / update / ready-flip).** PR-per-Story: one Story = one branch = one PR, opened as a **draft** and kept draft until the whole Story is Done (AV3-06). The three cases:
+
+1. **This Subtask is the Story's FIRST pushed Subtask** (no Story PR yet) → open the draft Story PR:
+   ```bash
+   bash ${SKILL_DIR}/scripts/host.sh pr-open --draft \
+     --title "<story-title>" --src autopilot/<slug>/<story-id> --dest <base-branch> --body-file <body-file>
+   ```
+   `host.sh` dispatches to the detected backend (Hard Contract 11 — never call a backend directly). Dest = the rebase base from D7.0. Body file = Summary + Test plan + per-Subtask TDD sequence + Checklist. On a DC server that predates draft PRs the backend applies the `[DRAFT]`-title-prefix fallback transparently (`AUTOPILOT_BITBUCKET_DRAFT_MODE`, HD03/HD05/HD07).
+2. **A later Subtask of a Story whose draft PR already exists** → the push in D7.2 already updated the PR; append a `host.sh pr-comment` "Subtask `<id>` landed" note. Do NOT open a second PR.
+3. **This Subtask completes the Story** (after it goes `[x] Done`, ALL of the Story's Subtasks are `[x] Done` — checked by set membership, never by position) → flip the draft to ready-for-review: `bash ${SKILL_DIR}/scripts/host.sh pr-ready --num <story-pr-number>`. A Story PR that still has any `[ ]` or `[BLOCKED]` Subtask stays draft. (The ready-flip is also reached from the D7.5 green path and the D1.4 external-merge path — wherever the Subtask that closes the Story transitions to Done.)
 
 
 Under `branching.no_force_push: true` with a non-empty D7.1a fold, the PR body ALSO includes a `## Tracker deltas folded in` H2 listing each entry's `delta_kind` + `diff_summary` for reviewer visibility.
 
 
-Under `branching.single_branch_single_pr: true`, D7.3 opens the PR only on the FIRST successful Subtask; subsequent Subtasks push additional commits to the same branch and update the existing PR via `host.sh pr-comment` (append a "Subtask <id> landed" note).
+Under `branching.single_branch_single_pr: true`, the coarser collapse still applies: D7.3 opens ONE PR on the first successful Subtask of the whole drain; subsequent Subtasks push to the same branch and update the existing PR via `host.sh pr-comment`.
 
 
-**Step D7.4 — Tracker update.** Set `in_progress.pr_number = <num>`, `in_progress.awaiting_ci = true`, `in_progress.pushed_at = <iso8601>`, `in_progress.pushed_sha = <HEAD sha just pushed>` (consumed by D7.5's `ci_check.sh --sha`), `in_progress.ci_check_count = 0`, `last_heartbeat_at = <now>`.
+**Step D7.4 — Tracker update.** Set `in_progress.pr_number = <num>` (the Story PR — the same number for every Subtask of the Story), `in_progress.awaiting_ci = true`, `in_progress.pushed_at = <iso8601>`, `in_progress.pushed_sha = <HEAD sha just pushed>` (consumed by D7.5's `ci_check.sh --sha`), `in_progress.ci_check_count = 0`, `last_heartbeat_at = <now>`. Also record the Story's `last_pushed_sha = pushed_sha` on the Story's tracker entry: the NEXT Subtask of this Story reads it as its `prev_pushed_sha` (the D6.2 audit base — AV3-06). The Story's first Subtask has no predecessor, so its audit base is `origin/<trunk>`.
 
 
 - Under `branching.no_force_push: false`: commit via rolling tracker PR.
@@ -362,7 +382,7 @@ Under `branching.single_branch_single_pr: true`, D7.3 opens the PR only on the F
 ### D7.3a — Stacked PR merge strategy (AP-10)
 
 
-(Renamed from a second "D7.5" in v2.4.0 — the step id collided with the CI poll below.) When the PR being created stacks on another in-flight Subtask's branch, the PR description MUST request a **merge commit (not squash)**. Bitbucket's PR merge UI defaults to squash; squash on a stacked PR collapses the dependency chain and breaks subsequent rebases. `host.sh pr-merge` defaults to the merge-commit intent and uses `pr-merge-strategies` discovery to fall back to the closest enabled strategy on repos that don't offer it (the Bitbucket DC backend maps to `no-ff`/`squash`/…; the GitHub backend to `--merge`/`--squash`/`--rebase`).
+(Renamed from a second "D7.5" in v2.4.0 — the step id collided with the CI poll below.) AP-10 is re-scoped to **Story PRs** (AV3-06): when the Story PR being created stacks on another in-flight Story's branch (a cross-Story dependency, D4), the PR description MUST request a **merge commit (not squash)**. Bitbucket's PR merge UI defaults to squash; squash on a stacked PR collapses the dependency chain and breaks subsequent rebases. `host.sh pr-merge` defaults to the merge-commit intent and uses `pr-merge-strategies` discovery to fall back to the closest enabled strategy on repos that don't offer it (the Bitbucket DC backend maps to `no-ff`/`squash`/…; the GitHub backend to `--merge`/`--squash`/`--rebase`).
 
 
 ## Step D7.5 — CI poll (cross-fire)
@@ -376,7 +396,7 @@ Run `bash ${SKILL_DIR}/scripts/ci_check.sh --sha <in_progress.pushed_sha> --pr <
 
 | `ci_check.sh --once` result | Action |
 |---|---|
-| exit 0 (VERDICT=GREEN) | Mark Subtask `[x] Done` with PR URL + commit SHA + `[<JIRA-KEY>]` if any. Reset both counters to 0 (AP-2: a Done resets impl AND ci). Clear `in_progress`. Re-arm cron at `*/5`. Exit fire. |
+| exit 0 (VERDICT=GREEN) | Mark Subtask `[x] Done` with the Story PR URL + commit SHA + `[<JIRA-KEY>]` if any. Reset both counters to 0 (AP-2: a Done resets impl AND ci). **If this makes ALL of the Story's Subtasks `[x] Done`, flip the Story PR ready** (`host.sh pr-ready --num <story-pr>`; D7.3 case 3). Clear `in_progress`. Re-arm cron at `*/5`. Exit fire. |
 | exit 1 (VERDICT=RED) | Write `[BLOCKED: ci-red]` (ci) on Subtask with the failing check name + log URL. Increment `consecutive_ci_blocks`. Clear `in_progress`. Re-arm cron at `*/30`. Exit fire. **No retry.** |
 | exit 5 (VERDICT=PENDING) + `ci_check_count < 6` | Build in progress or not yet reported. Increment `ci_check_count`. Update `last_heartbeat_at`. Re-arm cron at `*/10`. Exit fire. |
 | exit 5 (VERDICT=PENDING) + `ci_check_count >= 6` | Write `[BLOCKED: ci-stuck-pending]` (ci) citing `LAST_STATE=` (INPROGRESS = a build is hung; UNKNOWN = CI never reported for this SHA). Increment `consecutive_ci_blocks`. Clear `in_progress`. Re-arm cron at `*/30`. Exit fire. |
@@ -492,10 +512,10 @@ At the top of D1 (after D1.0/D1.1, before D2), when `branching.no_force_push: fa
 # End-of-drain output
 
 
-When `STATUS: DRAINED` is written, the final fire produces `MERGE-ORDER.md` next to the tracker. Required content:
+When `STATUS: DRAINED` is written, the final fire produces `MERGE-ORDER.md` next to the tracker. It is a list of **Story PRs** (one per Story, AV3-06 — never per-Subtask). Required content:
 
 
-- DAG-topological list of PRs with dependency annotations (DAG root / depends on / stacked, with the merge-commit-not-squash flag highlighted for stacked PRs)
+- DAG-topological list of Story PRs with dependency annotations (DAG root / depends on / stacked, with the merge-commit-not-squash flag highlighted for stacked Story PRs)
 - Drain start SHA, current `origin/<trunk>` SHA + commit delta
 - Mid-drain rebase count
 - Hot-file serialization count
@@ -503,3 +523,21 @@ When `STATUS: DRAINED` is written, the final fire produces `MERGE-ORDER.md` next
 - G1.5 probe facts + any `unknown` values that persisted through drain (AP-23)
 - Total D7.1a tracker-delta fold count (AP-23)
 - A one-line rebase recovery hint (`git fetch origin && git rebase origin/<trunk>`)
+
+
+## Dangling draft Story PRs (every terminal STATUS — AV3-06)
+
+
+On ANY terminal STATUS (`DRAINED | PAUSED | HUMAN_NEEDED | STOPPED`), the end-of-drain output MUST enumerate every **dangling draft Story PR** — a Story PR still in `DRAFT` state because its Story did not fully drain — with a required operator disposition for each. Autopilot NEVER merges its own PRs (Hard Contract 4 spirit) and NEVER silently abandons a draft, so each dangling draft is listed as:
+
+
+```
+DRAFT Story PR <host>/<pr#>  story=<story-id>  branch=autopilot/<slug>/<story-id>
+  done:    <n>/<m> Subtasks
+  open:    <subtask-ids still [ ]>
+  blocked: <subtask-ids [BLOCKED], with reasons>
+  disposition: <one of — resume (fixable block), decline+replan (stale), or hand-merge-partial (operator accepts the partial Story)>
+```
+
+
+A `DRAINED` terminal state normally has zero dangling drafts (every Story flipped ready); a non-empty list under `DRAINED` is itself a defect to surface. Under `PAUSED — manifest-revision-drift` (AV3-04) the draft Story PRs stay draft by contract and are listed here for the revision-regen path to supersede.

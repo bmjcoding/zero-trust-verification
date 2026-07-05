@@ -253,9 +253,29 @@ if hits=$(grep -l -E "(bitbucket|github)\.sh ($verbs)" "${DOCS[@]}" 2>/dev/null)
 fi
 (( l16_bad == 0 )) && ok L16
 
+# --- L17: PR-per-Story, not PR-per-Subtask (AV3-06 / ADR 0007) ----------------
+# v3 collapses the drain onto Story branches: one Story = one branch = one PR
+# (draft until the Story's Subtasks are all Done). Subtasks are the commit series
+# on the Story branch, NOT separate PRs. Any doc reasserting the retired
+# per-Subtask-PR granularity is a runtime coin-flip — the orchestrator would open
+# a PR every fire. Scans the whole DOCS corpus (CHANGELOG exempt: it records the
+# historical per-Subtask state). The bookkeeping-fold phrasing ("the next Subtask
+# PR" for the AP-23 delta fold) is out of scope here — AV3-08 re-scopes it to the
+# Runbook PR — so this rule matches only the PR-*granularity* claim.
+l17_bad=0
+per_subtask_pr='PR per [Ss]ubtask|per-[Ss]ubtask PR|one-PR-per-[Ss]ubtask|one [Ss]ubtask,? one PR|stacked PR per [Ss]ubtask'
+if hits=$(grep_docs "$per_subtask_pr"); then
+  violation L17 "retired PR-per-Subtask framing (v3 is PR-per-Story): $(tr '\n' ' ' <<<"$hits")"
+  l17_bad=1
+fi
+# SKILL.md must carry the PR-per-Story wording and the Story-branch shape.
+grep -q 'PR-per-Story' "$ROOT/SKILL.md" || { violation L17 "SKILL.md does not carry the PR-per-Story contract wording"; l17_bad=1; }
+grep -q 'autopilot/<slug>/<story-id>' "$ROOT/references/drain-lifecycle.md" || { violation L17 "drain-lifecycle.md does not name the Story branch autopilot/<slug>/<story-id>"; l17_bad=1; }
+(( l17_bad == 0 )) && ok L17
+
 if (( FAIL == 1 )); then
   echo "lint_consistency: FAIL" >&2
   exit 1
 fi
-echo "lint_consistency: PASS (16 rules)"
+echo "lint_consistency: PASS (17 rules)"
 exit 0

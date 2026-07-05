@@ -736,6 +736,78 @@ out=$( cd "$CLONE" && bash "$HFA" --churn --days 30 ); rc=$?
 assert_eq T31 "empty churn window exits 0" "0" "$rc"
 assert_eq T31 "empty churn window prints nothing" "" "$out"
 
+echo "== audit_commit_shape.sh (AV3-06 D6.2 Story-range audit) =="
+
+ACS="$HERE/audit_commit_shape.sh"
+CS_REPO="$SANDBOX/cs-repo"
+git init -q "$CS_REPO"
+git -C "$CS_REPO" config user.email selftest@local
+git -C "$CS_REPO" config user.name selftest
+csc() { git -C "$CS_REPO" "$@"; }
+csci() { csc commit -q --allow-empty -m "$1"; }
+echo base > "$CS_REPO/f"; csc add f; csci "chore: base"; csc branch -M main
+CS_TRUNK=$(csc rev-parse HEAD)
+acs() { ( cd "$CS_REPO" && bash "$ACS" "$@" ); }
+
+# One Story branch accumulates Subtask A1's commit series, then B2's — the
+# PR-per-Story shape (AV3-06): the branch carries the WHOLE Story, D6.2 audits
+# only the Subtask that just landed.
+csc checkout -qb autopilot/demo/story1
+csci "test: A1.1 RED — a1 behavior 1"
+csci "feat: A1.1 GREEN — a1 behavior 1"
+CS_PREV=$(csc rev-parse HEAD)          # in_progress.prev_pushed_sha after A1
+csci "test: B2.1 RED — b2 behavior 1"
+csci "feat: B2.1 GREEN — b2 behavior 1"
+csci "test: B2.2 RED — b2 behavior 2"
+csci "feat: B2.2 GREEN — b2 behavior 2"
+
+# AV3-06.1 — the range fix: auditing B2 over prev_pushed_sha..HEAD sees ONLY B2's
+# commits, so a Story branch carrying A1's prior commits yields no scope-leak.
+out=$(acs --id B2 --base "$CS_PREV" 2>&1); rc=$?
+assert_eq "AV3-06.1" "Story-range B2 audit exits 0" "0" "$rc"
+assert_eq "AV3-06.1" "Story-range B2 audit is clean" "OK" "$out"
+
+# AV3-06.2 — the OLD whole-branch range (origin/<trunk>..HEAD) false-flags
+# tdd-scope-leak on A1's accumulated commits: exactly the regression the fix kills.
+out=$(acs --id B2 --base "$CS_TRUNK" 2>&1); rc=$?
+assert_eq "AV3-06.2" "whole-branch range reds B2" "1" "$rc"
+assert_contains "AV3-06.2" "whole-branch range is a scope-leak false-positive" "[BLOCKED: tdd-scope-leak]" "$out"
+
+# AV3-06.3 — RED/GREEN pairing + ordering enforced within the Subtask's own range.
+csc checkout -qb autopilot/demo/story2 "$CS_TRUNK"
+csci "test: C3.1 RED — missing green"
+out=$(acs --id C3 --base "$CS_TRUNK" 2>&1); rc=$?
+assert_eq "AV3-06.3" "RED without GREEN reds" "1" "$rc"
+assert_contains "AV3-06.3" "no-green reason emitted" "[BLOCKED: tdd-no-green]" "$out"
+csci "feat: C3.2 GREEN — green with no red for behavior 2"
+out=$(acs --id C3 --base "$(csc rev-parse HEAD~1)" 2>&1)
+assert_contains "AV3-06.3" "GREEN before RED is out-of-order" "[BLOCKED: tdd-out-of-order]" "$out"
+
+# AV3-06.4 — jira-key enforcement over the range (AP-22).
+csc checkout -qb autopilot/demo/story3 "$CS_TRUNK"
+csci "test: D4.1 [PROJ-7] RED — keyed"
+csci "feat: D4.1 [PROJ-7] GREEN — keyed"
+out=$(acs --id D4 --base "$CS_TRUNK" --jira-key PROJ-7 2>&1); rc=$?
+assert_eq "AV3-06.4" "keyed commits pass jira audit" "0" "$rc"
+csci "test: D4.2 RED — unkeyed"
+out=$(acs --id D4 --base "$(csc rev-parse HEAD~1)" --jira-key PROJ-7 2>&1)
+assert_contains "AV3-06.4" "unkeyed commit reds under enforce_jira_key" "[BLOCKED: jira-key-missing]" "$out"
+
+# AV3-06.5 — refactor / docs kinds have their own shapes.
+csc checkout -qb autopilot/demo/story4 "$CS_TRUNK"
+csci "refactor: E5 — decouple validator from registry"
+out=$(acs --id E5 --base "$CS_TRUNK" --kind refactor 2>&1); rc=$?
+assert_eq "AV3-06.5" "single refactor commit is valid refactor shape" "0" "$rc"
+csci "feat: E5.1 GREEN — behavior snuck into a refactor subtask"
+out=$(acs --id E5 --base "$CS_TRUNK" --kind refactor 2>&1)
+assert_contains "AV3-06.5" "test/feat in a refactor subtask is refactor-shape-wrong" "[BLOCKED: refactor-shape-wrong]" "$out"
+
+# AV3-06.6 — usage guardrails: missing args + unknown base.
+acs --id B2 >/dev/null 2>&1; rc=$?
+assert_eq "AV3-06.6" "missing --base is usage error 64" "64" "$rc"
+acs --id B2 --base deadbeefdeadbeef >/dev/null 2>&1; rc=$?
+assert_eq "AV3-06.6" "unknown base ref is usage error 64" "64" "$rc"
+
 echo "== secret_get.sh (T25) =="
 
 # T25 — candidate list matches the documented resolver conventions
@@ -1046,10 +1118,10 @@ assert_contains H50 "unrecognised origin names the override knob" "AUTOPILOT_HOS
 ( cd "$GH_REPO_DIR" && bash "$HERE/host.sh" bogus-sub >/dev/null 2>&1 ); rc=$?
 assert_eq H50 "unknown subcommand -> usage 64" "64" "$rc"
 
-echo "== consistency lint (L1-L16) =="
+echo "== consistency lint (L1-L17) =="
 
 if bash "$HERE/lint_consistency.sh" >/dev/null 2>&1; then
-  pass LINT "lint_consistency.sh passes (16 rules)"
+  pass LINT "lint_consistency.sh passes (17 rules)"
 else
   fail LINT "lint_consistency.sh reports violations (run it directly for detail)"
 fi
@@ -1063,6 +1135,17 @@ if bash "$planted_dir/scripts/lint_consistency.sh" >/dev/null 2>&1; then
   fail L16 "L16 did NOT red a planted 'source-of-truth host' line"
 else
   pass L16 "L16 reds planted 'source-of-truth host' framing"
+fi
+
+# L17 must red a planted one-PR-per-Subtask framing (AV3-06 / AV3-16a acceptance):
+# fresh clean copy so the L16 plant above doesn't mask the result.
+planted17="$SANDBOX/planted-lint-17"
+cp -R "$ROOT" "$planted17"
+printf '\nAutopilot opens one PR per Subtask against the host.\n' >> "$planted17/references/loop-safety.md"
+if bash "$planted17/scripts/lint_consistency.sh" >/dev/null 2>&1; then
+  fail L17 "L17 did NOT red a planted 'one PR per Subtask' line"
+else
+  pass L17 "L17 reds planted 'one PR per Subtask' framing"
 fi
 
 echo
