@@ -7,7 +7,10 @@
 # references/loop-safety.md. Selected by host.sh when `origin` is a GitHub
 # remote; run it directly only for backend-scoped testing.
 #
-# Subcommands (byte-identical observable contract with bitbucket.sh):
+# Subcommands. The T01-class matrix (pr-state vocabulary, pr-open, pr-comment,
+# pr-merge exit, pr-approve/decline, build-status, draft round-trip) is
+# byte-identical with bitbucket.sh; pr-merge-strategies reports host-native
+# capability in the shared operator vocabulary (see its note below).
 #   pr-open           --title <t> --src <branch> --dest <branch> [--body-file <path>] [--draft]
 #                       -> prints PR number on stdout
 #   pr-ready          --num <N>
@@ -24,7 +27,10 @@
 #                       -> defaults to merge-commit (AP-10); maps operator intent
 #                          onto gh's three native strategies (merge|squash|rebase)
 #   pr-merge-strategies
-#                       -> prints repo-permitted operator strategy tokens (one per line)
+#                       -> prints repo-permitted OPERATOR strategy tokens (one
+#                          per line; each consumable by pr-merge --strategy). The
+#                          set reflects host capability (not byte-identical across
+#                          backends); the tokens are the shared vocabulary.
 #   build-status      --sha <sha>
 #                       -> prints aggregated state: SUCCESSFUL | FAILED | INPROGRESS | UNKNOWN
 #                          (aggregates BOTH the commit-status API and check-runs)
@@ -84,6 +90,9 @@ require_jq() {
 
 ORIGIN_URL="$(git remote get-url origin 2>/dev/null || true)"
 [[ -n "$ORIGIN_URL" ]] || die_state "no-origin" "no origin remote configured"
+# Strip a trailing slash so `https://github.com/owner/repo/` parses (host.sh's
+# `*github.com/*` heuristic routes it here, so the backend must accept it).
+ORIGIN_URL="${ORIGIN_URL%/}"
 
 if [[ "$ORIGIN_URL" =~ github\.com[:/]([^/]+)/([^/]+)$ ]]; then
   OWNER="${BASH_REMATCH[1]}"
@@ -312,19 +321,28 @@ cmd_build_status() {
   [[ -n "$status_json" ]] || status_json='{}'
   [[ -n "$checks_json" ]] || checks_json='{}'
 
+  # Aggregation rules:
+  #  - Statuses: use the AUTHORITATIVE server-computed combined `.state` (it is
+  #    page-independent), gated on `.total_count` so "no statuses" != "pending".
+  #  - Check-runs: classify the returned page; both APIs paginate at 30 items, so
+  #    if `.total_count` exceeds what we can see, add a RUN signal — FAIL-SAFE:
+  #    never claim all-green from a partial view (a page-2 failure would then
+  #    read INPROGRESS, keeping ci_check polling, never a false GREEN).
+  #  - Unknown/`stale` conclusions are dropped (neutral), not poisoned to UNKNOWN.
   jq -rn --argjson s "$status_json" --argjson c "$checks_json" '
-    ( ($s.statuses // []) | map(
-        if .state == "success" then "OK"
-        elif .state == "pending" then "RUN"
-        elif (.state == "failure" or .state == "error") then "BAD"
-        else "UNK" end) ) as $sts
+    ( (($s.total_count // (($s.statuses // []) | length)) // 0) as $sc
+      | if $sc == 0 then []
+        elif $s.state == "success" then ["OK"]
+        elif ($s.state == "failure" or $s.state == "error") then ["BAD"]
+        else ["RUN"] end ) as $sts
     | ( ($c.check_runs // []) | map(
         if .status != "completed" then "RUN"
         elif (.conclusion == "success" or .conclusion == "neutral" or .conclusion == "skipped") then "OK"
         elif (.conclusion == "failure" or .conclusion == "cancelled" or .conclusion == "timed_out"
               or .conclusion == "action_required" or .conclusion == "startup_failure") then "BAD"
-        else "UNK" end) ) as $chk
-    | ($sts + $chk) as $all
+        else "SKIP" end) ) as $chk
+    | ( if (($c.total_count // 0) > (($c.check_runs // []) | length)) then ["RUN"] else [] end ) as $more
+    | ( ($sts + $chk + $more) | map(select(. != "SKIP")) ) as $all
     | if ($all | length) == 0 then "UNKNOWN"
       elif ($all | any(. == "BAD")) then "FAILED"
       elif ($all | any(. == "RUN")) then "INPROGRESS"

@@ -93,7 +93,8 @@ while :; do
   PR_STATE=$("$HOST" pr-state --num "$PR" 2>/dev/null || echo UNKNOWN)
   case "$PR_STATE" in
     DECLINED) finish PR_DECLINED 4 ;;
-    MERGED|OPEN|UNKNOWN) : ;;
+    # DRAFT is a still-open PR (a Story mid-drain); keep polling its build like OPEN.
+    MERGED|OPEN|DRAFT|UNKNOWN) : ;;
   esac
 
   BUILD_STATE=$("$HOST" build-status --sha "$SHA" 2>/dev/null || echo UNKNOWN)

@@ -239,10 +239,16 @@ fi
 #     Hard Contract 11 wording.
 grep -q 'scripts/host.sh' "$ROOT/SKILL.md" || { violation L16 "SKILL.md does not reference scripts/host.sh as the PR/build surface"; l16_bad=1; }
 grep -q 'host adapter is the single PR/build surface' "$ROOT/SKILL.md" || { violation L16 "Hard Contract 11 does not carry the host-adapter wording"; l16_bad=1; }
-# (c) Operational PR/build invocations in the lifecycle references must go
-#     through host.sh, never a backend script directly (Hard Contract 11).
-if hits=$(grep -l -E 'bitbucket\.sh (pr-open|pr-ready|pr-state|pr-comment|pr-merge|pr-approve|pr-decline|build-status)|github\.sh (pr-open|pr-ready|pr-state|pr-comment|pr-merge|pr-approve|pr-decline|build-status)' "$ROOT/references/drain-lifecycle.md" "$ROOT/references/generate-lifecycle.md" 2>/dev/null); then
-  violation L16 "lifecycle reference calls a backend script directly (use host.sh): $(tr '\n' ' ' <<<"$hits")"
+# (c) Operational PR/build invocations ANYWHERE in the doc set must go through
+#     host.sh, never a backend script directly (Hard Contract 11). Scans the full
+#     DOCS array (SKILL + README + all references) — the whole corpus, not just
+#     the lifecycle files — so a direct call cannot hide in a prompt or the
+#     README. Matches `<backend>.sh <verb>` (invocation form); the reference-index
+#     rows that merely NAME a backend and list its verbs use backticks/colons,
+#     not this form, so they are not false-positived.
+verbs='pr-open|pr-ready|pr-state|pr-comment|pr-merge-strategies|pr-merge|pr-approve|pr-decline|build-status'
+if hits=$(grep -l -E "(bitbucket|github)\.sh ($verbs)" "${DOCS[@]}" 2>/dev/null); then
+  violation L16 "doc calls a backend script directly (use host.sh): $(tr '\n' ' ' <<<"$hits")"
   l16_bad=1
 fi
 (( l16_bad == 0 )) && ok L16
