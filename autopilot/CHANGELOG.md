@@ -4,6 +4,75 @@ All notable changes to the autopilot skill. Format follows Keep a Changelog; ver
 
 **Release gate (v2.4.0, GAPS M3/M6).** Every behavioral claim in a release entry MUST cite the `scripts/self_test.sh` assertion id (Txx) or `scripts/lint_consistency.sh` rule id (Lxx) that proves it, or be tagged `[doc-only]`. Both scripts must pass before tagging. Any drain failure attributable to the skill must land a failing self-test assertion before (or with) its fix — a gap found once may not recur silently. (This gate exists because v2.1.0–v2.3.0 shipped multiple claimed-but-unimplemented behaviors; see docs/GAPS_SPEC.md §B.)
 
+## [Unreleased]
+
+Host adapter (autopilot v3 register **AV3-15** + **AV3-16b**; ADR 0013). Autopilot
+becomes git-host agnostic by contract. The `v3.0.0` version cut and CHANGELOG
+finalisation ride AV3-16a; these entries land the foundational adapter first.
+
+### Added
+
+- **`scripts/host.sh` — the single PR/build surface.** Detects the backend from
+  `origin` (`BITBUCKET_DC` via the `/scm/` path shape, `GITHUB` via `github.com`,
+  `$AUTOPILOT_HOST_BACKEND` override) and dispatches the full subcommand set
+  (`pr-open [--draft]`, `pr-ready`, `pr-state`, `pr-comment`, `pr-merge`,
+  `pr-approve`, `pr-decline`, `pr-merge-strategies`, `build-status`) to the
+  backend by `exec` (byte-identical stdout/exit pass-through). `host.sh backend`
+  prints the detected backend. Detection fixtures for both origin URL shapes plus
+  ssh, override, invalid-override, unrecognised-origin, and unknown-subcommand.
+  (H50, HD08, HG01)
+- **`scripts/github.sh` — GitHub backend via the `gh` CLI**, implementing the
+  contract. `gh` owns credential resolution (token never in argv/context);
+  `isDraft`→`DRAFT` and `CLOSED`→`DECLINED` map GitHub's vocabulary onto the
+  shared one; `build-status` aggregates BOTH the commit-status API (its
+  authoritative combined `.state`) and the check-runs API into
+  `SUCCESSFUL|FAILED|INPROGRESS|UNKNOWN` — fail-safe on unseen pagination pages
+  (never a false GREEN) and dropping neutral/`stale` conclusions. The T01-class
+  contract matrix runs against it through a `gh` argv shim (no network/python).
+  (`H-GH` matrix, HG20–HG30)
+- **Draft-PR surface (AV3-06 dependency).** `pr-open --draft`, `pr-ready`
+  (draft→ready flip), and `pr-state` `DRAFT` emission across both backends. The
+  Bitbucket DC backend adds `AUTOPILOT_BITBUCKET_DRAFT_MODE`: `native` (the
+  `draft` boolean) or `title-prefix` (a `[DRAFT] ` title convention for servers
+  predating native draft PRs; native `draft:true` is still honoured in either
+  mode). (HD01–HD07, HG20–HG23)
+- **`ci_check.sh` is now host-agnostic** — the D7.5 CI poll reads PR state and
+  build status through `host.sh`, so it turns GREEN against either backend. (HG30)
+
+### Changed
+
+- **Hard Contract 11 rewritten** (AV3-16b): "Bitbucket Data Center is the
+  source-of-truth host / `gh` is NOT a dependency" → "**the host adapter is the
+  single PR/build surface**". `bitbucket.sh` is now the Bitbucket DC backend
+  behind `host.sh` (hardened internals intact); lifecycle references (D7.3,
+  D7.3a, D1 tracker-PR check), the reference index, README, and validator/
+  loop-safety prompts route through `host.sh`. New lint **L16** reds the retired
+  single-host framing and any direct backend invocation ANYWHERE in the doc set
+  (SKILL + README + all references). (L16; self-test plants a `source-of-truth
+  host` line and asserts L16 reds it)
+- **`pr-merge-strategies` now emits self-consumable operator tokens.** The
+  Bitbucket DC backend previously printed raw DC strategy ids (`rebase-no-ff`,
+  `squash-ff-only`, …) that its OWN `pr-merge --strategy` rejects; it now maps
+  them to the operator vocabulary (`no-ff`/`ff-only`/`squash`/`rebase`) that
+  `pr-merge` accepts, matching the GitHub backend's contract. `pr-merge`'s
+  internal discovery still matches raw DC ids via a private helper. (HD11)
+- **`self_test.sh` mock server is non-fatal.** When the HTTP mock can't start
+  (no python3 / locked-down sandbox) the DC-backend HTTP tests SKIP with a note
+  rather than aborting; the deterministic, GitHub-backend, and lint assertions
+  always run. Baseline 96 → 170 assertions (101 + 3 skips when the DC server is
+  unavailable). (skip banner + `H-GH`/`H50` sections)
+
+### Fixed
+
+- **DC REST stack was broken on bash 3.2 + BSD sed** (the macOS default
+  toolchain, and ADR 0013's "community distribution" target). `"${empty[@]}"`
+  under `set -u` is an unbound-variable error on bash 3.2 (`CA_ARG`, `CURL_AUTH`,
+  and GET-time `extra[]` are all legitimately empty), so `curl` never ran and
+  sidecar detection always reported `http=000`; and `\b` word boundaries in the
+  sidecar mode-line `sed` are a GNU extension BSD sed ignores. Guarded empty-array
+  expansions with `${arr[@]+"${arr[@]}"}` and dropped the `\b`. No behavior change
+  on GNU/bash-4; self_test now runs green on macOS bash 3.2. (T01–T07, T28, T36)
+
 ## [2.4.0] - 2026-07-02
 
 Audit release. A ground-truth audit (docs/GAPS_SPEC.md — every mechanical finding reproduced by executing the script against a fixture before registration) found that the deterministic substrate had never been executed: the Bitbucket adapter could not succeed at anything (T01), the force-push probe could not detect a denial (T09), the concurrency guard could not detect a concurrent drain (T13), and the documented CI-poll invocation terminated the drain (T17). It also found five claimed-but-unimplemented changelog entries and ~20 cross-file contract contradictions. This release fixes all of it and adds the machinery that keeps it fixed: an executed self-test, a cross-file consistency lint, loop-safety invariants, and this release gate.

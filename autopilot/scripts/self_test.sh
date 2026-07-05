@@ -59,7 +59,8 @@ export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null
 cat > "$SANDBOX/mock_server.py" <<'PYEOF'
 import http.server, json, re, sys, threading
 
-STATE = {"pr43_merge_calls": 0, "last_merge_strategy": None, "pr43_version": 3}
+STATE = {"pr43_merge_calls": 0, "last_merge_strategy": None, "pr43_version": 3,
+         "last_pr": None, "last_put": None}
 
 class H(http.server.BaseHTTPRequestHandler):
     def _send_json(self, obj, code=200):
@@ -91,6 +92,10 @@ class H(http.server.BaseHTTPRequestHandler):
             self._send_raw(b"ok", 200, "text/plain"); return
         if p == "/debug/last-merge":
             self._send_json({"strategy": STATE["last_merge_strategy"]}); return
+        if p == "/debug/last-pr":
+            self._send_json(STATE.get("last_pr") or {}); return
+        if p == "/debug/last-put":
+            self._send_json(STATE.get("last_put") or {}); return
         m = re.search(r"/pull-requests/(\d+)$", p)
         if m:
             num = m.group(1)
@@ -114,6 +119,14 @@ class H(http.server.BaseHTTPRequestHandler):
                     self.wfile.write(b)
                     return
                 self._send_json({"id": 44, "state": "OPEN", "version": 1}); return
+            if num == "91":
+                # AV3-15 native-draft fixture: draft flag true, OPEN.
+                self._send_json({"id": 91, "state": "OPEN", "version": 1,
+                                 "draft": True, "title": "Native draft PR"}); return
+            if num == "92":
+                # AV3-15 title-prefix fixture: no draft flag, "[DRAFT] " title.
+                self._send_json({"id": 92, "state": "OPEN", "version": 2,
+                                 "draft": False, "title": "[DRAFT] Prefixed PR"}); return
             self._send_json({"id": int(num), "state": "OPEN", "version": 3}); return
         if "/pull-requests?" in p:
             if "at=refs/heads/feature-x" in p:
@@ -122,6 +135,7 @@ class H(http.server.BaseHTTPRequestHandler):
         if "/settings/pull-requests" in p:
             self._send_json({"mergeConfig": {"strategies": [
                 {"id": "squash", "enabled": True},
+                {"id": "rebase-no-ff", "enabled": True},
                 {"id": "no-ff", "enabled": False},
             ]}}); return
         if "/build-status/1.0/commits/" in p:
@@ -140,6 +154,12 @@ class H(http.server.BaseHTTPRequestHandler):
         ln = int(self.headers.get("Content-Length") or 0)
         body = self.rfile.read(ln) if ln else b""
         if p.endswith("/pull-requests"):
+            # Capture the POSTed title/draft for the AV3-15 draft-open assertions.
+            try:
+                bj = json.loads(body.decode("utf-8", "replace"))
+                STATE["last_pr"] = {"title": bj.get("title"), "draft": bj.get("draft")}
+            except Exception:
+                STATE["last_pr"] = {"title": None, "draft": None}
             # T04: response body deliberately contains invalid UTF-8 bytes.
             raw = b'{"id": 77, "state": "OPEN", "title": "caf\xe9 \xff"}'
             self._send_raw(raw, 201); return
@@ -158,6 +178,22 @@ class H(http.server.BaseHTTPRequestHandler):
             self._send_json({"ok": True}, 200); return
         self._send_json({"error": "unmocked POST " + p}, 404)
 
+    def do_PUT(self):
+        # AV3-15 pr-ready: the DC update endpoint. Capture the flip payload.
+        p = self._strip()
+        ln = int(self.headers.get("Content-Length") or 0)
+        body = self.rfile.read(ln) if ln else b""
+        m = re.search(r"/pull-requests/(\d+)$", p)
+        if m:
+            try:
+                bj = json.loads(body.decode("utf-8", "replace"))
+                STATE["last_put"] = {"id": m.group(1), "title": bj.get("title"),
+                                     "draft": bj.get("draft")}
+            except Exception:
+                STATE["last_put"] = {"id": m.group(1)}
+            self._send_json({"id": int(m.group(1)), "state": "OPEN", "version": 99}); return
+        self._send_json({"error": "unmocked PUT " + p}, 404)
+
     def log_message(self, *a):
         pass
 
@@ -167,12 +203,26 @@ with open(sys.argv[1], "w") as f:
 srv.serve_forever()
 PYEOF
 
-python3 "$SANDBOX/mock_server.py" "$SANDBOX/port" &
-SERVER_PID=$!
-for _ in $(seq 1 50); do [[ -s "$SANDBOX/port" ]] && break; sleep 0.1; done
-PORT="$(cat "$SANDBOX/port")"
-[[ -n "$PORT" ]] || { echo "mock server failed to start" >&2; exit 1; }
-BASE="http://127.0.0.1:${PORT}"
+# MOCK_OK gates the HTTP-mock-dependent sections. A missing python3 or a bound-
+# but-unreachable server (both observed in locked-down sandboxes) SKIPS those
+# DC-backend HTTP tests rather than aborting the run, so the deterministic
+# assertions, the gh-argv-shim GitHub-backend matrix, and the consistency lint
+# always execute. (AV3-15: the GitHub backend has zero dependency on this server.)
+MOCK_OK=1
+PORT=""
+if command -v python3 >/dev/null 2>&1; then
+  python3 "$SANDBOX/mock_server.py" "$SANDBOX/port" 2>/dev/null &
+  SERVER_PID=$!
+  for _ in $(seq 1 50); do [[ -s "$SANDBOX/port" ]] && break; sleep 0.1; done
+  PORT="$(cat "$SANDBOX/port" 2>/dev/null || true)"
+fi
+if [[ -n "$PORT" ]] && curl -s -m 3 -o /dev/null "http://127.0.0.1:${PORT}/healthz" 2>/dev/null; then
+  BASE="http://127.0.0.1:${PORT}"
+else
+  MOCK_OK=0
+  BASE=""
+  echo "note: mock Bitbucket DC server unavailable — DC-backend HTTP tests SKIPPED (deterministic + GitHub-backend + lint still run)" >&2
+fi
 
 # Fixture repo with a Bitbucket-shaped origin URL (repo-coord parsing).
 API_REPO="$SANDBOX/api-repo"
@@ -188,7 +238,56 @@ bb() {
     bash "$HERE/bitbucket.sh" "$@" )
 }
 
-echo "== bitbucket.sh (T01-T07) =="
+# DC backend with an explicit AUTOPILOT_BITBUCKET_DRAFT_MODE (native|title-prefix).
+bbdraft() {  # <mode> <bitbucket.sh args...>
+  local mode="$1"; shift
+  ( cd "$API_REPO" && \
+    IDENTITY_PROXY_URL="$BASE" IDENTITY_PROXY_PLATFORMS="bitbucketdc,jira" \
+    AUTOPILOT_BITBUCKET_DRAFT_MODE="$mode" \
+    bash "$HERE/bitbucket.sh" "$@" )
+}
+
+# host.sh dispatched from the DC-shaped repo (must resolve backend BITBUCKET_DC).
+hostbb() {
+  ( cd "$API_REPO" && \
+    IDENTITY_PROXY_URL="$BASE" IDENTITY_PROXY_PLATFORMS="bitbucketdc,jira" \
+    bash "$HERE/host.sh" "$@" )
+}
+
+SKIP=0
+skip() { echo "skip [$1] $2"; SKIP=$((SKIP+1)); }
+
+# The byte-identical PR/build contract, exercised THROUGH host.sh so the same
+# assertion set proves both backends (ADR 0013). <invoker-fn> runs the host
+# adapter from the backend's fixture repo. Fixtures are aligned across the DC
+# mock server and the gh argv shim so this body needs no per-backend branching.
+contract_matrix() {  # <id> <invoker-fn>
+  local ID="$1" H="$2" out rc bodyf
+  bodyf="$SANDBOX/cm_body.md"; printf 'Summary\n' > "$bodyf"
+  out=$($H pr-state --num 42 2>/dev/null); rc=$?
+  assert_eq "$ID" "pr-state --num 42 exits 0" "0" "$rc"
+  assert_eq "$ID" "pr-state --num 42 -> OPEN" "OPEN" "$out"
+  assert_eq "$ID" "pr-state --branch feature-x -> OPEN" "OPEN" "$($H pr-state --branch feature-x 2>/dev/null)"
+  assert_eq "$ID" "pr-state --branch absent -> NONE" "NONE" "$($H pr-state --branch no-pr-here 2>/dev/null)"
+  out=$($H pr-open --title "t" --src b1 --dest main --body-file "$bodyf" 2>/dev/null); rc=$?
+  assert_eq "$ID" "pr-open exits 0" "0" "$rc"
+  assert_eq "$ID" "pr-open prints PR id 77" "77" "$out"
+  $H pr-comment --num 42 --body-file "$bodyf" >/dev/null 2>&1; rc=$?
+  assert_eq "$ID" "pr-comment exits 0" "0" "$rc"
+  $H pr-approve --num 42 >/dev/null 2>&1; rc=$?
+  assert_eq "$ID" "pr-approve exits 0" "0" "$rc"
+  $H pr-decline --num 55 >/dev/null 2>&1; rc=$?
+  assert_eq "$ID" "pr-decline exits 0" "0" "$rc"
+  $H pr-merge --num 42 --strategy merge-commit >/dev/null 2>&1; rc=$?
+  assert_eq "$ID" "pr-merge exits 0" "0" "$rc"
+  assert_eq "$ID" "build-status aaa -> SUCCESSFUL" "SUCCESSFUL" "$($H build-status --sha aaa111 2>/dev/null)"
+  assert_eq "$ID" "build-status bbb -> FAILED" "FAILED" "$($H build-status --sha bbb222 2>/dev/null)"
+  assert_eq "$ID" "build-status ccc -> INPROGRESS" "INPROGRESS" "$($H build-status --sha ccc333 2>/dev/null)"
+  assert_eq "$ID" "build-status ddd -> UNKNOWN" "UNKNOWN" "$($H build-status --sha ddd444 2>/dev/null)"
+}
+
+echo "== bitbucket.sh + DC backend (T01-T07, T35, T36, HD01-HD10) =="
+if (( MOCK_OK )); then
 
 # T01 — pr-state --num succeeds on a healthy 200 (baseline A1: always died pr-state-http-0).
 out=$(bb pr-state --num 42 2>"$SANDBOX/t01.err"); rc=$?
@@ -266,6 +365,69 @@ assert_contains T36 "429 retry announced" "429 rate-limited; retrying once" "$(c
 err=$(bb pr-state --num 407 2>&1 >/dev/null || true)
 assert_contains T36 "407 classified as sidecar-session-invalid" "LAST_STATE=sidecar-session-invalid" "$err"
 assert_not_contains T36 "407 body not logged" "sidecar misconfigured" "$err"
+
+# --- AV3-15 draft surface + host.sh dispatch (DC backend) --------------------
+
+# HD01 — native mode: a draft:true OPEN PR reports DRAFT.
+assert_eq HD01 "native draft PR -> DRAFT" "DRAFT" "$(bb pr-state --num 91 2>/dev/null)"
+# HD02 — native mode: an ordinary OPEN PR stays OPEN (DRAFT does not leak).
+assert_eq HD02 "native non-draft PR -> OPEN" "OPEN" "$(bb pr-state --num 42 2>/dev/null)"
+
+# HD03 — title-prefix mode: a "[DRAFT] "-titled OPEN PR reports DRAFT.
+assert_eq HD03 "title-prefix PR -> DRAFT" "DRAFT" "$(bbdraft title-prefix pr-state --num 92 2>/dev/null)"
+# HD03b — the "[DRAFT] " title is mode-gated: NOT interpreted under native mode.
+assert_eq HD03 "title-prefix title ignored under native mode -> OPEN" "OPEN" "$(bbdraft native pr-state --num 92 2>/dev/null)"
+
+bodyf2="$SANDBOX/hd_body.md"; printf 'Body\n' > "$bodyf2"
+# HD04 — native pr-open --draft posts draft:true (title untouched).
+out=$(bb pr-open --draft --title "Feature" --src fb --dest main --body-file "$bodyf2" 2>/dev/null)
+assert_eq HD04 "native draft pr-open prints id" "77" "$out"
+lp=$(curl -s "$BASE/debug/last-pr")
+assert_contains HD04 "native draft pr-open posts draft:true" '"draft": true' "$lp"
+assert_contains HD04 "native draft pr-open leaves title unprefixed" '"title": "Feature"' "$lp"
+
+# HD05 — title-prefix pr-open --draft prepends "[DRAFT] " and posts draft:false.
+out=$(bbdraft title-prefix pr-open --draft --title "Feature" --src fb --dest main --body-file "$bodyf2" 2>/dev/null)
+assert_eq HD05 "title-prefix draft pr-open prints id" "77" "$out"
+lp=$(curl -s "$BASE/debug/last-pr")
+assert_contains HD05 "title-prefix pr-open prepends [DRAFT]" '"title": "[DRAFT] Feature"' "$lp"
+assert_contains HD05 "title-prefix pr-open posts draft:false" '"draft": false' "$lp"
+
+# HD06 — pr-ready (native) clears the draft flag via PUT.
+bb pr-ready --num 43 >/dev/null 2>&1; rc=$?
+assert_eq HD06 "pr-ready native exits 0" "0" "$rc"
+assert_contains HD06 "pr-ready native PUTs draft:false" '"draft": false' "$(curl -s "$BASE/debug/last-put")"
+
+# HD07 — pr-ready (title-prefix) strips the "[DRAFT] " prefix on flip.
+bbdraft title-prefix pr-ready --num 92 >/dev/null 2>&1; rc=$?
+assert_eq HD07 "pr-ready title-prefix exits 0" "0" "$rc"
+assert_contains HD07 "pr-ready title-prefix strips the prefix" '"title": "Prefixed PR"' "$(curl -s "$BASE/debug/last-put")"
+
+# HD11 — pr-merge-strategies emits OPERATOR tokens (self-consumable by pr-merge),
+# NOT raw DC ids. The mock enables `squash` + `rebase-no-ff`; the adapter must
+# map those to `squash` + `rebase` (a caller must be able to feed the output
+# straight back into pr-merge --strategy).
+out=$(bb pr-merge-strategies 2>/dev/null)
+assert_eq HD11 "DC pr-merge-strategies maps DC ids -> operator tokens" "$(printf 'squash\nrebase')" "$out"
+assert_not_contains HD11 "raw DC id rebase-no-ff does not leak" "rebase-no-ff" "$out"
+bb pr-merge --num 42 --strategy squash >/dev/null 2>&1; rc=$?
+assert_eq HD11 "squash token is pr-merge-consumable" "0" "$rc"
+bb pr-merge --num 42 --strategy rebase >/dev/null 2>&1; rc=$?
+assert_eq HD11 "rebase token is pr-merge-consumable" "0" "$rc"
+
+# HD08 — host.sh detects the DC backend from the /scm/ origin shape.
+assert_eq HD08 "host.sh backend -> BITBUCKET_DC" "BITBUCKET_DC" "$(hostbb backend 2>/dev/null)"
+
+# HD09 — host.sh passes pr-state through byte-identically to the DC backend.
+assert_eq HD09 "host.sh pr-state --num 42 -> OPEN" "OPEN" "$(hostbb pr-state --num 42 2>/dev/null)"
+assert_eq HD09 "host.sh pr-state --num 91 -> DRAFT" "DRAFT" "$(hostbb pr-state --num 91 2>/dev/null)"
+
+# HD10 — the shared T01-class contract matrix, host.sh -> DC backend.
+contract_matrix H-DC hostbb
+
+else
+  skip DC-bitbucket "mock Bitbucket DC server unavailable in this environment"
+fi
 
 echo "== repo_shape_probe_patterns.sh (T08) =="
 
@@ -497,6 +659,7 @@ ci() {
     bash "$HERE/ci_check.sh" "$@" )
 }
 
+if (( MOCK_OK )); then
 # T17 — the pre-v2.4 documented invocation (bare positional PR number) is a
 # usage error, and stays one (GAPS A6: D7.5 once documented exactly this call,
 # routing every first CI poll to HUMAN_NEEDED).
@@ -523,6 +686,9 @@ assert_eq T20 "--once declined PR exit 4" "4" "$rc"
 assert_eq T20 "--once declined verdict" "VERDICT=PR_DECLINED" "$out"
 out=$(ci --sha bbb222 --pr 42 --once 2>/dev/null); rc=$?
 assert_eq T20 "--once RED exit 1" "1" "$rc"
+else
+  skip ci_check "mock Bitbucket DC server unavailable in this environment"
+fi
 
 echo "== hot_file_audit.sh (T21-T23) =="
 
@@ -586,16 +752,22 @@ assert_eq T25 "sidecar mode prints nothing" "" "$out"
 
 echo "== sidecar_detect.sh (T28, T38) =="
 
+# Deterministic (no server): absent proxy URL -> local mode.
+out=$( env -u IDENTITY_PROXY_URL bash "$HERE/sidecar_detect.sh" )
+assert_eq T28 "no proxy url is local mode" "MODE=local" "$out"
+
+if (( MOCK_OK )); then
 out=$( IDENTITY_PROXY_URL="$BASE" IDENTITY_PROXY_PLATFORMS="bitbucketdc" bash "$HERE/sidecar_detect.sh" )
 assert_contains T28 "healthy sidecar detected" "MODE=sidecar" "$out"
 out=$( IDENTITY_PROXY_URL="$BASE/badok" bash "$HERE/sidecar_detect.sh" 2>/dev/null )
 assert_eq T28 "200 without ok body is local mode" "MODE=local" "$out"
-out=$( env -u IDENTITY_PROXY_URL bash "$HERE/sidecar_detect.sh" )
-assert_eq T28 "no proxy url is local mode" "MODE=local" "$out"
 
 # T38 — "not ok" must NOT pass the body check (substring matching did).
 out=$( IDENTITY_PROXY_URL="$BASE/notok" bash "$HERE/sidecar_detect.sh" 2>/dev/null )
 assert_eq T38 "'not ok' body is local mode" "MODE=local" "$out"
+else
+  skip sidecar_detect "mock Bitbucket DC server unavailable in this environment"
+fi
 
 echo "== secret_set.sh with keychain shims (T30) =="
 
@@ -689,15 +861,205 @@ assert_eq T27 "owner session passes the guard" "0" "$rc"
 CLAUDE_SESSION_ID=sess-INTRUDER bash "$DCD" "$CHAIN_TRK" >/dev/null 2>&1; rc=$?
 assert_eq T27 "second session is refused" "2" "$rc"
 
-echo "== consistency lint (L1-L15) =="
+echo "== github.sh backend via gh argv shim (H-GH, HG01-HG28) =="
+
+# A fake `gh` that answers exactly the argv github.sh drives. This is the
+# GitHub counterpart to the DC mock server (ADR 0013: the same T01-class
+# contract matrix, run against both backends). It needs NO network / python,
+# so it runs even when MOCK_OK=0.
+GHSHIM="$SANDBOX/ghshim"; mkdir -p "$GHSHIM"
+cat > "$GHSHIM/gh" <<'SHIMEOF'
+#!/usr/bin/env bash
+# Fake gh CLI for self_test: emulates the subset github.sh drives.
+set -u
+STATE="${GH_SHIM_STATE:-/tmp}"
+sub="${1:-}"; sub2="${2:-}"
+argval() {  # <flag> <args...> -> prints the value following <flag>
+  local want="$1"; shift
+  while (( $# )); do
+    if [[ "$1" == "$want" ]]; then printf '%s' "${2:-}"; return 0; fi
+    shift
+  done
+  return 1
+}
+case "$sub" in
+  pr)
+    case "$sub2" in
+      create)
+        draft=0
+        for a in "$@"; do [[ "$a" == "--draft" ]] && draft=1; done
+        if (( draft )); then
+          printf 'draft' > "$STATE/pr88"
+          printf 'https://github.com/acme/widget/pull/88\n'
+        else
+          printf 'https://github.com/acme/widget/pull/77\n'
+        fi
+        ;;
+      ready)  printf 'ready' > "$STATE/pr${3:-x}" ;;
+      view)
+        num="${3:-}"; state=OPEN; isdraft=false
+        case "$num" in
+          60) state=MERGED ;;
+          55) state=CLOSED ;;
+          88) [[ -f "$STATE/pr88" && "$(cat "$STATE/pr88")" == "ready" ]] || isdraft=true ;;
+        esac
+        printf '{"state":"%s","isDraft":%s}\n' "$state" "$isdraft"
+        ;;
+      list)
+        if [[ "$(argval --head "$@" || true)" == "feature-x" ]]; then
+          printf '[{"state":"OPEN","isDraft":false}]\n'
+        else
+          printf '[]\n'
+        fi
+        ;;
+      comment|review|close) exit 0 ;;
+      merge)
+        for a in "$@"; do
+          case "$a" in --merge|--squash|--rebase) printf '%s' "$a" > "$STATE/last_merge_flag" ;; esac
+        done
+        ;;
+      *) printf 'ghshim: unhandled pr %s\n' "$sub2" >&2; exit 1 ;;
+    esac
+    ;;
+  api)
+    path="${2:-}"
+    case "$path" in
+      repos/acme/widget)
+        printf '{"allow_merge_commit":true,"allow_squash_merge":true,"allow_rebase_merge":false}\n' ;;
+      */commits/*/status)
+        sha="${path%/status}"; sha="${sha##*/commits/}"
+        case "$sha" in
+          aaa*) printf '{"state":"success","total_count":1,"statuses":[{"state":"success"}]}\n' ;;
+          bbb*) printf '{"state":"failure","total_count":1,"statuses":[{"state":"failure"}]}\n' ;;
+          fff*) printf '{"state":"success","total_count":1,"statuses":[{"state":"success"}]}\n' ;;
+          *)    printf '{"state":"pending","total_count":0,"statuses":[]}\n' ;;
+        esac ;;
+      */commits/*/check-runs)
+        sha="${path%/check-runs}"; sha="${sha##*/commits/}"
+        case "$sha" in
+          ccc*) printf '{"total_count":1,"check_runs":[{"status":"in_progress","conclusion":null}]}\n' ;;
+          fff*) printf '{"total_count":1,"check_runs":[{"status":"completed","conclusion":"stale"}]}\n' ;;
+          ggg*) printf '{"total_count":2,"check_runs":[{"status":"completed","conclusion":"success"}]}\n' ;;
+          *)    printf '{"total_count":0,"check_runs":[]}\n' ;;
+        esac ;;
+      *) printf '{}\n' ;;
+    esac ;;
+  *) printf 'ghshim: unhandled %s\n' "$sub" >&2; exit 1 ;;
+esac
+SHIMEOF
+chmod +x "$GHSHIM/gh"
+
+GH_REPO_DIR="$SANDBOX/gh-repo"
+git init -q "$GH_REPO_DIR"
+git -C "$GH_REPO_DIR" remote add origin "https://github.com/acme/widget.git"
+GH_STATE="$SANDBOX/ghstate"; mkdir -p "$GH_STATE"
+
+# host.sh dispatched from the GitHub-shaped repo, gh shim ahead on PATH.
+hgh() { ( cd "$GH_REPO_DIR" && PATH="$GHSHIM:$PATH" GH_SHIM_STATE="$GH_STATE" bash "$HERE/host.sh" "$@" ); }
+# github.sh invoked directly (backend-scoped), same shim.
+ggh() { ( cd "$GH_REPO_DIR" && PATH="$GHSHIM:$PATH" GH_SHIM_STATE="$GH_STATE" bash "$HERE/github.sh" "$@" ); }
+
+# HG01 — host.sh detects the GitHub backend from the github.com origin.
+assert_eq HG01 "host.sh backend -> GITHUB" "GITHUB" "$(hgh backend 2>/dev/null)"
+
+# HG02..HG12 — the shared T01-class contract matrix, host.sh -> GitHub backend.
+contract_matrix H-GH hgh
+
+# --- GitHub draft surface ----------------------------------------------------
+rm -f "$GH_STATE/pr88"
+# HG20 — pr-open --draft returns the draft PR number.
+assert_eq HG20 "gh pr-open --draft prints id 88" "88" "$(hgh pr-open --draft --title Feature --src fb --dest main 2>/dev/null)"
+# HG21 — a freshly-opened draft PR reports DRAFT.
+assert_eq HG21 "gh draft PR -> DRAFT" "DRAFT" "$(hgh pr-state --num 88 2>/dev/null)"
+# HG22 — pr-ready flips it to ready-for-review...
+hgh pr-ready --num 88 >/dev/null 2>&1; rc=$?
+assert_eq HG22 "gh pr-ready exits 0" "0" "$rc"
+# HG23 — ...and pr-state now reports OPEN.
+assert_eq HG23 "gh readied PR -> OPEN" "OPEN" "$(hgh pr-state --num 88 2>/dev/null)"
+
+# --- GitHub state-vocabulary mapping -----------------------------------------
+# HG24 — MERGED maps straight through.
+assert_eq HG24 "gh MERGED -> MERGED" "MERGED" "$(hgh pr-state --num 60 2>/dev/null)"
+# HG25 — CLOSED (closed-not-merged) maps to the shared DECLINED token.
+assert_eq HG25 "gh CLOSED -> DECLINED" "DECLINED" "$(hgh pr-state --num 55 2>/dev/null)"
+
+# --- GitHub strategy discovery + mapping -------------------------------------
+out=$(hgh pr-merge-strategies 2>/dev/null)
+assert_contains HG26 "merge-commit permitted" "merge-commit" "$out"
+assert_contains HG26 "squash permitted" "squash" "$out"
+assert_not_contains HG26 "rebase not permitted (allow_rebase_merge=false)" "rebase" "$out"
+# HG27 — squash intent maps to gh --squash.
+ggh pr-merge --num 42 --strategy squash >/dev/null 2>&1
+assert_eq HG27 "squash intent -> gh --squash" "--squash" "$(cat "$GH_STATE/last_merge_flag" 2>/dev/null)"
+# HG28 — an unknown strategy is a clean arg error, not a silent merge.
+ggh pr-merge --num 42 --strategy bogus >/dev/null 2>&1; rc=$?
+assert_eq HG28 "unknown strategy -> exit 1" "1" "$rc"
+
+# HG29 — build-status hardening. A `stale` check-run must NOT poison an
+# otherwise-green build (dropped as neutral), and an unseen check-run page must
+# FAIL SAFE to INPROGRESS rather than a false SUCCESSFUL.
+assert_eq HG29 "stale check-run dropped; status green -> SUCCESSFUL" "SUCCESSFUL" "$(hgh build-status --sha fff555 2>/dev/null)"
+assert_eq HG29 "partial check-run page -> INPROGRESS (never false-green)" "INPROGRESS" "$(hgh build-status --sha ggg666 2>/dev/null)"
+
+# HG30 — ci_check.sh drives the host adapter, so the D7.5 CI poll is
+# host-agnostic: the SAME ci_check run turns GREEN against the GitHub backend.
+out=$( cd "$GH_REPO_DIR" && PATH="$GHSHIM:$PATH" GH_SHIM_STATE="$GH_STATE" \
+       bash "$HERE/ci_check.sh" --sha aaa111 --pr 42 --once 2>/dev/null )
+assert_eq HG30 "ci_check GREEN via GitHub backend" "VERDICT=GREEN" "$out"
+
+echo "== host.sh backend detection (H50) =="
+
+det() { ( cd "$1" && bash "$HERE/host.sh" backend 2>/dev/null ); }
+# H50 — the two canonical origin URL shapes resolve to their backends.
+assert_eq H50 "DC /scm/ https origin -> BITBUCKET_DC" "BITBUCKET_DC" "$(det "$API_REPO")"
+assert_eq H50 "github.com https origin -> GITHUB" "GITHUB" "$(det "$GH_REPO_DIR")"
+# H50 — an ssh github origin also resolves to GITHUB.
+SSHGH="$SANDBOX/sshgh"; git init -q "$SSHGH"
+git -C "$SSHGH" remote add origin "git@github.com:acme/widget.git"
+assert_eq H50 "git@github.com ssh origin -> GITHUB" "GITHUB" "$(det "$SSHGH")"
+# H50 — a trailing-slash github origin: host.sh routes GITHUB AND github.sh
+# parses it (it strips the trailing slash), so a PR op actually succeeds rather
+# than dying origin-parse.
+TSGH="$SANDBOX/tsgh"; git init -q "$TSGH"
+git -C "$TSGH" remote add origin "https://github.com/acme/widget/"
+assert_eq H50 "trailing-slash github origin -> GITHUB" "GITHUB" "$(det "$TSGH")"
+out=$( cd "$TSGH" && PATH="$GHSHIM:$PATH" GH_SHIM_STATE="$GH_STATE" bash "$HERE/github.sh" pr-state --num 42 2>/dev/null )
+assert_eq H50 "github.sh parses a trailing-slash origin (pr-state succeeds)" "OPEN" "$out"
+# H50 — AUTOPILOT_HOST_BACKEND override wins over the URL heuristic.
+out=$( cd "$API_REPO" && AUTOPILOT_HOST_BACKEND=GITHUB bash "$HERE/host.sh" backend 2>/dev/null )
+assert_eq H50 "override wins over origin heuristic" "GITHUB" "$out"
+# H50 — an invalid override is a hard error (not a silent default).
+( cd "$API_REPO" && AUTOPILOT_HOST_BACKEND=BOGUS bash "$HERE/host.sh" backend >/dev/null 2>&1 ); rc=$?
+assert_eq H50 "invalid override errors" "1" "$rc"
+# H50 — an unrecognised origin refuses with actionable guidance.
+UNK="$SANDBOX/unk-repo"; git init -q "$UNK"
+git -C "$UNK" remote add origin "https://gitlab.example.com/group/proj.git"
+out=$( cd "$UNK" && bash "$HERE/host.sh" backend 2>&1 >/dev/null || true )
+assert_contains H50 "unrecognised origin names the override knob" "AUTOPILOT_HOST_BACKEND" "$out"
+# H50 — host.sh refuses an unknown subcommand with usage exit 64.
+( cd "$GH_REPO_DIR" && bash "$HERE/host.sh" bogus-sub >/dev/null 2>&1 ); rc=$?
+assert_eq H50 "unknown subcommand -> usage 64" "64" "$rc"
+
+echo "== consistency lint (L1-L16) =="
 
 if bash "$HERE/lint_consistency.sh" >/dev/null 2>&1; then
-  pass LINT "lint_consistency.sh passes (15 rules)"
+  pass LINT "lint_consistency.sh passes (16 rules)"
 else
   fail LINT "lint_consistency.sh reports violations (run it directly for detail)"
 fi
 
+# L16 must actually red the retired single-host framing (planted-drift pin):
+# copy the skill into the sandbox, plant the forbidden line, run the copied lint.
+planted_dir="$SANDBOX/planted-lint"
+cp -R "$ROOT" "$planted_dir"
+printf '\nBitbucket Data Center is the source-of-truth host.\n' >> "$planted_dir/references/loop-safety.md"
+if bash "$planted_dir/scripts/lint_consistency.sh" >/dev/null 2>&1; then
+  fail L16 "L16 did NOT red a planted 'source-of-truth host' line"
+else
+  pass L16 "L16 reds planted 'source-of-truth host' framing"
+fi
+
 echo
-echo "self_test: ${PASS} passed, ${FAIL} failed"
+echo "self_test: ${PASS} passed, ${FAIL} failed, ${SKIP} skipped"
 (( FAIL == 0 )) || exit 1
 exit 0
