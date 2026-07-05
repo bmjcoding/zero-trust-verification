@@ -8,7 +8,7 @@
 #
 # Rules:
 #   L1  S-step ids ............ SKILL.md defines exactly S1..S7, no phantom steps
-#   L2  hard-contract refs .... all four §4 hard contracts named in SKILL.md
+#   L2  hard-contract refs .... all SEVEN §4 hard contracts named in SKILL.md
 #   L3  schema byte-identity .. vendored v1.schema.json == repo root (SG-3, ADR 0001)
 #   L4  validator byte-identity vendored validate_manifest.{sh,py} == repo root (SG-3)
 #   L5  ADR grammar pin ....... ADR 0002 canonical `rule-<n>: <path>` + two-class
@@ -45,12 +45,18 @@ if grep -qE '\bS0\b|\bS8\b|\bS9\b' "$SKILL"; then
 fi
 (( l1_bad == 0 )) && ok L1
 
-# --- L2: the four §4 hard contracts are all named in SKILL.md ----------------------
+# --- L2: all SEVEN §4 hard contracts are named in SKILL.md -------------------------
+# SKILL.md is the orchestrator's runtime ground truth; a silent deletion of any
+# hard-contract statement is exactly the drift this rule exists to catch, so it
+# pins all seven (HC1-HC7), not just the "headline" four.
 l2_bad=0
-grep -qiE 'refuse[- ]to[- ]finalize' "$SKILL" || { violation L2 "SKILL.md omits the refuse-to-finalize contract"; l2_bad=1; }
-grep -qiE 'no agent path to confirmed-CORE|confirmed-CORE .*(human|S5)' "$SKILL" || { violation L2 "SKILL.md omits the no-agent-path-to-confirmed-CORE contract"; l2_bad=1; }
-grep -qiE 'one writer|only writer' "$SKILL" || { violation L2 "SKILL.md omits the one-writer contract"; l2_bad=1; }
-grep -qiE 'one[- ]at[- ]a[- ]time' "$SKILL" || { violation L2 "SKILL.md omits the one-at-a-time escalation contract"; l2_bad=1; }
+grep -qiE 'refuse[- ]to[- ]finalize' "$SKILL" || { violation L2 "SKILL.md omits HC1 refuse-to-finalize"; l2_bad=1; }
+grep -qiE 'no agent path to confirmed-CORE|confirmed-CORE .*(human|S5)' "$SKILL" || { violation L2 "SKILL.md omits HC2 no-agent-path-to-confirmed-CORE"; l2_bad=1; }
+grep -qiE 'one writer|only writer' "$SKILL" || { violation L2 "SKILL.md omits HC3 one-writer"; l2_bad=1; }
+grep -qiE 'one[- ]at[- ]a[- ]time' "$SKILL" || { violation L2 "SKILL.md omits HC4 one-at-a-time escalation"; l2_bad=1; }
+grep -qiE 'session death is safe|every S-step boundary.*commit' "$SKILL" || { violation L2 "SKILL.md omits HC5 session-death-safe (per-boundary commits)"; l2_bad=1; }
+grep -qiE 'vanilla agents only' "$SKILL" || { violation L2 "SKILL.md omits HC6 vanilla-agents-only, role-via-prompt"; l2_bad=1; }
+grep -qiE 'ID allocation.*monotonic|never reuses? IDs' "$SKILL" || { violation L2 "SKILL.md omits HC7 monotonic ID allocation (reuse refusal)"; l2_bad=1; }
 (( l2_bad == 0 )) && ok L2
 
 # --- L3: schema byte-identity (SG-3, ADR 0001 vendoring lint) ----------------------

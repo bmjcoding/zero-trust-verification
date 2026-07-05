@@ -82,14 +82,24 @@ def check_emission(bundle: dict, required_boundaries=REQUIRED_BOUNDARIES) -> lis
     if missing:
         v.append(f"E3: missing per-boundary commit(s): {', '.join(missing)} (HC5)")
 
-    # E4 — every human-resolved exchange_ref resolves to an anchor in the PR body.
+    # E4 — every human-resolved entry carries an exchange_ref that resolves to an
+    # anchor in the PR body. At S7 (final emit) a human answer with a MISSING or
+    # blank exchange_ref is a shape defect: the S5-presenter contract records one
+    # per human answer, and §7.4 acceptance is "exchange_ref resolvability". (The
+    # manifest schema keeps exchange_ref optional for mid-session resumability;
+    # this stricter check is an S7-emit-time gate, not a schema rule.)
     anchors = set(pr.get("body_anchors") or [])
     for e in bundle.get("interrogation_log") or []:
         if not isinstance(e, dict):
             continue
         if e.get("resolved_by") == "human":
             ref = e.get("exchange_ref")
-            if ref and ref not in anchors:
+            if not (isinstance(ref, str) and ref.strip()):
+                v.append(
+                    f"E4: interrogation.log[{e.get('id','?')}] is resolved_by:human but "
+                    "carries no exchange_ref (S7 must record the human exchange)"
+                )
+            elif ref not in anchors:
                 v.append(
                     f"E4: interrogation.log[{e.get('id','?')}].exchange_ref {ref!r} "
                     "not resolvable in PR body anchors"
@@ -115,18 +125,26 @@ def check_emission(bundle: dict, required_boundaries=REQUIRED_BOUNDARIES) -> lis
 
 def _load(path: Path):
     from ruamel.yaml import YAML
+    from ruamel.yaml.error import YAMLError
 
     yaml = YAML(typ="safe", pure=True)
     yaml.version = (1, 2)
-    with path.open("r", encoding="utf-8") as fh:
-        return yaml.load(fh)
+    try:
+        with path.open("r", encoding="utf-8") as fh:
+            return yaml.load(fh)
+    except YAMLError as exc:
+        raise ValueError(f"{path}: YAML parse error: {exc}") from exc
 
 
 def _main(argv) -> int:
     if len(argv) != 2:
         print("usage: emission_check.py <bundle.yaml>", file=sys.stderr)
         return 64
-    bundle = _load(Path(argv[1]))
+    try:
+        bundle = _load(Path(argv[1]))
+    except (ValueError, OSError) as exc:
+        print(json.dumps({"error": str(exc)}))
+        return 4
     if not isinstance(bundle, dict):
         print(json.dumps({"error": "bundle is not a mapping"}))
         return 4

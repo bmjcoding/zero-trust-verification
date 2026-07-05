@@ -97,6 +97,10 @@ def next_id(prefix: str, slug: str, existing) -> str:
     if prefix not in ("J", "B"):
         raise IdError(f"prefix must be J or B for slug allocation, got {prefix!r}")
     _check_slug(slug)
+    # A bare string would be iterated char-by-char by set(), silently yielding a
+    # reuse (none of the chars parse, so hi stays 0 -> ...-001). Refuse it.
+    if isinstance(existing, (str, bytes)):
+        raise IdError("`existing` must be an iterable of ids, not a string")
     reserved = set(existing or [])
     hi = 0
     for e in reserved:

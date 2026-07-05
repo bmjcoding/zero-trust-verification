@@ -248,6 +248,15 @@ check("E3 dropping the S4 boundary commit -> violation (HC5)",
 check("E4 human exchange_ref with no PR anchor -> violation",
       has(mutate_emit(lambda d: d["interrogation_log"].append(
           {"id": "DL-004", "resolved_by": "human", "exchange_ref": "#missing"})), "E4"))
+check("E4 human entry with BLANK exchange_ref -> violation (S7 must record it)",
+      has(mutate_emit(lambda d: d["interrogation_log"].append(
+          {"id": "DL-005", "resolved_by": "human", "exchange_ref": ""})), "E4"))
+check("E4 human entry with MISSING exchange_ref key -> violation",
+      has(mutate_emit(lambda d: d["interrogation_log"].append(
+          {"id": "DL-006", "resolved_by": "human"})), "E4"))
+check("E4 does NOT fire on an agent entry with no exchange_ref (only human answers gate)",
+      not has(mutate_emit(lambda d: d["interrogation_log"].append(
+          {"id": "DL-007", "resolved_by": "agent", "dissent": "x"})), "E4"))
 check("E5 ADR filename with wrong session slug -> violation",
       has(mutate_emit(lambda d: d.__setitem__("adrs", ["docs/adr/DRAFT-other-slug-title.md"])), "E5"))
 check("E5 ADR not under DRAFT- prefix -> violation",
@@ -287,6 +296,12 @@ check("stored incomplete_fields is stale/partial (only 1 entry)", len(stale) == 
 resumed = resume_projection.project_manifest(mid_path)
 check("resume reconstructs MORE gaps than the stale field named (validator recompute wins)",
       len(resumed["escalate"]) + len(resumed["mechanical"]) > len(stale))
+# content, not just count: the one gap the stale field DID name must survive the
+# recompute (a projection that dropped it while finding others would still grow).
+stale_paths = {resume_projection.parse_entry(s)["path"] for s in stale}
+resumed_paths = {s["path"] for s in resumed["escalate"] + resumed["mechanical"]}
+check("resume PRESERVES the gap the stale incomplete_fields named",
+      stale_paths <= resumed_paths, f"(stale {stale_paths} not in {sorted(resumed_paths)})")
 check("resume yields the full S5 residue (rules 1,2,4 all present)",
       {1, 2, 4} <= {s["rule"] for s in resumed["escalate"]})
 check("resume yields the S3/S4 fix queue (mechanical rules present)",
@@ -295,6 +310,41 @@ check("resume yields the S3/S4 fix queue (mechanical rules present)",
 # (per-boundary commits S1..S7 present -> the kill point had S1..S3 already committed).
 check("a completed session's emission bundle is well-shaped (per-boundary commits, HC5)",
       emission_check.check_emission(good) == [])
+
+
+# ---- H. Malformed-input robustness (hand-editable files degrade cleanly) ----------
+print("== H. malformed-input robustness ==")
+import subprocess  # noqa: E402
+
+def run_cli(mod, args, stdin=None):
+    """Run a helper's CLI under uv and return (exit_code, stdout, stderr)."""
+    cmd = ["uv", "run", "--project", str(PLUGIN), "python", str(SCRIPTS / mod), *args]
+    p = subprocess.run(cmd, input=stdin, capture_output=True, text=True, cwd=str(PLUGIN))
+    return p.returncode, p.stdout, p.stderr
+
+with tempfile.TemporaryDirectory() as td:
+    bad_cfg = Path(td) / "spec-gen.config.yaml"
+    bad_cfg.write_text("profile: [unclosed\n")            # malformed YAML
+    rc, out, err = run_cli("profile_resolve.py", ["--mode", "fresh", "--config", str(bad_cfg)])
+    check("profile_resolve on malformed YAML: clean exit 3, no traceback",
+          rc == 3 and '"error"' in out and "Traceback" not in err, f"(rc={rc}, err={err[:80]})")
+
+    bad_bundle = Path(td) / "bundle.yaml"
+    bad_bundle.write_text("branch: [unclosed\n")
+    rc, out, err = run_cli("emission_check.py", [str(bad_bundle)])
+    check("emission_check on malformed YAML: clean exit 4, no traceback",
+          rc == 4 and '"error"' in out and "Traceback" not in err, f"(rc={rc}, err={err[:80]})")
+
+# id_alloc: a bare string for `existing` is refused, not silently iterated to a reuse.
+try:
+    id_alloc.next_id("J", "pay", "J-pay-005")   # a str, not a list
+    check("id_alloc refuses a bare-string `existing` (would silently reuse)", False, "(no error)")
+except id_alloc.IdError:
+    check("id_alloc refuses a bare-string `existing` (would silently reuse)", True)
+
+# The helper CLIs are wired and return their documented JSON on good input, too.
+rc, out, err = run_cli("id_alloc.py", ["alloc"], stdin='{"prefix":"J","slug":"pay","existing":["J-pay-001"]}')
+check("id_alloc.py alloc CLI returns the next id", rc == 0 and '"J-pay-002"' in out, f"(rc={rc}, out={out[:80]})")
 
 
 print(f"\n== spec-gen run_cases: {passed} passed, {failed} failed ==")

@@ -161,9 +161,13 @@ Run `scripts/validate_manifest.sh`:
   byte): internal defect — fix and re-validate; never persist a schema-invalid
   manifest.
 - **Exit 0** → additionally run the **GWT judgment gate** (manifest §5): judged by
-  the decomposition-refuter role, never the S3 author; failures loop the named
-  behaviors to S3 (bounded at 2 retries, then surface at S5 as "untestable
-  behavior"). **Exit 0 + GWT pass is the ONLY path to S7.**
+  a fresh `general-purpose` agent in the **decomposition-refuter role**, never the
+  S3 author. This role is dispatched for the gate at EVERY criticality — including
+  SUPPORTING/DEV, where the S4 refuter *round* does not run (§5) — because the gate
+  is a role, not the S4 round; a vital-free SUPPORTING spec still gets its GWT
+  judged. Failures loop the named behaviors to S3 (bounded at 2 retries, then
+  surface at S5 as "untestable behavior"). **Exit 0 + GWT pass is the ONLY path to
+  S7.**
 - **Deferred exit:** writing `completeness: incomplete` and exiting is legal ONLY on
   an explicit human `defer` at S5, never on the orchestrator's own initiative. (An
   escalation surfaced 3 times without an answer is treated as `defer`.)
