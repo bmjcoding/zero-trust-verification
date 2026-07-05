@@ -213,7 +213,7 @@ per Story — G6 update rides AV3-06).
 
 Delivered on `feat/autopilot-v3` off AV3-15's merged base. The `self_test.sh`
 baseline the register quotes (96) predates AV3-15; the real starting point was 170,
-grown to **301** assertions; lint L1–L15 → **L1–L23**. Every `[det]` acceptance
+grown to **312** assertions; lint L1–L15 → **L1–L23**. Every `[det]` acceptance
 below cites the assertion/rule ids that prove it; `[drain]` residuals are listed
 honestly (agent behavior, not hermetically covered — the v2.4.0 convention).
 
@@ -235,7 +235,7 @@ honestly (agent behavior, not hermetically covered — the v2.4.0 convention).
 | AV3-14 as-built docs | FIXED | lint L23 |
 | AV3-16a SKILL host-half | FIXED | lint L17; reference index + CHANGELOG v3.0.0 |
 | AV3-16b SKILL host-half (host adapter) | FIXED (rode AV3-15) | lint L16; Hard Contract 11 host-adapter wording |
-| AV3-17 growth accounting | FIXED | suite green (301 / L1–L23); this table |
+| AV3-17 growth accounting | FIXED | suite green (312 / L1–L23); this table |
 
 ### Honest Residuals (`[drain]` — measured only in real drains + Drift Notes)
 
