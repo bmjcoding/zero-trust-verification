@@ -15,8 +15,9 @@ Initial cut of the Spec Generation tier (spec of record:
 
 - **Plugin skeleton** (SG-1): `spec` skill encoding the S1–S7 session lifecycle;
   `/spec` command; `plugin.json`; marketplace entry in the repo-root
-  `.claude-plugin/marketplace.json`. Lifecycle steps S1–S7 and all four §4 hard
-  contracts are pinned by `lint_consistency.sh` L1/L2 `[det]`.
+  `.claude-plugin/marketplace.json`. Lifecycle steps S1–S7 (L1) and all seven §4
+  hard contracts HC1–HC7 (L2) are pinned in SKILL.md by `lint_consistency.sh`
+  `[det]`.
 - **Role prompts** (SG-2): S3 proposer, S4 decomposition-refuter, S4
   consumer-simulator, S5 presenter as vendored references. The two S4 output
   schemas REQUIRE `dissent` + `escalation_check` (the ADR 0002 trilist as a

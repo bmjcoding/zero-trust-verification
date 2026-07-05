@@ -31,18 +31,33 @@ echo "== 2. consistency lint (L1-L8) =="
 bash "$HERE/lint_consistency.sh"
 
 echo
-echo "== 3. planted-violation check (lint must go red on tampered vendored copy) =="
+echo "== 3. planted-violation checks (lint must go red on each planted defect) =="
 SANDBOX="$(mktemp -d)"
 trap 'rm -rf "$SANDBOX"' EXIT INT TERM
-cp -R "$PLUGIN" "$SANDBOX/spec-gen"
-# Tamper the vendored schema copy so it diverges from the repo-root original.
-printf '\n' >> "$SANDBOX/spec-gen/schema/verification-manifest/v1.schema.json"
-if SPEC_GEN_PLUGIN_ROOT="$SANDBOX/spec-gen" SPEC_GEN_REPO_ROOT="$REPO" \
-     bash "$HERE/lint_consistency.sh" >/dev/null 2>&1; then
-  echo "FAIL — lint PASSED on a tampered vendored schema (byte-identity rule is asleep)" >&2
-  exit 1
-fi
-echo "ok   - lint correctly reports the planted byte-identity violation"
+
+plant_and_expect_red() {  # label  tamper_fn (called with the sandbox plugin root)
+  local label="$1" fn="$2"
+  local SB="$SANDBOX/case"; rm -rf "$SB"; cp -R "$PLUGIN" "$SB"
+  "$fn" "$SB"
+  if SPEC_GEN_PLUGIN_ROOT="$SB" SPEC_GEN_REPO_ROOT="$REPO" \
+       bash "$HERE/lint_consistency.sh" >/dev/null 2>&1; then
+    echo "FAIL — lint PASSED on planted violation: $label" >&2
+    exit 1
+  fi
+  echo "ok   - lint reports planted violation: $label"
+}
+
+# 3a — L3 byte-identity: tamper the vendored schema so it diverges from repo root.
+tamper_schema() { printf '\n' >> "$1/schema/verification-manifest/v1.schema.json"; }
+# 3b — L2 hard-contract deletion: strip the HC6 statement from SKILL.md (the P1
+# class of bug — a silent contract deletion in the orchestrator's ground truth).
+tamper_hc6() {
+  grep -v 'Vanilla agents only' "$1/skills/spec/SKILL.md" > "$1/skills/spec/SKILL.tmp"
+  mv "$1/skills/spec/SKILL.tmp" "$1/skills/spec/SKILL.md"
+}
+
+plant_and_expect_red "L3 tampered vendored schema" tamper_schema
+plant_and_expect_red "L2 deleted HC6 (vanilla-agents) from SKILL.md" tamper_hc6
 
 echo
 echo "self_test: PASS"

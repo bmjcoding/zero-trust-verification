@@ -18,7 +18,9 @@ Mode is inferred from the arguments (spec skill §2):
   overrides Config-Profile resolution (flag → `spec-gen.config.yaml` → default).
 
 Then follow the S1–S7 lifecycle in the `spec` skill (`skills/spec/SKILL.md`)
-exactly, honouring its §4 hard contracts — refuse-to-finalize, no agent path to
-confirmed-CORE, one-writer, one-at-a-time escalations. Use the deterministic
+exactly, honouring its seven §4 hard contracts — refuse-to-finalize, no agent path
+to confirmed-CORE, one-writer, one-at-a-time escalations, session-death-safe
+per-boundary commits, vanilla-agents-only, and monotonic ID allocation. Use the
+deterministic
 `scripts/` (validator, ID allocator, resume projection, profile resolver,
 emission-shape gate) rather than reasoning their logic out by hand.

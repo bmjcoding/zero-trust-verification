@@ -41,13 +41,23 @@ NO_PROFILE_ESCALATION = (
 
 
 def _load_yaml_12(path: Path):
-    """Parse with the same YAML 1.2 core-schema parser the validator uses (ADR 0014)."""
+    """Parse with the same YAML 1.2 core-schema parser the validator uses (ADR 0014).
+
+    A malformed config/manifest is hand-editable, so a parse error is surfaced as
+    a clean ValueError (which `_main` renders as `{"error": ...}` + exit 3) rather
+    than an uncaught YAMLError traceback — matching the vendored validator's own
+    `_load_yaml_12` discipline.
+    """
     from ruamel.yaml import YAML
+    from ruamel.yaml.error import YAMLError
 
     yaml = YAML(typ="safe", pure=True)
     yaml.version = (1, 2)
-    with path.open("r", encoding="utf-8") as fh:
-        return yaml.load(fh)
+    try:
+        with path.open("r", encoding="utf-8") as fh:
+            return yaml.load(fh)
+    except YAMLError as exc:
+        raise ValueError(f"{path}: YAML parse error: {exc}") from exc
 
 
 def _config_profile(config_path: Path | None):

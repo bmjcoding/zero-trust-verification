@@ -132,7 +132,9 @@ def _main(argv) -> int:
     if len(argv) == 2 and not argv[1].startswith("-"):
         out = project_manifest(Path(argv[1]))
         print(json.dumps(out, indent=2))
-        # Mirror the validator's exit-code contract so a resume caller can branch.
+        # Always exit 0: a resumable incomplete manifest is the NORMAL case, so we
+        # never signal it as a process failure (that would trip `set -e` callers).
+        # The caller branches on the JSON `validator_exit` field, not $?.
         return 0
     print("usage: resume_projection.py <manifest.yaml> | --fields <file|->", file=sys.stderr)
     return 64
