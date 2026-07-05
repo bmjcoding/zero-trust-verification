@@ -347,9 +347,18 @@ if [[ -n "$l22_vp" && "$l22_vp" != "$l22_vi" ]]; then
 fi
 (( l22_bad == 0 )) && ok L22
 
+# --- L23: as-built docs are Story deliverables (AV3-14) ------------------------
+# The runbook ledger reserves an As-built docs slot per Story, and the
+# integration validator enforces its presence in the Story PR for journey-bearing
+# Stories. Pin both so the deliverable can't silently drop.
+l23_bad=0
+grep -q 'As-built docs' "$ROOT/references/runbook-template.md" || { violation L23 "runbook-template.md missing the As-built docs Story deliverable slot"; l23_bad=1; }
+grep -q 'As-built docs are Story deliverables' "$ROOT/references/validator-prompts.md" || { violation L23 "integration validator missing the as-built docs rule (AV3-14)"; l23_bad=1; }
+(( l23_bad == 0 )) && ok L23
+
 if (( FAIL == 1 )); then
   echo "lint_consistency: FAIL" >&2
   exit 1
 fi
-echo "lint_consistency: PASS (22 rules)"
+echo "lint_consistency: PASS (23 rules)"
 exit 0

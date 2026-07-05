@@ -1671,10 +1671,10 @@ assert_contains H50 "unrecognised origin names the override knob" "AUTOPILOT_HOS
 ( cd "$GH_REPO_DIR" && bash "$HERE/host.sh" bogus-sub >/dev/null 2>&1 ); rc=$?
 assert_eq H50 "unknown subcommand -> usage 64" "64" "$rc"
 
-echo "== consistency lint (L1-L22) =="
+echo "== consistency lint (L1-L23) =="
 
 if bash "$HERE/lint_consistency.sh" >/dev/null 2>&1; then
-  pass LINT "lint_consistency.sh passes (22 rules)"
+  pass LINT "lint_consistency.sh passes (23 rules)"
 else
   fail LINT "lint_consistency.sh reports violations (run it directly for detail)"
 fi
@@ -1756,6 +1756,17 @@ if bash "$planted22/scripts/lint_consistency.sh" >/dev/null 2>&1; then
   fail L22 "L22 did NOT red a drifted vendored escalation copy"
 else
   pass L22 "L22 reds a drifted vendored escalation copy"
+fi
+
+# L23 must red an integration validator that drops the as-built docs rule.
+planted23="$SANDBOX/planted-lint-23"
+cp -R "$ROOT" "$planted23"
+grep -v 'As-built docs are Story deliverables' "$planted23/references/validator-prompts.md" > "$planted23/references/val23.tmp"
+mv "$planted23/references/val23.tmp" "$planted23/references/validator-prompts.md"
+if bash "$planted23/scripts/lint_consistency.sh" >/dev/null 2>&1; then
+  fail L23 "L23 did NOT red a dropped as-built docs validator rule"
+else
+  pass L23 "L23 reds a dropped as-built docs validator rule"
 fi
 
 echo
