@@ -76,6 +76,11 @@ while IFS="$(printf '\t')" read -r sid size hours; do
   (( hours <= cap )) || fail story-size-inconsistent "$sid"
 done < <(jq -r '.subtasks[] | [.id, (.estimated_size // ""), (.predicted_hours // "")] | @tsv' "$PLAN")
 
+# Every Subtask MUST declare parent_story — otherwise orphans collapse into a
+# bogus group and a Story's true roll-up can slip under the 48h cap unseen.
+orphan="$(jq -r '.subtasks[] | select((.parent_story // "") == "") | .id' "$PLAN" | head -1)"
+[[ -z "$orphan" ]] || fail subtask-missing-parent-story "$orphan"
+
 # Per-Story roll-up: sum predicted_hours grouped by parent_story; >48 is oversized.
 while IFS="$(printf '\t')" read -r story total; do
   [[ -z "$story" ]] && continue

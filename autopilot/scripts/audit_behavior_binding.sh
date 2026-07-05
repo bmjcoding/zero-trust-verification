@@ -70,7 +70,6 @@ while IFS= read -r line; do
   nodes="$(printf '%s' "$line" | sed 's/^[[:space:]]*-[[:space:]]*B-[A-Za-z0-9-]*:[[:space:]]*//')"
 
   # No mapped tests -> unbound.
-  case "$nodes" in ''|*[![:space:]]*) : ;; esac
   if [[ -z "${nodes// }" ]]; then block unbound-behavior "$bid"; fi
 
   had_one=0
@@ -79,9 +78,12 @@ while IFS= read -r line; do
     node="${node# }"; node="${node% }"
     [[ -z "$node" ]] && continue
     had_one=1
-    # Test function name = token after the last "::" (or the whole node).
+    # Test function name = token after the last "::" (or the whole node). Match it
+    # as a WHOLE WORD, never a substring: `test_x` must not read as proven by a RED
+    # commit that only names `test_x_v2` (test names are word chars, so `grep -w`
+    # is safe and needs no regex escaping).
     fn="${node##*::}"
-    grep -qF -- "$fn" <<<"$reds_text" || { IFS="$oldIFS"; block unproven-binding "$bid $fn"; }
+    grep -qw -- "$fn" <<<"$reds_text" || { IFS="$oldIFS"; block unproven-binding "$bid $fn"; }
   done
   IFS="$oldIFS"
   (( had_one )) || block unbound-behavior "$bid"
