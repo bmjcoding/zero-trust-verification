@@ -217,6 +217,9 @@ Single-doc drains skip this. `STRAIGHT_THROUGH` (G0) requires the union to pass 
 The sizing gate is deterministic-over-a-declared-prediction (the Marshal owns actuals, ADR 0012). On `story-oversized`, re-spawn the offending Story's planner to split it into sequential, independently mergeable Stories; each becomes its own Story branch/PR downstream (AV3-06). On a mapping refusal, re-spawn the planner with the offending ID(s). The runbook records the resulting behavior-IDs-per-Story ledger (G7) so the audit can distinguish intentionally-not-yet-wired work from Memory Rot.
 
 
+**Claim consultation (ADR 0009 / AV3-09).** Build the open-PR inventory via the host adapter — for every open PR (`host.sh pr-state`) capture its branch, state, business-day age, and declared file surface (`runbook_pr.sh file-surface` on its body). For each Subtask, run `bash ${SKILL_DIR}/scripts/claim_overlap.sh --self-namespace autopilot/<slug>/ --inventory <inv.tsv> <owned-files...>`. A `BINDING` (foreign draft) or `TERMINAL` (foreign ready) overlap writes a `blocked_by_pr: <host>/<pr#>` edge onto that Subtask (D2-evaluable); `ADVISORY` (stale >2 business days) is a note only; branches under this drain's own `autopilot/<slug>/*` namespace are `EXCLUDED` (closes the re-GENERATE self-deadlock). D2 gates on the edge; the drain NEVER terminal-pauses on first blockage — it waits and re-checks.
+
+
 ## Step G5 — Already-shipped detection
 
 
