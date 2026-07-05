@@ -1131,6 +1131,57 @@ assert_eq "AV3-04.7" "drift with one arg is usage error 64" "64" "$rc"
 mrg bogus-sub >/dev/null 2>&1; rc=$?
 assert_eq "AV3-04.7" "unknown subcommand is usage error 64" "64" "$rc"
 
+echo "== runbook_pr.sh + Runbook-PR fold (AV3-08) =="
+
+RPR="$HERE/runbook_pr.sh"
+cat > "$SANDBOX/rpr_body.md" <<'M'
+## Summary
+Extract the token bucket.
+
+## Predicted file surface
+<!-- autopilot:file-surface:begin -->
+- `api/limiter.py`
+- `lib/rate_limit/bucket.py`
+- `tests/test_bucket.py`
+<!-- autopilot:file-surface:end -->
+
+## Checklist
+M
+# AV3-08.1 — the predicted file-surface block is a grep-able, machine-parseable
+# list (G7 emits it into the Runbook PR body for foreign planners).
+out=$(bash "$RPR" file-surface "$SANDBOX/rpr_body.md" 2>&1); rc=$?
+assert_eq "AV3-08.1" "file-surface extraction exits 0" "0" "$rc"
+assert_eq "AV3-08.1" "file-surface entry count" "3" "$(printf '%s\n' "$out" | grep -c .)"
+assert_contains "AV3-08.1" "file-surface strips backticks/bullets" "lib/rate_limit/bucket.py" "$out"
+
+cat > "$SANDBOX/rpr_nomarkers.md" <<'M'
+## Summary
+No file surface block here.
+M
+# AV3-08.2 — a body missing the markers is a hard format error (never silent).
+bash "$RPR" file-surface "$SANDBOX/rpr_nomarkers.md" >/dev/null 2>&1; rc=$?
+assert_eq "AV3-08.2" "missing file-surface markers is exit 1" "1" "$rc"
+bash "$RPR" file-surface >/dev/null 2>&1; rc=$?
+assert_eq "AV3-08.2" "no body arg is usage error 64" "64" "$rc"
+
+# AV3-08.3 — tracker-fold fixture AGAINST THE RUNBOOK BRANCH: the retired rolling
+# tracker PR is replaced by one bookkeeping home. The fold commit lands on
+# autopilot/<slug>/runbook and carries the canonical "Tracker deltas folded in:"
+# body block.
+RB_REPO="$SANDBOX/rb-repo"
+git init -q "$RB_REPO"
+git -C "$RB_REPO" config user.email selftest@local
+git -C "$RB_REPO" config user.name selftest
+( cd "$RB_REPO" && echo base > f && git add f && git commit -qm "chore: base" && git branch -M main \
+  && git checkout -qb autopilot/demo/runbook \
+  && printf 'tracker\n' > t.md && git add t.md \
+  && git commit -q -m "chore: tracker fold — demo" -m "Tracker deltas folded in:
+- in_progress_claim: claimed A1
+- status_change: A1 pushed pr#7" )
+fold_branch=$(git -C "$RB_REPO" branch --contains HEAD --format='%(refname:short)' | grep -c 'autopilot/demo/runbook')
+assert_eq "AV3-08.3" "tracker fold commit is on the runbook branch" "1" "$fold_branch"
+assert_contains "AV3-08.3" "fold commit carries the deltas block" "Tracker deltas folded in:" "$(git -C "$RB_REPO" log -1 --pretty=%b)"
+
 echo "== secret_get.sh (T25) =="
 
 # T25 — candidate list matches the documented resolver conventions
@@ -1441,10 +1492,10 @@ assert_contains H50 "unrecognised origin names the override knob" "AUTOPILOT_HOS
 ( cd "$GH_REPO_DIR" && bash "$HERE/host.sh" bogus-sub >/dev/null 2>&1 ); rc=$?
 assert_eq H50 "unknown subcommand -> usage 64" "64" "$rc"
 
-echo "== consistency lint (L1-L18) =="
+echo "== consistency lint (L1-L19) =="
 
 if bash "$HERE/lint_consistency.sh" >/dev/null 2>&1; then
-  pass LINT "lint_consistency.sh passes (18 rules)"
+  pass LINT "lint_consistency.sh passes (19 rules)"
 else
   fail LINT "lint_consistency.sh reports violations (run it directly for detail)"
 fi
@@ -1481,6 +1532,17 @@ if bash "$planted18/scripts/lint_consistency.sh" >/dev/null 2>&1; then
   fail L18 "L18 did NOT red an AP-3 allow-list missing behavior_ids"
 else
   pass L18 "L18 reds an AP-3 allow-list that drops behavior_ids"
+fi
+
+# L19 must red a doc that reasserts the retired rolling-tracker-PR framing:
+# fresh copy, plant an active mention, expect the copied lint to red.
+planted19="$SANDBOX/planted-lint-19"
+cp -R "$ROOT" "$planted19"
+printf '\nBookkeeping lands on the rolling tracker PR every fire.\n' >> "$planted19/references/loop-safety.md"
+if bash "$planted19/scripts/lint_consistency.sh" >/dev/null 2>&1; then
+  fail L19 "L19 did NOT red a planted active 'rolling tracker PR' line"
+else
+  pass L19 "L19 reds a planted active 'rolling tracker PR' framing"
 fi
 
 echo

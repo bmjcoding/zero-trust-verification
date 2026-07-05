@@ -33,7 +33,7 @@ Loop-safety invariants (what the loop may NEVER do, and which mechanism enforces
 **Context-poisoning trap.** Having the SPEC.md, the ADR, or the runbook body in your context window is more reason to delegate, not less. Rich context makes it easy to reach for direct edits because "you already know what to write" — that is the failure mode. The tracker is the source of truth across fires; the orchestrator's job is to keep its own context small enough to survive every step boundary and every auto-compaction. If in doubt, spawn.
 
 
-**Override scoping.** `--yolo` skips the GENERATE→review gate and arms the drain cron immediately. `--force` bypasses a specific refusal (concurrent drain, existing artifacts) and logs the override to `## Force Audit`. `branching.single_branch_single_pr: true` collapses the drain into one branch + one PR. `branching.no_force_push: true` disables the rolling tracker PR and enables the AP-23 batched-delta queue. **None of these overrides relaxes the delegation contract.** They are orthogonal — a `--yolo` drain still dispatches subagents at every step; a single-branch drain still dispatches subagents at every step; a no-force-push drain still dispatches subagents at every step. Do not read any override as licensing direct orchestrator edits to source files.
+**Override scoping.** `--yolo` skips the GENERATE→review gate and arms the drain cron immediately. `--force` bypasses a specific refusal (concurrent drain, existing artifacts) and logs the override to `## Force Audit`. `branching.single_branch_single_pr: true` collapses the drain into one branch + one PR. `branching.no_force_push: true` switches tracker bookkeeping on the Runbook PR (AV3-08) from direct commits to the AP-23 batched-delta queue (appends only, no force-push). **None of these overrides relaxes the delegation contract.** They are orthogonal — a `--yolo` drain still dispatches subagents at every step; a single-branch drain still dispatches subagents at every step; a no-force-push drain still dispatches subagents at every step. Do not read any override as licensing direct orchestrator edits to source files.
 
 
 ## Modes
@@ -90,7 +90,7 @@ For one-off tasks use `/loop` instead. Autopilot is for multi-task autonomous dr
 1. **One Subtask per drain fire; one Story per PR (PR-per-Story — AV3-06 / ADR 0007).** Each fire is still exactly one Subtask end-to-end, but its commit series lands on the **Story branch** `autopilot/<slug>/<story-id>`, and the PR granularity is the **Story**, never the Subtask: a draft Story PR is opened on the Story's first Subtask, kept draft until every one of that Story's Subtasks is `[x] Done`, then flipped ready-for-review. Subtasks are the Story's commit series, not separate PRs. No batching of Subtasks (the AP-23 tracker-delta queue is orthogonal — it batches bookkeeping, not Subtasks).
 2. **Vanilla Claude Code agents only.** `Explore`, `Plan`, `general-purpose`. No dependency on user-defined `~/.claude/agents/`.
 3. **Role-via-prompt, not role-via-subagent_type.** All role differentiation lives in inline prompts in the generated runbook.
-4. **Direct-to-main never.** Every commit lands via a PR — code via the Story PR, tracker bookkeeping via the rolling tracker PR OR the AP-23 batched-delta queue folded into the next Story PR (see `references/tracker-delta-batching.md`). Autopilot never merges its own PRs.
+4. **Direct-to-main never.** Every commit lands via a PR — code via the Story PR, tracker bookkeeping via the **Runbook PR** (`autopilot/<slug>/runbook`, AV3-08): direct commits under `no_force_push: false`, or the AP-23 batched-delta queue flushed onto the runbook branch under `no_force_push: true` (see `references/tracker-delta-batching.md`). Autopilot never merges its own PRs.
 5. **TDD vertical slice with per-cycle local commits.** Code subtasks do RED → GREEN per behavior; each RED is `test: <id>.<n> RED`, each GREEN is `feat: <id>.<n> GREEN`. D6 verifies via `git log`. AP-1.
 6. **Non-overlapping file ownership** within a drain — guaranteed by the planner.
 7. **No `--no-verify`, no rebases of trunk. `--force` is logged.** AP-11.
@@ -101,7 +101,7 @@ For one-off tasks use `/loop` instead. Autopilot is for multi-task autonomous dr
 12. **Secrets never enter Claude's context.** Tokens are resolved through `scripts/secret_get.sh` (sidecar → keychain → env), echoed only into curl `-H` headers via subshell, and never logged. AP-13/14.
 13. **Heartbeats at every step boundary.** D3, D4, D5, D6, D7.x each update `last_heartbeat_at` so D1's 90-min-old crash detector is meaningful. AP-6.
 14. **Tracker frontmatter session lock.** Each fire claims a `session_lock` keyed on `${CLAUDE_SESSION_ID}` with `lock_expires_at = now + 30 min`. Two concurrent sessions hitting the same tracker is a refuse. AP-4.
-15. **Block counters split by domain.** `consecutive_impl_blocks` and `consecutive_ci_blocks` escalate independently at the runbook's `budget.max_impl_blocks` / `budget.max_ci_blocks` caps (defaults 3 / 2) so a CI flake streak doesn't mask real impl failures. External faults (foreign commits, trunk rename, tracker-pr-blocked) route straight to `HUMAN_NEEDED` and don't increment counters. AP-2.
+15. **Block counters split by domain.** `consecutive_impl_blocks` and `consecutive_ci_blocks` escalate independently at the runbook's `budget.max_impl_blocks` / `budget.max_ci_blocks` caps (defaults 3 / 2) so a CI flake streak doesn't mask real impl failures. External faults (foreign commits, trunk rename, runbook-pr-blocked) route straight to `HUMAN_NEEDED` and don't increment counters. AP-2.
 
 
 ---
@@ -162,7 +162,7 @@ Triggered by `/autopilot --resume @<runbook>`. Recovers a paused drain without r
 ### Failure escalation, STATUS state machine, tracker-PR availability, end-of-drain output
 
 
-All defined in `references/drain-lifecycle.md`. The short version: `consecutive_impl_blocks` and `consecutive_ci_blocks` escalate independently at the runbook's `budget.max_impl_blocks` / `budget.max_ci_blocks` caps (defaults 3 / 2); external faults route straight to `HUMAN_NEEDED` without incrementing counters; the tracker PR (or the batched-delta queue under `branching.no_force_push`) is the only place bookkeeping ever lands; `STATUS: DRAINED` produces `MERGE-ORDER.md`.
+All defined in `references/drain-lifecycle.md`. The short version: `consecutive_impl_blocks` and `consecutive_ci_blocks` escalate independently at the runbook's `budget.max_impl_blocks` / `budget.max_ci_blocks` caps (defaults 3 / 2); external faults route straight to `HUMAN_NEEDED` without incrementing counters; the Runbook PR (AV3-08) is the only place bookkeeping ever lands; `STATUS: DRAINED` produces `MERGE-ORDER.md`.
 
 
 ---
@@ -171,7 +171,7 @@ All defined in `references/drain-lifecycle.md`. The short version: `consecutive_
 ## Tracker delta batching (AP-23)
 
 
-Under `branching.no_force_push: true` (auto-set by G1.5 when the repo rejects force pushes), the rolling tracker PR pattern is disabled — divergence on a rolling tracker branch would be fatal because we cannot force-push to reconcile. Instead, tracker deltas queue inside the tracker file at the `## Pending Tracker Deltas (batched)` section, and the NEXT successful Subtask's PR (D7.1a) flushes the queue into a single atomic commit alongside the impl edit. Full contract: `references/tracker-delta-batching.md`.
+All tracker bookkeeping lands on the Runbook PR (`autopilot/<slug>/runbook`, AV3-08). Under `branching.no_force_push: true` (auto-set by G1.5 when the repo rejects force pushes), deltas cannot be reconciled by force-push, so instead of committing each one directly they queue inside the tracker file at the `## Pending Tracker Deltas (batched)` section, and D7.1a flushes the queue as an append commit onto the runbook branch (never mixed into a Story PR — one bookkeeping home, no self-intersecting claim surfaces). Full contract: `references/tracker-delta-batching.md`.
 
 
 Queue entry schema, valid `delta_kind:` values, durability across BLOCKED fires, recovery semantics, and schema migration all live in the reference. Lifecycle integration points (D1.0.4 injection + crash-recovery, D1.0 hydrate, D2 in_progress claim, D7.1a fold + commit body block, D7.3 PR-body section, D7.4 status-change queue) are documented in `references/drain-lifecycle.md`.

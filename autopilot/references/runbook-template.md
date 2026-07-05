@@ -168,6 +168,22 @@ not flipped.
 > pre-v2.3 tracker. Do not hand-edit entries under this header; the
 > dispatcher owns append and flush semantics.
 
+## Runbook PR (bookkeeping home — AV3-08)
+
+G7 opens ONE long-lived **Runbook PR** at Pickup on branch `autopilot/<slug>/runbook`, carrying the runbook + tracker. It is the single home for all tracker bookkeeping under both `no_force_push` settings (the pre-v3 rolling tracker PR is retired), and it is the FINAL entry in `MERGE-ORDER.md` — the operator (or the Marshal, once built) merges it; autopilot never merges its own PRs.
+
+Its body carries the drain's **predicted file surface** as a grep-able block, delimited by literal marker comments so foreign planners and the AV3-09 claim consultation can parse it without prose heuristics:
+
+```markdown
+## Predicted file surface
+<!-- autopilot:file-surface:begin -->
+- `path/one.py`
+- `path/two.py`
+<!-- autopilot:file-surface:end -->
+```
+
+`scripts/runbook_pr.sh file-surface <body-file>` extracts the entries (marker contract; a missing/unbalanced pair is a hard error, never a silent empty surface).
+
 ## Tracker file
 
 The dispatcher writes a sibling tracker at `.autopilot/runbooks/<slug>.tracker.md`. Operators do not edit this; it is the dispatcher's append-only state log. The frontmatter is the CANONICAL schema (v2.4.0 — this section previously documented a divergent legacy field set that neither G7 nor `detect_concurrent_drain.sh` could interoperate with; see docs/GAPS_SPEC.md C2):

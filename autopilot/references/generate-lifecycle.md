@@ -287,13 +287,28 @@ Seed the tracker body with the standard sections plus, when `branching.no_force_
 `<slug>` is derived from the input docs (e.g., `0042-foo` for a single ADR; `tier4-tfl-parity` for an umbrella ADR family). Operator can override via `--slug=<name>`.
 
 
-The runbook's first commit creates a feature branch `autopilot/<slug>/setup` with shape verification (AP-7). Under `branching.no_force_push: false` (default) the rolling tracker PR `[autopilot] tracker — drain <slug>` is also created. Under `branching.no_force_push: true`, no tracker PR is created — the AP-23 batched-delta queue is used instead (see `references/tracker-delta-batching.md`).
+The runbook's first commit creates a feature branch `autopilot/<slug>/setup` with shape verification (AP-7).
+
+
+**Open the Runbook PR at Pickup (AV3-08).** G7 immediately opens ONE long-lived Runbook PR on branch `autopilot/<slug>/runbook`, carrying the runbook + tracker — the single bookkeeping home under both `no_force_push` settings (the pre-v3 rolling tracker PR is retired). Its body carries the drain's **predicted file surface** as a grep-able block so foreign planners (and AV3-09 claim consultation) can consult one place:
+
+
+```markdown
+## Predicted file surface
+<!-- autopilot:file-surface:begin -->
+- `path/one.py`
+- `path/two.py`
+<!-- autopilot:file-surface:end -->
+```
+
+
+`bash ${SKILL_DIR}/scripts/runbook_pr.sh file-surface <body-file>` extracts the block deterministically (marker contract). The Runbook PR is opened non-draft and is the FINAL entry in `MERGE-ORDER.md`; the operator (or the Marshal) merges it — autopilot NEVER merges its own PRs.
 
 
 ## Step G8 — Review or arm
 
 
-**Default (review path):** Print a structured summary then exit (no cron arming). Required content: drain slug; Stories count; Subtasks count broken down by `kind` and `estimated_size`; already-shipped (G5) count; hot-file serializations applied; G1.5 probe facts + any `unknown` values that need operator review; consolidations applied (G3.6); estimated drain runtime; paths of the runbook + tracker; rolling tracker PR URL (or "batched-delta queue active" under `branching.no_force_push`); the exact `/autopilot --drain @<runbook-path>` command to start the drain; one-line reminder to edit before draining.
+**Default (review path):** Print a structured summary then exit (no cron arming). Required content: drain slug; Stories count; Subtasks count broken down by `kind` and `estimated_size`; already-shipped (G5) count; hot-file serializations applied; G1.5 probe facts + any `unknown` values that need operator review; consolidations applied (G3.6); estimated drain runtime; paths of the runbook + tracker; Runbook PR URL (`autopilot/<slug>/runbook`, AV3-08); the exact `/autopilot --drain @<runbook-path>` command to start the drain; one-line reminder to edit before draining.
 
 
 **`--yolo` path:** Skip the review entirely; immediately invoke the DRAIN mode as if operator typed `/autopilot --drain @.autopilot/runbooks/<slug>.md`.
