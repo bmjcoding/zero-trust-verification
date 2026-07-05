@@ -388,7 +388,12 @@ resolve_trunk() {  # <explicit-base-or-empty> -> echoes the trunk branch name
 iso_to_epoch() {  # <iso8601-or-empty> -> epoch seconds (0 on empty/parse-miss)
   local iso="$1"
   [[ -n "$iso" && "$iso" != "null" ]] || { printf '0'; return 0; }
-  jq -rn --arg t "$iso" '($t | strptime("%Y-%m-%dT%H:%M:%SZ") | mktime)' 2>/dev/null || printf '0'
+  # Tolerate fractional seconds (…SS.mmmZ): gh emits whole-second Zulu today, but a
+  # fractional (or otherwise-degraded) timestamp must NOT be a hard failure — strip
+  # a `.NNN` fraction before strptime, and fall back to 0 on any parse miss. This is
+  # per-row (see cmd_pr_list_ready), so a single bad timestamp degrades one row, it
+  # does not abort the whole enumeration.
+  jq -rn --arg t "$iso" '($t | sub("\\.[0-9]+Z$";"Z") | strptime("%Y-%m-%dT%H:%M:%SZ") | mktime)' 2>/dev/null || printf '0'
 }
 
 # gh_ready_for_review_iso: createdAt of the PR's most-recent ReadyForReviewEvent
@@ -432,27 +437,32 @@ cmd_pr_list_ready() {
   n="$(jq 'length' <<<"$list_json" 2>/dev/null || echo 0)"
   (( n >= limit )) && echo "github.sh: pr-list-ready hit the --limit ($limit) page; queue may be truncated" >&2
 
-  # Non-draft rows as: num \t branch \t sha \t approval \t createdEpoch.
-  # approval (APPROVED|PENDING) and the epoch are computed IN jq so no field is
-  # ever empty — a bare `read` with IFS=<tab> collapses consecutive tabs (tab is
-  # IFS-whitespace), so an empty middle field would silently shift columns.
-  # createdEpoch is the fallback FIFO key (createdAt -> epoch, UTC, in jq).
+  # Non-draft rows with a real head sha, as: num \t branch \t sha \t approval \t
+  # createdAt(ISO). approval is computed IN jq and a PR with an empty head sha is
+  # dropped (it is not a merge candidate) so NO field is ever empty — a bare `read`
+  # with IFS=<tab> collapses consecutive tabs (tab is IFS-whitespace), and an empty
+  # middle field would silently shift the Marshal's columns. createdAt stays RAW
+  # here; the ISO->epoch conversion is per-row in the loop (iso_to_epoch, guarded),
+  # so one malformed timestamp degrades that row, it never aborts the enumeration.
   local rows
   rows="$(jq -r '
-    .[] | select(.isDraft == false)
+    .[]
+    | select(.isDraft == false)
+    | select((.headRefOid // "") != "")
     | [ .number, .headRefName, .headRefOid,
         (if .reviewDecision == "APPROVED" then "APPROVED" else "PENDING" end),
-        (.createdAt | strptime("%Y-%m-%dT%H:%M:%SZ") | mktime) ]
+        .createdAt ]
     | @tsv' <<<"$list_json" 2>/dev/null)" || die_state "pr-list-ready-parse" "cannot parse gh pr list output"
   [[ -n "$rows" ]] || return 0
 
   # Refine the FIFO key with the ReadyForReviewEvent when the PR was readied from
-  # draft, then emit the marshal-consumable contract row.
-  local num branch sha approval created_epoch ready_iso ready_ts
-  while IFS="$(printf '\t')" read -r num branch sha approval created_epoch; do
+  # draft (else createdAt), convert to epoch (guarded), emit the contract row.
+  local num branch sha approval created_iso ready_iso ready_ts
+  while IFS="$(printf '\t')" read -r num branch sha approval created_iso; do
     [[ -n "$num" ]] || continue
     ready_iso="$(gh_ready_for_review_iso "$num")"
-    if [[ -n "$ready_iso" ]]; then ready_ts="$(iso_to_epoch "$ready_iso")"; else ready_ts="$created_epoch"; fi
+    [[ -n "$ready_iso" ]] || ready_iso="$created_iso"
+    ready_ts="$(iso_to_epoch "$ready_iso")"
     printf '%s\t%s\t%s\t%s\t%s\n' "$ready_ts" "$num" "$branch" "$sha" "$approval"
   done <<<"$rows"
 }

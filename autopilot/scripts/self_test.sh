@@ -133,11 +133,23 @@ class H(http.server.BaseHTTPRequestHandler):
             self._send_json({"id": "refs/heads/main", "displayId": "main"}); return
         if "/pull-requests?" in p:
             if "order=NEWEST" in p:
-                # pr-list-ready queue enumeration (AV3-15b). Aligned with the gh
-                # shim so the shared contract_matrix asserts identical TSV: PR 42
-                # APPROVED (all reviewers approved), PR 77 PENDING (one not), PR 88
-                # a draft (excluded), PR 99 targets a non-trunk branch (excluded).
-                self._send_json({"isLastPage": True, "values": [
+                # pr-list-ready queue enumeration (AV3-15b), served in TWO pages so
+                # the DC pagination loop is exercised (isLastPage:False on page 1 is
+                # the `false // true` jq trap). Page 1 (start=0) carries the fixtures
+                # aligned with the gh shim for the shared contract_matrix: PR 42
+                # APPROVED, PR 77 PENDING (one reviewer not approved), PR 88 a draft
+                # (excluded), PR 99 a non-trunk target (excluded). Page 2 (start=100)
+                # carries PR 201, targeting `page2branch` — reachable ONLY if the
+                # loop honours isLastPage:False and follows nextPageStart.
+                if "start=100" in p:
+                    self._send_json({"isLastPage": True, "values": [
+                        {"id": 201, "title": "p2", "state": "OPEN", "draft": False,
+                         "createdDate": 1783250000000,
+                         "fromRef": {"displayId": "feature-p2", "id": "refs/heads/feature-p2",
+                                     "latestCommit": "fff201sha"},
+                         "toRef": {"displayId": "page2branch", "id": "refs/heads/page2branch"},
+                         "reviewers": [{"approved": True}]}]}); return
+                self._send_json({"isLastPage": False, "nextPageStart": 100, "values": [
                     {"id": 42, "title": "x", "state": "OPEN", "draft": False,
                      "createdDate": 1783245600000,
                      "fromRef": {"displayId": "feature-x", "id": "refs/heads/feature-x",
@@ -490,6 +502,15 @@ contract_matrix H-DC hostbb
 out="$(AUTOPILOT_TRUNK=no-such-trunk hostbb pr-list-ready 2>/dev/null)"; rc=$?
 assert_eq HD12 "DC pr-list-ready empty queue -> no output" "" "$out"
 assert_eq HD12 "DC pr-list-ready empty queue -> exit 0" "0" "$rc"
+
+# HD13 — DC pr-list-ready PAGINATES. PR 201 lives on page 2 (start=100) and targets
+# `page2branch`; it is reachable ONLY if the loop honours page 1's isLastPage:False
+# and follows nextPageStart. The `.isLastPage // true` jq trap (false read as true)
+# stops after page 1 and drops it — with order=NEWEST that is the oldest/FIFO-head
+# PR. This assertion reds on that bug.
+out="$(AUTOPILOT_TRUNK=page2branch hostbb pr-list-ready 2>/dev/null | sort -t"$(printf '\t')" -k1,1n)"
+assert_eq HD13 "DC pr-list-ready follows pagination to page 2 (PR 201)" \
+  "$(printf '1783250000\t201\tfeature-p2\tfff201sha\tAPPROVED')" "$out"
 
 else
   skip DC-bitbucket "mock Bitbucket DC server unavailable in this environment"
@@ -1701,6 +1722,12 @@ case "$sub" in
           # 08:00Z and readied-for-review later; its FIFO key must come from the
           # RFR event (see the graphql shim), NOT createdAt.
           printf '[{"number":91,"headRefName":"feature-rfr","headRefOid":"fff91sha","reviewDecision":"APPROVED","createdAt":"2026-07-05T08:00:00Z","isDraft":false}]\n'
+        elif [[ "$base" == "hardening" ]]; then
+          # Robustness fixture: PR 93 has a FRACTIONAL-second createdAt (must still
+          # convert, not abort the whole enumeration); PR 94 has an EMPTY headRefOid
+          # (must be dropped — no head sha = not a merge candidate, and an empty
+          # middle column would shift the Marshal's read).
+          printf '[{"number":93,"headRefName":"feature-frac","headRefOid":"fff93sha","reviewDecision":"APPROVED","createdAt":"2026-07-05T10:00:00.500Z","isDraft":false},{"number":94,"headRefName":"feature-nosha","headRefOid":"","reviewDecision":"APPROVED","createdAt":"2026-07-05T09:00:00Z","isDraft":false}]\n'
         else
           printf '[]\n'
         fi
@@ -1822,6 +1849,13 @@ assert_eq HG31 "readied-from-draft PR keys off the ReadyForReviewEvent, not crea
 out="$(ggh pr-list-ready --base emptybase 2>/dev/null)"; rc=$?
 assert_eq HG32 "empty queue -> no output" "" "$out"
 assert_eq HG32 "empty queue -> exit 0" "0" "$rc"
+
+# HG33 — robustness: a fractional-second createdAt (PR 93) still converts to the
+# whole-second epoch (1783245600) rather than aborting the WHOLE enumeration, and
+# a PR with an EMPTY head sha (PR 94) is dropped. Output is exactly PR 93.
+out="$(ggh pr-list-ready --base hardening 2>/dev/null)"
+assert_eq HG33 "fractional createdAt converts + empty-head-sha PR dropped (one bad row != whole-queue abort)" \
+  "$(printf '1783245600\t93\tfeature-frac\tfff93sha\tAPPROVED')" "$out"
 
 echo "== host.sh backend detection (H50) =="
 

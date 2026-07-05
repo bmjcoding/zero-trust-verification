@@ -816,6 +816,9 @@ cmd_pr_list_ready() {
       | ((.draft // false) == true) as $ndraft
       | (($mode == "title-prefix") and (((.title // "") | startswith($pfx)))) as $pdraft
       | select(($ndraft or $pdraft) | not)
+      # a PR with no source head commit is not a merge candidate (drop it; an empty
+      # head_sha field would also shift the Marshal read under IFS=TAB)
+      | select((.fromRef.latestCommit // "") != "")
       # approval: >=1 reviewer AND all reviewers approved (all-of-empty is true, so
       # the count guard keeps a reviewer-less PR PENDING)
       | ( ((.reviewers // []) | length) as $rn
@@ -824,12 +827,16 @@ cmd_pr_list_ready() {
       | [ ((.createdDate // 0) / 1000 | floor),
           .id,
           (.fromRef.displayId // ((.fromRef.id // "") | ltrimstr("refs/heads/"))),
-          (.fromRef.latestCommit // ""),
+          .fromRef.latestCommit,
           $approval ]
       | @tsv
     ' < "$resp_f" 2>/dev/null || { rm -f "$resp_f"; die_state "pr-list-ready-parse" "cannot parse DC pull-request list"; }
 
-    last=$(jq -r '.isLastPage // true' < "$resp_f" 2>/dev/null || echo true)
+    # DC pagination cursor. jq's `//` treats false like null (`false // true` ==
+    # true), so isLastPage MUST be read via has()+else — `.isLastPage // true` would
+    # misread a genuine `false` as `true` and stop after page 1, dropping the OLDEST
+    # (order=NEWEST) PRs, i.e. exactly the FIFO head the Marshal merges first.
+    last=$(jq -r 'if has("isLastPage") then .isLastPage else true end' < "$resp_f" 2>/dev/null || echo true)
     [[ "$last" == "true" ]] && break
     nps=$(jq -r '.nextPageStart // empty' < "$resp_f" 2>/dev/null || echo "")
     # No advancing cursor -> stop (never loop forever on a malformed page).
