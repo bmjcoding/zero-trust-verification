@@ -70,6 +70,9 @@ import cycles, file paths match what the Subtask claimed.
 6. **No import cycles.** Load the touched package from a clean shell (Python default: `python -c "import <package>"`); RecursionError / circular-import warnings / cycle-detector output → finding.
 
 
+7. **As-built docs are Story deliverables (AV3-14).** When any of the Story's behaviors is **journey-bearing** — the Behavior maps (directly or via inheritance) to an `active` manifest journey — the Story PR MUST ship the as-built doc edits declared in the Story's `As-built docs` ledger slot (journey docs, README deltas) IN THE SAME Story PR, not a follow-up. On the Story's completing Subtask, verify the accumulated Story diff (`git diff origin/<base>..<story-branch>`) touches each declared as-built doc. Journey-bearing Story with a missing as-built doc → `severity: high, blocking: true`. (Non-journey-bearing Stories and manifest-less drains are exempt.)
+
+
 ### NOT YOUR JOB
 
 
@@ -115,10 +118,20 @@ test quality (TESTS VERIFY BEHAVIOR, NOT IMPLEMENTATION).
    **High severity, blocking** — these tests are technical debt the moment they land.
 
 
-4. **Behavior coverage check.** Compare the implementer's TDD sequence summary against `behaviors_to_test[]`. Every behavior listed in the Subtask schema must appear in the TDD sequence. Missing → `severity: high, blocking: true`.
+4. **Anti-flakiness contract (AV3-11).** Test quality is design's remit, so the implementer's anti-flakiness contract is enforced HERE. Flag any test that:
+   - **sleeps for synchronization** — a fixed `time.sleep()` / bounded-less wait used to "let something finish" (races on slow runners);
+   - depends on **unseeded randomness** — asserts on RNG output without a fixed seed;
+   - reads the **real wall clock** — compares against `datetime.now()`/`time.time()` instead of an injected/frozen clock;
+   - uses **real transport** — touches live network/services/external state instead of a fake at the boundary seam;
+   - is **order-dependent** — relies on shared mutable module/global state that couples it to sibling tests' execution order.
+
+   Each is `severity: high, blocking: true` — a flaky test trains the loop to ignore red. (The D6 determinism gate, AV3-12, is the runtime backstop; this is the shift-left catch.)
 
 
-5. **No backwards-compatibility cruft.** Flag: empty exception classes "for future use", `_unused = True` flags, `# noqa` covering avoidable issues, vestigial branches under `if False:`, etc.
+5. **Behavior coverage check.** Compare the implementer's TDD sequence summary against `behaviors_to_test[]`. Every behavior listed in the Subtask schema must appear in the TDD sequence. Missing → `severity: high, blocking: true`.
+
+
+6. **No backwards-compatibility cruft.** Flag: empty exception classes "for future use", `_unused = True` flags, `# noqa` covering avoidable issues, vestigial branches under `if False:`, etc.
 
 
 ### NOT YOUR JOB

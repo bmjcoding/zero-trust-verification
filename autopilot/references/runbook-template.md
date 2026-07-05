@@ -1,4 +1,4 @@
-# Runbook Template (autopilot v2.4.0)
+# Runbook Template (autopilot v3.0.0)
 
 > Loading preamble reminder: the runbook is the operator's contract with
 > autopilot. Read it in full before every drain; do not cache stale
@@ -26,6 +26,7 @@ budget:
   max_cycles_per_subtask: 8              # hard cap on TDD cycles per subtask (D4)
   max_impl_blocks: 3                     # AP-2: consecutive_impl_blocks cap before HUMAN_NEEDED
   max_ci_blocks: 2                       # AP-2: consecutive_ci_blocks cap before HUMAN_NEEDED
+  max_claim_waits: 16                    # AV3-09: consecutive claim-blocked fires before HUMAN_NEEDED — claim-deadlock
   max_runtime_minutes: 240               # wall-clock cap; dispatcher emits HUMAN_NEEDED at expiry
 validators:                              # validator names run on every D5; catalog = validator-prompts.md
   - integration                          # always
@@ -44,6 +45,10 @@ gates:                                   # v2.4.0: language-agnostic gate comman
                                          # "go test {paths}", "cargo test -p {paths}").
   test_scoped: "pytest -x -q {paths}"
   test_single: "pytest {test} -x"
+  test_random: "pytest -p randomly -q {paths}"   # AV3-12 (OPTIONAL): the order-randomized round of
+                                                 # the D6.4 determinism gate. Omit when the repo has no
+                                                 # randomization plugin — D6.4 skips that round with a
+                                                 # loud [note] (e.g. JS: "vitest run --sequence.shuffle {paths}").
   test_contract: "pytest -m contract -x -q {paths}"
   typecheck: "mypy {paths}"
   lint: "ruff check {paths}"             # scoped to changed files — never repo-wide (brownfield debt
@@ -60,7 +65,7 @@ ci:
     in_progress: [INPROGRESS]
 branching:
   no_force_push: false                   # AP-23: when true, tracker deltas queue in-tracker and flush at D7.1a; disables rolling tracker-PR pattern. Auto-flipped true by G1.5 when FORCE_PUSH_ALLOWED=false.
-  single_branch_single_pr: false         # AP-23: when true, tracker branch == Subtask branch; flush commit is part of the Subtask PR itself.
+  single_branch_single_pr: false         # AP-06/23: when true, the whole drain collapses to one feature branch + one PR (the coarser collapse over PR-per-Story); the tracker fold appends to that single branch.
 enforce_jira_key: false                  # AP-22: when true, every commit message must satisfy the JIRA-key regex. Auto-flipped true by G1.5 when JIRA_HOOK_ENFORCED=true.
 pack_subtasks: false                     # AP-21: when true, planner consolidates Subtasks per G3.6 heuristic; equivalent to `--consolidate=auto` at invocation.
 merge:
@@ -107,6 +112,27 @@ Bullet list of work explicitly out of scope. The planner uses this to reject can
 - Removing deprecated endpoints (separate runbook).
 - Adding telemetry to existing code paths.
 
+### Stories (sizing + coverage ledger)
+
+> Written by G7 from the planner output and the G4 sizing gate — one row per
+> Story (PR-per-Story, AV3-06). The dispatcher reads `predicted_hours` for the
+> 48-hour invariant audit trail; the audit tier reads `Behavior IDs` to
+> distinguish intentionally-not-yet-wired work from Memory Rot.
+
+| Story | Subtasks | predicted_hours (Σ, ≤48) | Behavior IDs | As-built docs |
+|---|---|---|---|---|
+| `S-pricing` | A1, A2, A3 | 28 | `B-pricing-001`, `B-pricing-002` | `docs/journeys/pricing.md` |
+
+- **predicted_hours (Σ)** — sum of the Story's Subtasks' `predicted_hours`; G4
+  refuses any Story summing to more than 48 hours (`story-oversized`) and any
+  Subtask whose hours exceed its `estimated_size` ceiling (`story-size-inconsistent`).
+  ADR 0012 / AV3-07.
+- **Behavior IDs** — the active manifest Behavior IDs the Story's Subtasks own
+  (planner `behavior_ids[]`, mapped at G3, verified at D6). Empty column only for
+  manifest-less drains (v2.4.0 semantics).
+- **As-built docs** — the journey-doc / README deltas the Story must ship inside
+  its own Story PR when the Story's behaviors are journey-bearing per the manifest.
+
 ### Repo constraints (detected)
 
 > This block is written by G1.5 (`scripts/repo_shape_probe.sh`) on the first
@@ -147,6 +173,22 @@ not flipped.
 > pre-v2.3 tracker. Do not hand-edit entries under this header; the
 > dispatcher owns append and flush semantics.
 
+## Runbook PR (bookkeeping home — AV3-08)
+
+G7 opens ONE long-lived **Runbook PR** at Pickup on branch `autopilot/<slug>/runbook`, carrying the runbook + tracker. It is the single home for all tracker bookkeeping under both `no_force_push` settings (the pre-v3 rolling tracker PR is retired), and it is the FINAL entry in `MERGE-ORDER.md` — the operator (or the Marshal, once built) merges it; autopilot never merges its own PRs.
+
+Its body carries the drain's **predicted file surface** as a grep-able block, delimited by literal marker comments so foreign planners and the AV3-09 claim consultation can parse it without prose heuristics:
+
+```markdown
+## Predicted file surface
+<!-- autopilot:file-surface:begin -->
+- `path/one.py`
+- `path/two.py`
+<!-- autopilot:file-surface:end -->
+```
+
+`scripts/runbook_pr.sh file-surface <body-file>` extracts the entries (marker contract; a missing/unbalanced pair is a hard error, never a silent empty surface).
+
 ## Tracker file
 
 The dispatcher writes a sibling tracker at `.autopilot/runbooks/<slug>.tracker.md`. Operators do not edit this; it is the dispatcher's append-only state log. The frontmatter is the CANONICAL schema (v2.4.0 — this section previously documented a divergent legacy field set that neither G7 nor `detect_concurrent_drain.sh` could interoperate with; see docs/GAPS_SPEC.md C2):
@@ -156,9 +198,15 @@ The dispatcher writes a sibling tracker at `.autopilot/runbooks/<slug>.tracker.m
 STATUS: ACTIVE                    # ACTIVE | DRAINED | PAUSED | HUMAN_NEEDED | STOPPED
 consecutive_impl_blocks: 0        # AP-2: split counters
 consecutive_ci_blocks: 0
+claim_waits: 0                    # AV3-09: consecutive claim-blocked fires; cap budget.max_claim_waits
 drain_start_sha: <sha>
 drain_started_at: <iso8601>       # seeded by the first fire; budget.max_runtime_minutes anchor
 audited_sha: <sha>                # AP-5: SHA at planner-spawn time
+manifest_revision: <int-or-absent> # AV3-04: frozen at GENERATE from the Spec's manifest;
+                                  #   D1.0.6 compares it against the live manifest each fire.
+                                  #   Absent on manifest-less drains (v2.4.0 semantics).
+status_reason: <string-or-absent> # set alongside STATUS: PAUSED|HUMAN_NEEDED (e.g.
+                                  #   manifest-revision-drift, runtime-budget-expired). Cleared on Resume.
 trunk_branch: <name>              # from G1.5 TRUNK=
 host: bitbucket-dc
 ci:
@@ -169,8 +217,14 @@ branching:
 enforce_jira_key: <bool>          # G1.5 JIRA_HOOK_ENFORCED or --jira auto-set
 pack_subtasks: <bool>             # AP-21 operator-toggle
 in_progress: null                 # or the claimed Subtask block (subtask_id, started_at,
-                                  #   last_heartbeat_at, pr_number, pushed_at, pushed_sha,
-                                  #   awaiting_ci, ci_check_count)
+                                  #   last_heartbeat_at, pr_number [the Story PR], pushed_at, pushed_sha,
+                                  #   prev_pushed_sha [AV3-06: the D6.2 audit base — the Story branch tip
+                                  #   the previous Subtask left; null for the Story's first Subtask],
+                                  #   awaiting_ci, ci_check_count, replans [AV3-10 claim-loss re-plan count])
+stories: {}                       # AV3-06: per-Story entry keyed by <story-id>, each carrying
+                                  #   last_pushed_sha (feeds the next Subtask's prev_pushed_sha) +
+                                  #   pr_number + behavior coverage (D7.4 mirror, AV3-05)
+subtask_blocks: {}                # AV3-09: per-Subtask blocked_by_pr: <host>/<pr#> claim edges (G4-written, D2-evaluable)
 last_heartbeat_at: <iso8601>      # AP-6: updated every step boundary
 session_lock: null                # AP-4: CLAUDE_SESSION_ID of the lock owner
 session_lock_expires_at: null     # AP-4: now+30min, refreshed every fire
