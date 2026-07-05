@@ -1,15 +1,19 @@
 #!/usr/bin/env bash
 # bitbucket.sh
 #
-# Bitbucket Data Center adapter. Replaces gh CLI calls with
-# git + Bitbucket DC REST API. Routes credentials through the
+# Bitbucket Data Center backend for the host adapter (host.sh). Speaks
+# git + Bitbucket DC REST API and routes credentials through the
 # sidecar -> keychain -> env resolver chain (see sidecar-contract.md).
+# Selected by host.sh when `origin` is a Bitbucket DC remote; the byte-
+# identical contract is shared with the gh-CLI backend github.sh (ADR 0013).
 #
 # Subcommands:
 #   pr-open           --title <t> --src <branch> --dest <branch> [--body-file <path>] [--draft]
 #                       -> prints PR number on stdout
+#   pr-ready          --num <N>
+#                       -> flips a draft PR to ready-for-review; exits 0
 #   pr-state          (--num <N> | --branch <src-branch>)
-#                       -> prints one of: OPEN, MERGED, DECLINED, NONE (--branch only)
+#                       -> prints one of: OPEN, DRAFT, MERGED, DECLINED, NONE (--branch only)
 #   pr-comment        --num <N> --body-file <path>
 #                       -> exits 0 on success
 #   pr-approve        --num <N>                                 (v2.3.0)
@@ -25,6 +29,18 @@
 #                       -> prints repo-permitted merge strategies (one per line)
 #   build-status      --sha <sha>
 #                       -> prints aggregated state: SUCCESSFUL | FAILED | INPROGRESS | UNKNOWN
+#
+# Draft PRs (AV3-06 / AV3-15). AUTOPILOT_BITBUCKET_DRAFT_MODE selects the
+# mechanism:
+#   native (default) -- the PR `draft` boolean field (Bitbucket DC 8.x+).
+#                       pr-open --draft sets draft:true; pr-state emits DRAFT
+#                       while draft && OPEN; pr-ready clears the flag.
+#   title-prefix     -- a "[DRAFT] " title convention for older DC servers that
+#                       predate native draft PRs. pr-open --draft prepends the
+#                       prefix; pr-state emits DRAFT for a prefixed OPEN PR;
+#                       pr-ready strips the prefix. (Native `draft:true` is
+#                       ALSO honoured as DRAFT in either mode, so a server that
+#                       later gains native drafts is never misread.)
 #
 # All subcommands derive PROJECT_KEY and REPO_SLUG from `git remote get-url origin`.
 # Expected origin shape: https://<host>/scm/<project>/<repo>.git
@@ -63,10 +79,14 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 usage() {
   cat >&2 <<EOF
 usage: bitbucket.sh <subcommand> [args]
-subcommands: pr-open pr-state pr-comment pr-approve pr-decline pr-merge pr-merge-strategies build-status
+subcommands: pr-open pr-ready pr-state pr-comment pr-approve pr-decline pr-merge pr-merge-strategies build-status
 EOF
   exit 64
 }
+
+# Draft-PR mechanism selector (see the header block). Default: native.
+DRAFT_MODE="${AUTOPILOT_BITBUCKET_DRAFT_MODE:-native}"
+DRAFT_PREFIX="[DRAFT] "
 
 # Emit LAST_STATE=<value> on stderr then die with rc=1. Callers grep for
 # LAST_STATE= to classify failures without parsing free-form error strings.
@@ -316,6 +336,18 @@ cmd_pr_open() {
   # Also sanitise title (may come from grep/awk).
   title=$(printf '%s' "$title" | sanitise_utf8)
 
+  # Draft handling. Native sets the `draft` payload boolean; title-prefix
+  # rewrites the title with the "[DRAFT] " convention for servers predating
+  # native draft PRs (the boolean stays false there).
+  local draft_bool=false
+  if (( draft == 1 )); then
+    if [[ "$DRAFT_MODE" == "title-prefix" ]]; then
+      title="${DRAFT_PREFIX}${title}"
+    else
+      draft_bool=true
+    fi
+  fi
+
   local payload
   payload=$(jq -n \
     --arg title "$title" \
@@ -324,14 +356,14 @@ cmd_pr_open() {
     --arg dest "$dest" \
     --arg slug "$REPO_SLUG" \
     --arg proj "$PROJECT_KEY" \
-    --argjson draft "$draft" \
+    --argjson draft "$draft_bool" \
     '{
       title: $title,
       description: $desc,
       state: "OPEN",
       open: true,
       closed: false,
-      draft: ($draft == 1),
+      draft: $draft,
       fromRef: { id: ("refs/heads/" + $src), repository: { slug: $slug, project: { key: $proj } } },
       toRef:   { id: ("refs/heads/" + $dest), repository: { slug: $slug, project: { key: $proj } } },
       locked: false,
@@ -377,7 +409,14 @@ cmd_pr_state() {
       rm -f "$resp_f"
       die_state "pr-state-http-${HTTP_STATUS}" "pr-state failed"
     fi
-    jq -r '.state // "UNKNOWN"' < "$resp_f"
+    # DRAFT is emitted for an OPEN PR that is either natively draft
+    # (draft:true) or, in title-prefix mode, carries the "[DRAFT] " title.
+    jq -r --arg mode "$DRAFT_MODE" --arg pfx "$DRAFT_PREFIX" '
+      (.state // "UNKNOWN") as $st
+      | ((.draft // false) == true) as $ndraft
+      | (($mode == "title-prefix") and (((.title // "") | startswith($pfx)))) as $pdraft
+      | if $st == "OPEN" and ($ndraft or $pdraft) then "DRAFT" else $st end
+    ' < "$resp_f"
   else
     # v2.4.0: look up the most recent PR whose source ref is <branch>
     # (needed by the tracker-PR availability check, which knows the branch
@@ -388,7 +427,63 @@ cmd_pr_state() {
       rm -f "$resp_f"
       die_state "pr-state-http-${HTTP_STATUS}" "pr-state failed"
     fi
-    jq -r '(.values // []) | if length == 0 then "NONE" else (.[0].state // "UNKNOWN") end' < "$resp_f"
+    jq -r --arg mode "$DRAFT_MODE" --arg pfx "$DRAFT_PREFIX" '
+      (.values // [])
+      | if length == 0 then "NONE"
+        else .[0] as $pr
+          | ($pr.state // "UNKNOWN") as $st
+          | (($pr.draft // false) == true) as $ndraft
+          | (($mode == "title-prefix") and ((($pr.title // "") | startswith($pfx)))) as $pdraft
+          | if $st == "OPEN" and ($ndraft or $pdraft) then "DRAFT" else $st end
+        end
+    ' < "$resp_f"
+  fi
+  rm -f "$resp_f"
+}
+
+# pr-ready: flip a draft PR to ready-for-review. Native mode clears the
+# `draft` boolean; title-prefix mode also strips the "[DRAFT] " title prefix.
+# Idempotent on an already-ready PR. (AV3-06 / AV3-15)
+cmd_pr_ready() {
+  require_jq
+  local num=""
+  while (( $# > 0 )); do
+    case "$1" in
+      --num) num="$2"; shift 2 ;;
+      *) die_state "arg-parse" "pr-ready: unknown arg $1" ;;
+    esac
+  done
+  [[ -n "$num" ]] || die_state "arg-parse" "pr-ready: --num required"
+
+  # Resolve current version + title (the DC update endpoint requires version).
+  local url resp_f version title
+  url=$(build_url "/rest/api/1.0/projects/${PROJECT_KEY}/repos/${REPO_SLUG}/pull-requests/${num}")
+  resp_f=$(mktemp)
+  bb_curl GET "$url" "$resp_f"
+  if (( HTTP_STATUS < 200 || HTTP_STATUS >= 300 )); then
+    rm -f "$resp_f"
+    die_state "pr-ready-version-http-${HTTP_STATUS}" "cannot resolve PR version"
+  fi
+  version=$(jq -r '.version // empty' < "$resp_f")
+  title=$(jq -r '.title // ""' < "$resp_f")
+  [[ -n "$version" ]] || { rm -f "$resp_f"; die_state "pr-ready-no-version" "PR version missing"; }
+
+  # In title-prefix mode, strip a leading "[DRAFT] " so the ready PR has a
+  # clean title. Native mode leaves the title untouched.
+  local ready_title="$title"
+  if [[ "$DRAFT_MODE" == "title-prefix" ]]; then
+    case "$title" in
+      "$DRAFT_PREFIX"*) ready_title="${title#"$DRAFT_PREFIX"}" ;;
+    esac
+  fi
+
+  local payload
+  payload=$(jq -n --arg t "$ready_title" --argjson v "$version" \
+    '{version: $v, title: $t, draft: false}')
+  bb_curl PUT "$url" "$resp_f" -H 'Content-Type: application/json' -d "$payload"
+  if (( HTTP_STATUS < 200 || HTTP_STATUS >= 300 )); then
+    local excerpt; excerpt=$(body_excerpt "$resp_f"); rm -f "$resp_f"
+    die_state "pr-ready-http-${HTTP_STATUS}" "pr-ready failed: $excerpt"
   fi
   rm -f "$resp_f"
 }
@@ -623,6 +718,7 @@ cmd_build_status() {
 SUB="$1"; shift
 case "$SUB" in
   pr-open)              cmd_pr_open "$@" ;;
+  pr-ready)             cmd_pr_ready "$@" ;;
   pr-state)             cmd_pr_state "$@" ;;
   pr-comment)           cmd_pr_comment "$@" ;;
   pr-approve)           cmd_pr_approve "$@" ;;
