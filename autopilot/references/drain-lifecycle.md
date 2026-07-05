@@ -358,6 +358,23 @@ bash ${SKILL_DIR}/scripts/audit_behavior_binding.sh --coverage <coverage-file> -
 Every mapped Behavior must have ≥1 bound test node (`unbound-behavior` otherwise), and each bound test's function name must be NAMED in a `test: ... RED` commit in the Subtask's range (`unproven-binding` otherwise — a coverage claim with no RED evidence). Failure dispatch matches D5 (typed `[BLOCKED]` (impl)). The verified mapping feeds D7.3's PR-body section and D7.4's tracker mirror (consumed by the PR Gate per MS §13.11).
 
 
+### D6.4 — Closing-test determinism gate, N=5 (AV3-12)
+
+
+Run the Subtask's OWN changed tests 5× (never the full suite — bounded to `gates.test_scoped` with `{paths}` = the Subtask's test files); one round is order-randomized via the new optional `gates.test_random`. The 5×-loop is runner-agnostic — it takes the resolved commands and compares exit codes + failure fingerprints:
+
+
+```bash
+bash ${SKILL_DIR}/scripts/determinism_gate.sh \
+  --cmd "<resolved gates.test_scoped for {paths}>" \
+  [--random-cmd "<resolved gates.test_random>"]   # omit -> that round is skipped with a loud [note]
+# DETERMINISTIC (5 rounds) exit 0 · [BLOCKED: flaky-test] <detail> exit 1
+```
+
+
+When the repo has no randomization mechanism (`gates.test_random` unset), the order-randomized round is SKIPPED with a loud `[note]` on stderr — NEVER silently (a silent skip would claim order-independence it never checked; honor the `[det]`/`[drain]` split honestly). Any inconsistency across the 5 rounds → `[BLOCKED: flaky-test]` (impl-block counter); dispatch matches D5. This is the runtime backstop for the AV3-11 anti-flakiness contract.
+
+
 ## Step D7 — Pre-push rebase + commit + PR
 
 
