@@ -1,0 +1,64 @@
+schema_version: 1
+manifest_revision: 1
+spec:
+  path: ./wire-transfer.md
+  title: "Outbound wire transfer"
+  # spec_hash intentionally ABSENT — this is a mid-session manifest (the session
+  # was killed during S4). MS-AMEND-1: spec_hash is required only at
+  # `completeness: complete`, so a mid-session manifest is still schema-valid and
+  # a `--resume` session can load it (spec-gen §3 S1, HC5).
+completeness: incomplete
+incomplete_fields:
+  # Deliberately STALE / partial: it names only ONE of the real gaps. On resume,
+  # S1 runs `validate_manifest.sh` FIRST and trusts its exit-3 recompute over this
+  # list (the file may be stale after a crash — spec-gen §3 S1). resume_projection
+  # projects the VALIDATOR output, never this field.
+  - "rule-1: journeys[J-wire-001].steps[1].alert_seam.default"
+observability:
+  profile: payments
+environments: [dev, test, prod]
+interrogation:
+  adrs: []
+  log:
+    - id: DL-001
+      summary: "Decomposition-refuter: split settlement into its own journey?"
+      resolved_by: agent
+      dissent: ""          # rule-6 (MECHANICAL): agent resolution missing dissent
+journeys:
+  - id: J-wire-001
+    name: "Outbound wire end-to-end"
+    lifecycle: active
+    criticality: CORE
+    criticality_reason: "Irreversible money movement to an external bank"
+    confirmation: proposed   # rule-4 (ESCALATE): effectively-CORE, not yet human-confirmed
+    steps:
+      - name: "Debit initiated"
+        vital_class: money
+        required_emission: OBSERVED
+        event_name: wire.debit.initiated
+        alert_seam:
+          default: paged
+        # idempotency + compensation ABSENT on a money step -> rule-2 (ESCALATE) x2
+      - name: "Settlement dispatched"
+        vital_class: external-side-effect
+        required_emission: OBSERVED
+        event_name: wire.settlement.dispatched
+        # alert_seam ABSENT on a non-null vital step -> rule-1 (ESCALATE)
+        idempotency:
+          required: true
+          mechanism: transactional-outbox
+          justification: "At-least-once dispatch; dedupe downstream"
+        compensation:
+          none_reason: "No compensating flow modeled yet — pending S5"
+      - name: "Audit note written"
+        vital_class: null
+        # non-vital: no required_emission / alert_seam / event_name (absence-when-null)
+behaviors:
+  - id: B-wire-001
+    title: "Rejects a wire above the daily limit"
+    lifecycle: active
+    journey: J-wire-001      # inherits CORE -> effectively-CORE + proposed -> rule-4 (ESCALATE)
+    confirmation: proposed
+    given: "A customer with a $50,000 daily wire limit who has already sent $50,000 today"
+    when: "The customer submits another outbound wire"
+    then: ""                 # rule-3 (MECHANICAL): empty then
