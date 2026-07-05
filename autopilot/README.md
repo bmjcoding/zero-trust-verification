@@ -1,10 +1,10 @@
 # autopilot
 
-Autonomous TDD-driven implementation loop for Claude Code. Plans, implements, validates, and ships stacked PRs against Bitbucket Data Center with per-cycle commits, multi-validator review, and human-in-the-loop escape hatches.
+Autonomous TDD-driven implementation loop for Claude Code. Plans, implements, validates, and ships PRs through the host adapter (Bitbucket Data Center or GitHub) with per-cycle commits, multi-validator review, and human-in-the-loop escape hatches.
 
 ## Status
 
-v3.0.0 (2026-07-05). Verification-Manifest consumption (mode inference, Behavior-ID mapping, union + revision-drift gates), PR-per-Story granularity, cross-drain claim coordination, and quality shift-left (anti-flakiness contract, N=5 determinism gate) — all on the host-agnostic adapter (`scripts/host.sh`, Bitbucket DC + GitHub). Every behavioral claim is proven by an executed self-test assertion or lint rule (`scripts/self_test.sh` 301 assertions, `scripts/lint_consistency.sh` L1–L23). Registers: `docs/specs/autopilot-v3-register.md`, `docs/GAPS_SPEC.md`. See CHANGELOG.md for history.
+v3.0.0 (2026-07-05). Verification-Manifest consumption (mode inference, Behavior-ID mapping, union + revision-drift gates), PR-per-Story granularity, cross-drain claim coordination, and quality shift-left (anti-flakiness contract, N=5 determinism gate) — all on the host-agnostic adapter (`scripts/host.sh`, Bitbucket DC + GitHub). Every behavioral claim is proven by an executed self-test assertion or lint rule (`scripts/self_test.sh` 312 assertions, `scripts/lint_consistency.sh` L1–L23). Registers: `docs/specs/autopilot-v3-register.md`, `docs/GAPS_SPEC.md`. See CHANGELOG.md for history.
 
 ## What it does
 
@@ -20,7 +20,7 @@ Given a runbook (a YAML+Markdown file describing a unit of work, its goal, its c
 ## When to use
 
 - The work is well-scoped enough to write a runbook for (goal, constraints, non-goals, ideally an audit handoff).
-- The repo lives in Bitbucket Data Center.
+- The repo lives in Bitbucket Data Center or GitHub (the host adapter detects which from `origin`).
 - You want machine-verifiable TDD evidence in git history, not just "the tests pass at the end".
 - You want a single skill that handles plan → implement → validate → ship without re-prompting for each step.
 
@@ -29,13 +29,12 @@ Given a runbook (a YAML+Markdown file describing a unit of work, its goal, its c
 - One-off scripts or single-file edits.
 - Exploratory refactoring where the plan emerges as you work.
 - Work that cannot tolerate stacked PRs (e.g., teams that strictly squash-merge and forbid merge commits; autopilot's TDD history is destroyed by squash).
-- Repos hosted on GitHub. Since v2.0.0 autopilot ships Bitbucket DC only.
 - Fully unattended overnight runs: the drain is autonomous only while the Claude Code session is alive (in-session adaptive cron; no headless mode — see AP-19).
 
 ## Installation
 
 1. Copy the `autopilot/` directory into your Claude Code skills root (e.g. `~/.claude/skills/autopilot/`), or symlink it from your skills source tree.
-2. Ensure dependencies are on PATH: `git >= 2.30`, `jq >= 1.6`, `bash >= 4.0`, `curl`.
+2. Ensure dependencies are on PATH: `git >= 2.30`, `jq >= 1.6`, `bash >= 3.2` (macOS default; the scripts are bash-3.2 + BSD-userland safe), `curl`, `uv` (Python toolchain, ADR 0015). The GitHub backend additionally needs `gh`.
 3. **macOS / Linux local mode**: store your Bitbucket DC personal access token in the OS keychain:
    ```
    echo -n "<token>" | scripts/secret_set.sh bitbucket
@@ -94,7 +93,7 @@ Each of the items below maps to a finding in the adversarial review series (AP-1
 - **Plan reviewer projection** (AP-3) — reviewer sees structure, not contracts.
 - **audited_sha gate** (AP-5) — plans are pinned to the SHA they were planned against.
 - **Sidecar-first credential routing** — tokens never enter Claude's tool surface.
-- **Bitbucket DC native** (AP-13) — gh CLI removed.
+- **Host-agnostic by contract** (ADR 0013) — PR/build ops route through `scripts/host.sh`, which detects the backend from `origin` and dispatches to the Bitbucket DC (`bitbucket.sh`) or GitHub (`github.sh` via `gh`) backend behind one byte-identical contract.
 - **External scheduler removed** (AP-19) — autopilot is in-session only.
 - **Drift-notes hydration** (AP-20) — D1.0.5 rehydrates prior drift observations into the current drain's Plan Reviewer projection.
 - **Subtask consolidation** (AP-21) — G3.6 packs sub-threshold subtasks under `pack_subtasks: true` or `--consolidate=auto`.
