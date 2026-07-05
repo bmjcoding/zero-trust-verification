@@ -208,3 +208,53 @@ Marshal implementation (ADRs 0010/0011 — but AV3-08's merge-actor slot is
 Marshal-ready); PR Gate provenance/coverage checks (codebase-health register);
 remediation-loop wiring; headless mode (AP-19 stands); Jira epics (ADR 0009: one Jira
 per Story — G6 update rides AV3-06).
+
+## Implementation status (v3.0.0 — landed 2026-07-05)
+
+Delivered on `feat/autopilot-v3` off AV3-15's merged base. The `self_test.sh`
+baseline the register quotes (96) predates AV3-15; the real starting point was 170,
+grown to **312** assertions; lint L1–L15 → **L1–L23**. Every `[det]` acceptance
+below cites the assertion/rule ids that prove it; `[drain]` residuals are listed
+honestly (agent behavior, not hermetically covered — the v2.4.0 convention).
+
+| Item | Status | `[det]` proof |
+|---|---|---|
+| AV3-01 mode inference | FIXED | `detect_input_mode.sh`; AV3-01.1–.7 |
+| AV3-02 behavior-ID mapping | FIXED | `validate_plan_mapping.sh`; AV3-02.1–.5; lint L18 |
+| AV3-03 union validation | FIXED | `validate_manifest.sh --union`; AV3-03.1–.6 |
+| AV3-04 revision drift | FIXED | `manifest_revision_gate.sh`; AV3-04.1–.7 |
+| AV3-05 behavior→test binding | FIXED | `audit_behavior_binding.sh`; AV3-05.1–.4; lint L20 |
+| AV3-06 PR-per-Story | FIXED | `audit_commit_shape.sh`; AV3-06.1–.6; lint L17 (draft surface HD01–HD11/HG20–HG25 via AV3-15) |
+| AV3-07 48h sizing | FIXED | `validate_plan_mapping.sh`; AV3-07.1–.6 |
+| AV3-08 Runbook PR | FIXED | `runbook_pr.sh`; AV3-08.1–.3; lint L19 |
+| AV3-09 claim overlap | FIXED | `claim_overlap.sh` (vendored); AV3-09.1–.7 |
+| AV3-10 serialize-and-replan | FIXED | `claim_loss_attribution.sh`; AV3-10.1–.6 |
+| AV3-11 anti-flakiness | FIXED | prompt + design routing; lint L21 |
+| AV3-12 determinism gate | FIXED | `determinism_gate.sh`; AV3-12.1–.7 |
+| AV3-13 vendored escalation | FIXED | lint L22 (byte-parity diff) |
+| AV3-14 as-built docs | FIXED | lint L23 |
+| AV3-16a SKILL host-half | FIXED | lint L17; reference index + CHANGELOG v3.0.0 |
+| AV3-16b SKILL host-half (host adapter) | FIXED (rode AV3-15) | lint L16; Hard Contract 11 host-adapter wording |
+| AV3-17 growth accounting | FIXED | suite green (312 / L1–L23); this table |
+
+### Honest Residuals (`[drain]` — measured only in real drains + Drift Notes)
+
+- **AV3-01/04** — the orchestrator honoring the MODE token / completing the commit
+  pair before the drift pause is agent behavior; the scripts prove the *decision*, not the wiring.
+- **AV3-02/07** — planner-emitted `behavior_ids`/`predicted_hours` *quality* and the
+  re-plan on `story-oversized` are agent-judged; the gate proves the refusal.
+- **AV3-04** — revision-regen re-plan *quality* (preserving `[x] Done`, superseding the Runbook PR).
+- **AV3-06** — story-affinity discipline (one open draft Story PR at a time).
+- **AV3-08** — claim usefulness to foreign planners.
+- **AV3-09** — end-to-end serialization across concurrent drains.
+- **AV3-10/13** — re-plan quality; escalation-rule application recall.
+- **AV3-11** — anti-flakiness detection recall (agent-judged residual).
+- **AV3-12** — the orchestrator invoking the gate at D6.
+- **AV3-14** — the integration validator's as-built check actually firing.
+
+### Packaging follow-up (deferred, not a v3.0.0 blocker)
+
+`scripts/claim_overlap.sh` is vendored byte-identical for the Marshal plugin (ADR
+0009). The Marshal plugin does not exist yet, so the cross-tier byte-parity
+**packaging lint is not yet wired** — it lands with the Marshal build. The file
+carries a `VENDORED PRIMITIVE` header stating the constraint.

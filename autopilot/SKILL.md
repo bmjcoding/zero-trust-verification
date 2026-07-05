@@ -33,7 +33,7 @@ Loop-safety invariants (what the loop may NEVER do, and which mechanism enforces
 **Context-poisoning trap.** Having the SPEC.md, the ADR, or the runbook body in your context window is more reason to delegate, not less. Rich context makes it easy to reach for direct edits because "you already know what to write" — that is the failure mode. The tracker is the source of truth across fires; the orchestrator's job is to keep its own context small enough to survive every step boundary and every auto-compaction. If in doubt, spawn.
 
 
-**Override scoping.** `--yolo` skips the GENERATE→review gate and arms the drain cron immediately. `--force` bypasses a specific refusal (concurrent drain, existing artifacts) and logs the override to `## Force Audit`. `branching.single_branch_single_pr: true` collapses the drain into one branch + one PR. `branching.no_force_push: true` disables the rolling tracker PR and enables the AP-23 batched-delta queue. **None of these overrides relaxes the delegation contract.** They are orthogonal — a `--yolo` drain still dispatches subagents at every step; a single-branch drain still dispatches subagents at every step; a no-force-push drain still dispatches subagents at every step. Do not read any override as licensing direct orchestrator edits to source files.
+**Override scoping.** `--yolo` skips the GENERATE→review gate and arms the drain cron immediately. `--force` bypasses a specific refusal (concurrent drain, existing artifacts) and logs the override to `## Force Audit`. `branching.single_branch_single_pr: true` collapses the drain into one branch + one PR. `branching.no_force_push: true` switches tracker bookkeeping on the Runbook PR (AV3-08) from direct commits to the AP-23 batched-delta queue (appends only, no force-push). **None of these overrides relaxes the delegation contract.** They are orthogonal — a `--yolo` drain still dispatches subagents at every step; a single-branch drain still dispatches subagents at every step; a no-force-push drain still dispatches subagents at every step. Do not read any override as licensing direct orchestrator edits to source files.
 
 
 ## Modes
@@ -42,8 +42,8 @@ Loop-safety invariants (what the loop may NEVER do, and which mechanism enforces
 | Invocation | Mode | What it does |
 |---|---|---|
 | `/autopilot --generate @<doc>...` | GENERATE (default review path) | Extracts work, plans, writes runbook + tracker, exits for review. Does NOT arm any cron. |
-| `/autopilot --generate @<doc>... --yolo` | GENERATE → DRAIN immediately | Same as above, but skips the review step and arms the drain cron. Use when the input is already vetted. |
-| `/autopilot --generate @<doc>... --merge` | GENERATE-merge | Append new work from the new docs to an existing runbook + tracker. Refuses if the existing tracker has zero open (`[ ]`) Subtasks (loop already drained). After the append, re-runs G4 (topological sort + ownership-overlap detection) over the union of old + new Subtasks; refuses with `[GENERATE-FAILED: dangling-dependency]` if any new Subtask's `depends_on[]` references an unknown ID, and `[GENERATE-FAILED: id-collision]` if any new Subtask reuses an existing Subtask ID. |
+| `/autopilot --generate @<doc>... --yolo` | GENERATE → DRAIN immediately | The **manifest-less override** (AV3-01): skips the review step and arms the drain cron on bare-markdown / incomplete-manifest input (`GENERATE_YOLO`, Force-Audit-logged). No-op warning on a complete manifest (already `STRAIGHT_THROUGH`); cannot bypass a schema-invalid/unsupported manifest. |
+| `/autopilot --generate @<doc>... --merge` | GENERATE-merge / revision-regen | Append new work from the new docs to an existing runbook + tracker. Refuses if the existing tracker has zero open (`[ ]`) Subtasks (loop already drained). After the append, re-runs G4 (topological sort + ownership-overlap detection) over the union of old + new Subtasks; refuses with `[GENERATE-FAILED: dangling-dependency]` if any new Subtask's `depends_on[]` references an unknown ID, and `[GENERATE-FAILED: id-collision]` if any new Subtask reuses an existing Subtask ID. **Revision-regen (AV3-04):** when the existing tracker is `PAUSED — manifest-revision-drift`, `--merge` is the path back — it re-plans the open (`[ ]`) Subtasks against the new `manifest_revision`, **preserves `[x] Done` history** (a Hard Contract 8 carve-out), supersedes the old Runbook PR (AV3-08), and closes the orphaned draft Story PRs it lists. |
 | `/autopilot --generate @<doc>... --overwrite` | GENERATE-overwrite | Replace existing runbook + tracker. Refuses if any `[x] Done` entries exist (history loss). Logged to `## Force Audit` (AP-11). |
 | `/autopilot --generate @<doc>... --jira <PROJ>` | GENERATE + Jira | Same as GENERATE; additionally creates real Jira Story + Subtask tickets via `mcp__dev-tools__activate_jira` and stores keys in the runbook. Shallow integration only — no two-way sync. Implies `enforce_jira_key: true`. |
 | `/autopilot --generate @<doc>... --consolidate=auto` | GENERATE + AP-21 consolidation | Enables G3.6 Subtask consolidation for eligible same-kind config / docs Subtasks. Equivalent to `pack_subtasks: true` in the runbook. |
@@ -56,7 +56,7 @@ Loop-safety invariants (what the loop may NEVER do, and which mechanism enforces
 | `/autopilot ... --no-auto-seed` | GENERATE + probe, no flag flips | G1.5 still runs and populates the detected block, but no frontmatter flags are auto-flipped; the operator decides each at review. |
 
 
-Mode detection: ADR / design-doc / spec markdown → GENERATE. A runbook under `.autopilot/runbooks/` with `--drain` → DRAIN. Same file with `--resume` → RESUME.
+Mode detection (ADR 0008 / AV3-01): a runbook under `.autopilot/runbooks/` with `--drain` → DRAIN, with `--resume` → RESUME. A spec/ADR/design-doc → GENERATE, but the *shape* of the GENERATE is inferred from the input's companion Verification Manifest (`<spec-basename>.manifest.yaml`): the orchestrator validates it via the manifest validator (the spec-tier's single-file `validate_manifest.sh`, vendored per ADR 0001; autopilot's own `scripts/validate_manifest.sh --union` adds the multi-doc refusals) and feeds the path + exit code to `scripts/detect_input_mode.sh`, which returns the MODE token. A **valid + complete manifest → `STRAIGHT_THROUGH`** (GENERATE→DRAIN with no review pause, no flag — the manifest is the vetting). **Bare markdown or an incomplete manifest → `GENERATE_PAUSE`** (GENERATE, then pause for review). **`--yolo` is the manifest-less override only** — it turns `GENERATE_PAUSE` into `GENERATE_YOLO` (skip review, arm the drain, Force-Audit-logged); on a complete manifest it is a no-op warning, and it can NEVER bypass a schema-invalid (`REFUSE-MANIFEST-INVALID`) or unsupported-version (`REFUSE-MANIFEST-UNSUPPORTED`) manifest.
 
 The complete flag registry is the table above plus this list — any flag used in an `/autopilot` invocation anywhere in the references but missing here is a defect (`lint_consistency.sh` L13 scans for exactly that): `--generate`, `--drain`, `--resume`, `--yolo`, `--merge`, `--overwrite`, `--jira`, `--consolidate=auto`, `--slug`, `--force`, `--reprobe`, `--no-probe`, `--no-auto-seed`. (Script-level flags such as the probe's `--dry-run`/`--jira-key` belong to each script's usage header, not this registry.)
 
@@ -87,10 +87,10 @@ For one-off tasks use `/loop` instead. Autopilot is for multi-task autonomous dr
 ## Hard contracts (non-negotiable)
 
 
-1. **One Subtask per drain fire.** Hard contract. Each fire = one tracker delta = one PR or one `[BLOCKED]` reason. No batching (the AP-23 tracker-delta queue is orthogonal — it batches bookkeeping, not Subtasks).
+1. **One Subtask per drain fire; one Story per PR (PR-per-Story — AV3-06 / ADR 0007).** Each fire is still exactly one Subtask end-to-end, but its commit series lands on the **Story branch** `autopilot/<slug>/<story-id>`, and the PR granularity is the **Story**, never the Subtask: a draft Story PR is opened on the Story's first Subtask, kept draft until every one of that Story's Subtasks is `[x] Done`, then flipped ready-for-review. Subtasks are the Story's commit series, not separate PRs. No batching of Subtasks (the AP-23 tracker-delta queue is orthogonal — it batches bookkeeping, not Subtasks).
 2. **Vanilla Claude Code agents only.** `Explore`, `Plan`, `general-purpose`. No dependency on user-defined `~/.claude/agents/`.
 3. **Role-via-prompt, not role-via-subagent_type.** All role differentiation lives in inline prompts in the generated runbook.
-4. **Direct-to-main never.** Every commit lands via PR, including tracker bookkeeping (rolling tracker PR OR batched deltas folded into the next Subtask PR — see `references/tracker-delta-batching.md`).
+4. **Direct-to-main never.** Every commit lands via a PR — code via the Story PR, tracker bookkeeping via the **Runbook PR** (`autopilot/<slug>/runbook`, AV3-08): direct commits under `no_force_push: false`, or the AP-23 batched-delta queue flushed onto the runbook branch under `no_force_push: true` (see `references/tracker-delta-batching.md`). Autopilot never merges its own PRs.
 5. **TDD vertical slice with per-cycle local commits.** Code subtasks do RED → GREEN per behavior; each RED is `test: <id>.<n> RED`, each GREEN is `feat: <id>.<n> GREEN`. D6 verifies via `git log`. AP-1.
 6. **Non-overlapping file ownership** within a drain — guaranteed by the planner.
 7. **No `--no-verify`, no rebases of trunk. `--force` is logged.** AP-11.
@@ -101,7 +101,7 @@ For one-off tasks use `/loop` instead. Autopilot is for multi-task autonomous dr
 12. **Secrets never enter Claude's context.** Tokens are resolved through `scripts/secret_get.sh` (sidecar → keychain → env), echoed only into curl `-H` headers via subshell, and never logged. AP-13/14.
 13. **Heartbeats at every step boundary.** D3, D4, D5, D6, D7.x each update `last_heartbeat_at` so D1's 90-min-old crash detector is meaningful. AP-6.
 14. **Tracker frontmatter session lock.** Each fire claims a `session_lock` keyed on `${CLAUDE_SESSION_ID}` with `lock_expires_at = now + 30 min`. Two concurrent sessions hitting the same tracker is a refuse. AP-4.
-15. **Block counters split by domain.** `consecutive_impl_blocks` and `consecutive_ci_blocks` escalate independently at the runbook's `budget.max_impl_blocks` / `budget.max_ci_blocks` caps (defaults 3 / 2) so a CI flake streak doesn't mask real impl failures. External faults (foreign commits, trunk rename, tracker-pr-blocked) route straight to `HUMAN_NEEDED` and don't increment counters. AP-2.
+15. **Block counters split by domain.** `consecutive_impl_blocks` and `consecutive_ci_blocks` escalate independently at the runbook's `budget.max_impl_blocks` / `budget.max_ci_blocks` caps (defaults 3 / 2) so a CI flake streak doesn't mask real impl failures. External faults (foreign commits, trunk rename, runbook-pr-blocked) route straight to `HUMAN_NEEDED` and don't increment counters. AP-2.
 
 
 ---
@@ -137,7 +137,7 @@ Extract work from spec documents, plan Subtasks, review the plan, write the runb
 ### DRAIN mode (D1..D8)
 
 
-Each fire is one Subtask end-to-end. Per-fire scope is HARD: one Subtask, one PR (or one `[BLOCKED]`), then exit after writing the next cron and updating the tracker. Full step text: `references/drain-lifecycle.md`.
+Each fire is one Subtask end-to-end. Per-fire scope is HARD: one Subtask — its commit series lands on the Story branch, opening or updating the draft Story PR (PR-per-Story) — or one `[BLOCKED]` reason, then exit after writing the next cron and updating the tracker. Full step text: `references/drain-lifecycle.md`.
 
 
 | Step | Purpose | Key contract |
@@ -162,7 +162,7 @@ Triggered by `/autopilot --resume @<runbook>`. Recovers a paused drain without r
 ### Failure escalation, STATUS state machine, tracker-PR availability, end-of-drain output
 
 
-All defined in `references/drain-lifecycle.md`. The short version: `consecutive_impl_blocks` and `consecutive_ci_blocks` escalate independently at the runbook's `budget.max_impl_blocks` / `budget.max_ci_blocks` caps (defaults 3 / 2); external faults route straight to `HUMAN_NEEDED` without incrementing counters; the tracker PR (or the batched-delta queue under `branching.no_force_push`) is the only place bookkeeping ever lands; `STATUS: DRAINED` produces `MERGE-ORDER.md`.
+All defined in `references/drain-lifecycle.md`. The short version: `consecutive_impl_blocks` and `consecutive_ci_blocks` escalate independently at the runbook's `budget.max_impl_blocks` / `budget.max_ci_blocks` caps (defaults 3 / 2); external faults route straight to `HUMAN_NEEDED` without incrementing counters; the Runbook PR (AV3-08) is the only place bookkeeping ever lands; `STATUS: DRAINED` produces `MERGE-ORDER.md`.
 
 
 ---
@@ -171,7 +171,7 @@ All defined in `references/drain-lifecycle.md`. The short version: `consecutive_
 ## Tracker delta batching (AP-23)
 
 
-Under `branching.no_force_push: true` (auto-set by G1.5 when the repo rejects force pushes), the rolling tracker PR pattern is disabled — divergence on a rolling tracker branch would be fatal because we cannot force-push to reconcile. Instead, tracker deltas queue inside the tracker file at the `## Pending Tracker Deltas (batched)` section, and the NEXT successful Subtask's PR (D7.1a) flushes the queue into a single atomic commit alongside the impl edit. Full contract: `references/tracker-delta-batching.md`.
+All tracker bookkeeping lands on the Runbook PR (`autopilot/<slug>/runbook`, AV3-08). Under `branching.no_force_push: true` (auto-set by G1.5 when the repo rejects force pushes), deltas cannot be reconciled by force-push, so instead of committing each one directly they queue inside the tracker file at the `## Pending Tracker Deltas (batched)` section, and D7.1a flushes the queue as an append commit onto the runbook branch (never mixed into a Story PR — one bookkeeping home, no self-intersecting claim surfaces). Full contract: `references/tracker-delta-batching.md`.
 
 
 Queue entry schema, valid `delta_kind:` values, durability across BLOCKED fires, recovery semantics, and schema migration all live in the reference. Lifecycle integration points (D1.0.4 injection + crash-recovery, D1.0 hydrate, D2 in_progress claim, D7.1a fold + commit body block, D7.3 PR-body section, D7.4 status-change queue) are documented in `references/drain-lifecycle.md`.
@@ -210,5 +210,15 @@ Queue entry schema, valid `delta_kind:` values, durability across BLOCKED fires,
 | `scripts/secret_get.sh` | Resolver chain: sidecar → keychain → env. Probes a priority list of candidate service names (`--list-candidates` prints them). Token never echoed to stdout/stderr, never in argv. | All REST-calling scripts |
 | `scripts/secret_set.sh` | Operator setup: store token in OS-native keychain. `--as-host` writes the host-scoped `autopilot-<service>-<host>` name; default mode probes ALL resolver candidates and aborts on collision; `--force` bypasses. | One-time setup |
 | `scripts/sidecar_detect.sh` | Detect identity-proxy sidecar (HTTP 200 + "ok" body); emit MODE=sidecar\|local | GENERATE Step G1, sourced by `bitbucket.sh` |
-| `scripts/self_test.sh` | Hermetic self-test of every script against fixtures (mock Bitbucket server, local bare repos, deny-hooks). Run after ANY change under `scripts/`. | Maintainer / CI |
-| `scripts/lint_consistency.sh` | Cross-file contract lint (L1–L15): canonical paths, tracker schema, step ids, validator catalog, flag registry, version refs, no consumer-repo leakage | Maintainer / CI (also invoked by `self_test.sh`) |
+| `scripts/detect_input_mode.sh` | **Mode inference (ADR 0008 / AV3-01).** Maps (intent, manifest presence, validator exit, `--yolo`) → MODE token (`STRAIGHT_THROUGH` \| `GENERATE_PAUSE` \| `GENERATE_YOLO` \| `DRAIN` \| `RESUME` \| `REFUSE-MANIFEST-*`). Pure decision function. | GENERATE Step G0 |
+| `scripts/validate_manifest.sh` | **Multi-doc union check (MS §2 / AV3-03).** `--union <a> <b> …`: cross-manifest Journey/Behavior ID collision + `observability.profile`/`environments` mismatch. (Single-file schema validation is the spec-tier's vendored validator.) | GENERATE Step G4 |
+| `scripts/validate_plan_mapping.sh` | **Plan gate (AV3-07 + AV3-02).** `<plan.json> [<manifest>]`: 48h Story sizing (`predicted_hours` vs S/M/L ceiling; Story roll-up ≤48) + Subtask↔Behavior-ID mapping (unmapped/unowned/unknown). | GENERATE Step G4 |
+| `scripts/manifest_revision_gate.sh` | **Revision drift (MS §6 / AV3-04).** `drift <tracker> <manifest>` (D1.0.6 hydrate check) + `resume-check <tracker>` (Resume refusal → `--generate --merge` revision-regen). | DRAIN Step D1.0.6, RESUME |
+| `scripts/runbook_pr.sh` | **Runbook PR helper (AV3-08).** `file-surface <body>`: extract the grep-able predicted-file-surface block (marker-delimited) from a Runbook PR body. | GENERATE Step G7, DRAIN D1 |
+| `scripts/claim_overlap.sh` | **Claim consultation (ADR 0009 / AV3-09) — VENDORED byte-identical.** Classifies open-PR file-surface overlaps (BINDING/TERMINAL/ADVISORY/EXCLUDED) → `blocked_by_pr` edges; `eligibility --pr-state` is the D2 gate. | GENERATE Step G4, DRAIN Step D2 |
+| `scripts/claim_loss_attribution.sh` | **Divergence routing (AV3-10).** Intersects rebase-conflict files with claim-overlap files → `REPLAN` (route to D3, bounded 2/Subtask) vs `NOT-ATTRIBUTED` (impl-block). | DRAIN Step D7.0 |
+| `scripts/audit_commit_shape.sh` | **D6.2 TDD commit-shape audit (AV3-06).** Audits `prev_pushed_sha..HEAD` (Story-range, not whole-branch — no false `tdd-scope-leak`) for RED/GREEN pairing, order, jira-key, refactor/docs shapes. | DRAIN Step D6.2 |
+| `scripts/audit_behavior_binding.sh` | **D6.3 Behavior→test binding (MS §13.9 / AV3-05).** Verifies each mapped Behavior is bound to a test NAMED in a `test: … RED` commit (`unbound-behavior`/`unproven-binding`). | DRAIN Step D6.3 |
+| `scripts/determinism_gate.sh` | **D6.4 determinism gate, N=5 (AV3-12).** Runs the resolved scoped-test command 5× (one order-randomized, or a loud skip-note), compares exit codes + failure fingerprints → `[BLOCKED: flaky-test]`. Runner-agnostic. | DRAIN Step D6.4 |
+| `scripts/self_test.sh` | Hermetic self-test of every script against fixtures (mock Bitbucket server via `uv run`, local bare repos, deny-hooks, gh-argv shim). Run after ANY change under `scripts/`. | Maintainer / CI |
+| `scripts/lint_consistency.sh` | Cross-file contract lint (L1–L23): canonical paths, tracker schema, step ids, validator catalog, flag registry, version refs, no consumer-repo leakage, host-adapter surface (L16), PR-per-Story (L17), AP-3 allow-list (L18), Runbook PR (L19), Behavior-coverage format (L20), anti-flakiness (L21), vendored escalation (L22), as-built docs (L23) | Maintainer / CI (also invoked by `self_test.sh`) |

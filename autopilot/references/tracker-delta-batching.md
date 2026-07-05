@@ -14,15 +14,16 @@
 
 ## Purpose
 
-Bitbucket Data Center repositories with branch permissions frequently forbid
-force-push and disallow re-open of a merged PR. The pre-2.3 pattern of a rolling
-tracker PR (single long-lived branch that receives one force-push per Subtask
-completion) fails on such repos. Tracker delta batching replaces per-Subtask
-tracker pushes with an in-file queue that flushes at D7.1a — folded into the
-next successful Subtask PR as a single atomic commit alongside the
-implementation change. **Under `branching.no_force_push: true` there is no
-tracker branch and no tracker PR at all**; the Subtask PR's branch is the only
-place tracker mutations ever land.
+Repositories with branch permissions frequently forbid force-push and disallow
+re-open of a merged PR. All tracker bookkeeping lands on the **Runbook PR**
+(`autopilot/<slug>/runbook`, AV3-08) — the single bookkeeping home (the pre-v3
+rolling tracker PR is retired). Under `branching.no_force_push: false` deltas
+commit directly to the runbook branch. Under `branching.no_force_push: true`,
+force-push is unavailable, so per-fire tracker writes are replaced with an
+in-file queue that flushes at D7.1a as an **append** commit onto the runbook
+branch — never mixed into a Story PR, so a Story's code and the tracker's
+bookkeeping never share a branch (one home, no self-intersecting claim surfaces
+for AV3-09).
 
 ## In-tracker section (canonical location)
 
@@ -55,10 +56,10 @@ Each delta entry is a top-level list item under the section header. Format:
 
 | Value              | Emitted from | Meaning                                                                 |
 |--------------------|--------------|-------------------------------------------------------------------------|
-| `subtask_done`     | D7.4         | Subtask reached terminal Done; carries the status change and audit note |
+| `subtask_done`     | D7.5 green / D1.4 merged | Subtask reached terminal Done; carries the status change and audit note |
 | `in_progress_claim`| D2           | This fire claimed a Subtask (the `in_progress` block write)             |
 | `drift_notes`      | D1.0.5 hydrate + D3 review | Drift-note appendages produced during Plan Reviewer projection |
-| `status_change`    | D-various    | Any STATUS state-machine transition that is not `subtask_done`          |
+| `status_change`    | D7.4 + D-various | Any STATUS/`in_progress` transition that is not the Done transition (e.g. D7.4 `awaiting_ci`, PAUSED, claim-wait) |
 | `session_lock`     | D1.0, D8     | Session-lock acquire/release records                                    |
 | `crash_recovery`   | D1.0.4       | Audit entry emitted when a prior drain aborted with unflushed deltas    |
 | `other`            | escape hatch | Any non-catalogued delta (e.g. D4 heartbeat refresh); must set `diff_summary` explicitly |
@@ -91,17 +92,18 @@ D7.2 push and D7.3 PR creation. Per `references/drain-lifecycle.md` D7.1a:
    accumulated in-order).
 3. Flush the queue: replace the section body with `_(empty)_` (the header
    remains).
-4. Stage the tracker file alongside `owned_files[]` — the ONLY commit in the
-   fire that stages the tracker directly.
-5. One atomic commit lands: impl edit + cumulative tracker mutations + queue
-   flush. D7.3's PR body surfaces the same folded entries as a
+4. Commit the tracker file on the **Runbook PR branch**
+   (`autopilot/<slug>/runbook`, AV3-08) as its OWN append commit — the fold does
+   NOT ride a Story branch and never stages `owned_files[]`, so a Story's code
+   and the tracker's bookkeeping never share a branch (one home, no
+   self-intersecting claim surfaces for AV3-09). The impl commit on the Story
+   branch and this bookkeeping commit on the runbook branch are separate PRs.
+5. The Runbook PR body surfaces the same folded entries as a
    `## Tracker deltas folded in` H2.
 
-There is no separate flush commit and no tracker-branch push: the fold rides
-the Subtask's own final commit on the Subtask's own branch.
-
 Under `branching.no_force_push: false` (default) this queue is unused — D7.1a
-is a no-op and tracker bookkeeping stays on the rolling tracker PR.
+is a no-op because the deltas were already committed directly to the Runbook PR
+branch at claim time (D2/D7.4).
 
 ## Recovery semantics (D1.0.4 handling)
 
@@ -112,8 +114,8 @@ inject the header (idempotent no-op edit) and continue.
 
 Case C — tracker exists, queue is non-empty, no live session lock:
 prior drain aborted between enqueue and flush. Append a `crash_recovery`
-entry documenting the discovery, then fold the entire queue on the next
-Subtask PR as usual. Preserve prior entries verbatim.
+entry documenting the discovery, then flush the entire queue onto the Runbook
+PR branch on the next fire as usual. Preserve prior entries verbatim.
 
 Case D — tracker exists, queue is non-empty, live session lock held by another
 session: fall through to D1.0 concurrent-drain handling; do not mutate the
@@ -121,17 +123,17 @@ queue.
 
 ## Interaction with `enforce_jira_key: true`
 
-The D7.1a fold rides the Subtask's final commit, which already carries the
-`[<JIRA-KEY>]` prefix per AP-22 — no separate flush-commit message exists to
-police. When the anchor Subtask has no real JIRA key (synthetic ids), the
-commit body MUST additionally carry a `Refs: <TRACKER-JIRA-KEY>` line sourced
-from the tracker frontmatter.
+The D7.1a fold is its own commit on the Runbook PR branch (AV3-08), so under
+`enforce_jira_key: true` its subject MUST carry the `[<TRACKER-JIRA-KEY>]`
+prefix sourced from the tracker frontmatter (the runbook/tracker have no
+per-Subtask JIRA key), plus a `Refs: <TRACKER-JIRA-KEY>` body line. This is the
+bookkeeping commit's own compliance — it does not borrow a Story commit's key.
 
 ## Interaction with `branching.single_branch_single_pr: true`
 
-When this flag is on, all Subtasks share one feature branch and one PR. The
-queue mechanics are unchanged; the fold still happens at each Subtask's final
-commit on that shared branch.
+When this flag is on, the whole drain collapses to one feature branch and one PR
+(the coarser collapse — AV3-06), so there is no separate Runbook PR branch. The
+queue mechanics are unchanged; the fold appends to that single shared branch.
 
 ## Failure modes
 
@@ -142,8 +144,9 @@ commit on that shared branch.
   runs a `docs`-kind synthetic no-op Subtask (`AP-queue-drain-<n>`, owning
   only the tracker file) whose sole purpose is to fold and flush the queue.
 
-There is no force-rolling-tracker override flag (the v2.3.0 draft of this
-file named one, but it was never registered in SKILL.md's flag table): an
-operator who wants the rolling-tracker pattern back flips
-`branching.no_force_push: false` in the runbook — an edit that is logged via
-the standard `## Force Audit` process when it contradicts a probe finding.
+There is no override flag for this queue (the v2.3.0 draft of this file named
+one, but it was never registered in SKILL.md's flag table): an operator who
+wants tracker deltas committed directly to the Runbook PR branch instead of
+batched flips `branching.no_force_push: false` in the runbook — an edit that is
+logged via the standard `## Force Audit` process when it contradicts a probe
+finding.

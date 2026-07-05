@@ -4,6 +4,32 @@
 **Loading-preamble reminder.** Every step below honours the delegation contract in `SKILL.md` §"Loading preamble" and Hard Contract §10: orchestrator dispatches subagents; direct tool use is limited to tracker/runbook Read/Edit, short-output git, and skill scripts. `--yolo`, `--jira`, `--consolidate=auto`, `--slug=`, `--merge`, `--overwrite`, and `--force` do NOT relax the delegation contract. Before any tool call, name the subagent you are about to dispatch.
 
 
+## Step G0 — Mode inference (ADR 0008 / AV3-01)
+
+
+Before G1, decide the GENERATE *shape* from the input's companion Verification Manifest. Locate `<spec-basename>.manifest.yaml` next to each input doc; if present, validate it with the **manifest validator** (the spec-tier's single-file `validate_manifest.sh`, vendored per ADR 0001; exit codes 0 complete · 3 incomplete · 4 schema-invalid · 5 unsupported) and capture the exit code. For multi-doc invocations also run autopilot's own `scripts/validate_manifest.sh --union` (AV3-03) first. Then run:
+
+
+```bash
+bash ${SKILL_DIR}/scripts/detect_input_mode.sh \
+  --intent generate [--manifest <path>] [--validator-exit <n>] [--yolo]
+# -> MODE=STRAIGHT_THROUGH | GENERATE_PAUSE | GENERATE_YOLO
+#    | REFUSE-MANIFEST-INVALID | REFUSE-MANIFEST-UNSUPPORTED
+```
+
+
+| MODE | Meaning | G8 behavior |
+|---|---|---|
+| `STRAIGHT_THROUGH` | valid + complete manifest (validator exit 0) | run the drain immediately, no review pause, no flag — the manifest is the vetting (ADR 0008) |
+| `GENERATE_PAUSE` | bare markdown, or incomplete manifest (exit 3 — consumable by nothing but a resumed spec session, MS §11) | default review path — write artifacts, print summary, exit |
+| `GENERATE_YOLO` | the manifest-less `--yolo` override | skip review, arm the drain, and append a `## Force Audit` entry (AP-11) |
+| `REFUSE-MANIFEST-INVALID` | validator exit 4 (schema-invalid) | refuse; report the schema error; NEVER degrade to manifest-less (MS §11); `--yolo` cannot bypass |
+| `REFUSE-MANIFEST-UNSUPPORTED` | validator exit 5 (`schema_version` > supported) | refuse `[MANIFEST-UNSUPPORTED]` |
+
+
+`--drain`/`--resume` intents map straight to `DRAIN`/`RESUME` (unchanged). For multi-doc invocations, run the union validation (G4, AV3-03) before deciding `STRAIGHT_THROUGH`.
+
+
 ## Step G1 — Pre-flight
 
 
@@ -111,8 +137,9 @@ For each Story emitted in G2, spawn a `general-purpose` agent with the role prom
 1. Reads the Story's `evidence` block (file refs, ADR section refs)
 2. Runs `Read`, `Glob`, `Grep` to verify what already exists in the repo vs. what's missing
 3. Decomposes the Story into Subtasks (1–8 files each, <500 LOC delta each)
-4. Emits the full tier-2 schema per Subtask (includes `test_name_hint:` per behavior — AP-9)
-5. Captures `audited_sha:` at planner-spawn time so D3.0 can detect post-plan drift — AP-5
+4. Emits the full tier-2 schema per Subtask (includes `test_name_hint:` per behavior — AP-9, `predicted_hours:` — AV3-07, and `behavior_ids:` — AV3-02)
+5. Maps every active manifest Behavior to ≥1 Subtask via `behavior_ids:` (required for `kind: code | test-only`; `[]` for refactor/config/docs). Skipped for manifest-less drains.
+6. Captures `audited_sha:` at planner-spawn time so D3.0 can detect post-plan drift — AP-5
 
 
 Run all planners in parallel (one Agent message, multiple tool calls). Validate each output against the schema; missing required fields → re-prompt that planner ONCE. Second failure → mark that Story `[GENERATE-FAILED: planner-schema]` and continue with the rest.
@@ -176,6 +203,23 @@ Validate every `depends_on[]` entry against the union of all planner-emitted Sub
 Topo-sort all Subtasks. Detect cycles → `[GENERATE-FAILED: dependency-cycle]`. Detect ownership overlap (same file in two non-dependent Subtasks) → `[GENERATE-FAILED: ownership-overlap]`.
 
 
+**Manifest union validation (MS §2 / AV3-03).** For a multi-doc invocation (`--generate @a.md @b.md`), one Spec ships one manifest but the union must be coherent. Run `bash ${SKILL_DIR}/scripts/validate_manifest.sh --union <a.manifest.yaml> <b.manifest.yaml> ...`:
+- a Journey/Behavior ID shared across the unioned manifests → `[GENERATE-FAILED: manifest-id-collision: <id>]` (interrogation-log `DL-###` IDs are per-manifest scope and are NOT unioned);
+- a differing `observability.profile` or `environments` set across the manifests → `[GENERATE-FAILED: manifest-union-mismatch: <profile|environments>]`.
+
+Single-doc drains skip this. `STRAIGHT_THROUGH` (G0) requires the union to pass for multi-doc input.
+
+
+**Plan-mapping + sizing gate (ADR 0012 / AV3-07 + MS §13.6 / AV3-02).** Render the union of planner output to `plan.json` and run `bash ${SKILL_DIR}/scripts/validate_plan_mapping.sh <plan.json> [<manifest.yaml>]` (pass the manifest for manifest-backed drains; omit it for manifest-less). It enforces, deterministically:
+- **Sizing (always):** every Subtask's `predicted_hours` is an integer within its `estimated_size` ceiling (S≤4, M≤16, L≤48) → `[GENERATE-FAILED: story-size-inconsistent: <subtask-id>]`; every Story's Subtasks sum to ≤48 predicted hours → `[GENERATE-FAILED: story-oversized: <story-id>]`.
+- **Behavior mapping (manifest only):** every `kind: code | test-only` Subtask maps ≥1 Behavior ID → `[GENERATE-FAILED: unmapped-subtask: <subtask-id>]`; every mapped ID is active in the manifest → `[GENERATE-FAILED: unknown-behavior: <behavior-id>]`; every active manifest Behavior is owned by ≥1 Subtask → `[GENERATE-FAILED: unowned-behavior: <behavior-id>]`. (`refactor`/`config`/`docs` Subtasks are mapping-exempt.)
+
+The sizing gate is deterministic-over-a-declared-prediction (the Marshal owns actuals, ADR 0012). On `story-oversized`, re-spawn the offending Story's planner to split it into sequential, independently mergeable Stories; each becomes its own Story branch/PR downstream (AV3-06). On a mapping refusal, re-spawn the planner with the offending ID(s). The runbook records the resulting behavior-IDs-per-Story ledger (G7) so the audit can distinguish intentionally-not-yet-wired work from Memory Rot.
+
+
+**Claim consultation (ADR 0009 / AV3-09).** Build the open-PR inventory via the host adapter — for every open PR (`host.sh pr-state`) capture its branch, state, business-day age, and declared file surface (`runbook_pr.sh file-surface` on its body). For each Subtask, run `bash ${SKILL_DIR}/scripts/claim_overlap.sh --self-namespace autopilot/<slug>/ --inventory <inv.tsv> <owned-files...>`. A `BINDING` (foreign draft) or `TERMINAL` (foreign ready) overlap writes a `blocked_by_pr: <host>/<pr#>` edge onto that Subtask (D2-evaluable); `ADVISORY` (stale >2 business days) is a note only; branches under this drain's own `autopilot/<slug>/*` namespace are `EXCLUDED` (closes the re-GENERATE self-deadlock). D2 gates on the edge; the drain NEVER terminal-pauses on first blockage — it waits and re-checks.
+
+
 ## Step G5 — Already-shipped detection
 
 
@@ -220,8 +264,10 @@ Seed the tracker frontmatter with these defaults:
 STATUS: ACTIVE
 consecutive_impl_blocks: 0      # AP-2: split counters
 consecutive_ci_blocks: 0
+claim_waits: 0                  # AV3-09: consecutive claim-blocked fires (cap budget.max_claim_waits)
 drain_start_sha: <sha>
 audited_sha: <sha>              # AP-5: SHA at planner-spawn time
+manifest_revision: <int>        # AV3-04: frozen from the Spec's manifest (omit if manifest-less)
 trunk_branch: <name>            # from G1.5 TRUNK=
 host: bitbucket-dc
 ci:
@@ -245,13 +291,28 @@ Seed the tracker body with the standard sections plus, when `branching.no_force_
 `<slug>` is derived from the input docs (e.g., `0042-foo` for a single ADR; `tier4-tfl-parity` for an umbrella ADR family). Operator can override via `--slug=<name>`.
 
 
-The runbook's first commit creates a feature branch `autopilot/<slug>/setup` with shape verification (AP-7). Under `branching.no_force_push: false` (default) the rolling tracker PR `[autopilot] tracker — drain <slug>` is also created. Under `branching.no_force_push: true`, no tracker PR is created — the AP-23 batched-delta queue is used instead (see `references/tracker-delta-batching.md`).
+The runbook's first commit creates a feature branch `autopilot/<slug>/setup` with shape verification (AP-7).
+
+
+**Open the Runbook PR at Pickup (AV3-08).** G7 immediately opens ONE long-lived Runbook PR on branch `autopilot/<slug>/runbook`, carrying the runbook + tracker — the single bookkeeping home under both `no_force_push` settings (the pre-v3 rolling tracker PR is retired). Its body carries the drain's **predicted file surface** as a grep-able block so foreign planners (and AV3-09 claim consultation) can consult one place:
+
+
+```markdown
+## Predicted file surface
+<!-- autopilot:file-surface:begin -->
+- `path/one.py`
+- `path/two.py`
+<!-- autopilot:file-surface:end -->
+```
+
+
+`bash ${SKILL_DIR}/scripts/runbook_pr.sh file-surface <body-file>` extracts the block deterministically (marker contract). The Runbook PR is opened non-draft and is the FINAL entry in `MERGE-ORDER.md`; the operator (or the Marshal) merges it — autopilot NEVER merges its own PRs.
 
 
 ## Step G8 — Review or arm
 
 
-**Default (review path):** Print a structured summary then exit (no cron arming). Required content: drain slug; Stories count; Subtasks count broken down by `kind` and `estimated_size`; already-shipped (G5) count; hot-file serializations applied; G1.5 probe facts + any `unknown` values that need operator review; consolidations applied (G3.6); estimated drain runtime; paths of the runbook + tracker; rolling tracker PR URL (or "batched-delta queue active" under `branching.no_force_push`); the exact `/autopilot --drain @<runbook-path>` command to start the drain; one-line reminder to edit before draining.
+**Default (review path):** Print a structured summary then exit (no cron arming). Required content: drain slug; Stories count; Subtasks count broken down by `kind` and `estimated_size`; already-shipped (G5) count; hot-file serializations applied; G1.5 probe facts + any `unknown` values that need operator review; consolidations applied (G3.6); estimated drain runtime; paths of the runbook + tracker; Runbook PR URL (`autopilot/<slug>/runbook`, AV3-08); the exact `/autopilot --drain @<runbook-path>` command to start the drain; one-line reminder to edit before draining.
 
 
 **`--yolo` path:** Skip the review entirely; immediately invoke the DRAIN mode as if operator typed `/autopilot --drain @.autopilot/runbooks/<slug>.md`.

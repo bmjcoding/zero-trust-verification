@@ -253,9 +253,119 @@ if hits=$(grep -l -E "(bitbucket|github)\.sh ($verbs)" "${DOCS[@]}" 2>/dev/null)
 fi
 (( l16_bad == 0 )) && ok L16
 
+# --- L17: PR-per-Story, not PR-per-Subtask (AV3-06 / ADR 0007) ----------------
+# v3 collapses the drain onto Story branches: one Story = one branch = one PR
+# (draft until the Story's Subtasks are all Done). Subtasks are the commit series
+# on the Story branch, NOT separate PRs. Any doc reasserting the retired
+# per-Subtask-PR granularity is a runtime coin-flip — the orchestrator would open
+# a PR every fire. Scans the whole DOCS corpus (CHANGELOG exempt: it records the
+# historical per-Subtask state). The bookkeeping-fold phrasing ("the next Subtask
+# PR" for the AP-23 delta fold) is out of scope here — AV3-08 re-scopes it to the
+# Runbook PR — so this rule matches only the PR-*granularity* claim.
+l17_bad=0
+per_subtask_pr='PR per [Ss]ubtask|per-[Ss]ubtask PR|one-PR-per-[Ss]ubtask|one [Ss]ubtask,? one PR|stacked PR per [Ss]ubtask'
+if hits=$(grep_docs "$per_subtask_pr"); then
+  violation L17 "retired PR-per-Subtask framing (v3 is PR-per-Story): $(tr '\n' ' ' <<<"$hits")"
+  l17_bad=1
+fi
+# SKILL.md must carry the PR-per-Story wording and the Story-branch shape.
+grep -q 'PR-per-Story' "$ROOT/SKILL.md" || { violation L17 "SKILL.md does not carry the PR-per-Story contract wording"; l17_bad=1; }
+grep -q 'autopilot/<slug>/<story-id>' "$ROOT/references/drain-lifecycle.md" || { violation L17 "drain-lifecycle.md does not name the Story branch autopilot/<slug>/<story-id>"; l17_bad=1; }
+(( l17_bad == 0 )) && ok L17
+
+# --- L18: AP-3 projection allow-list tracks the AV3 planner schema (AV3-02/07) -
+# The reviewer projection (AP-3) is what plan review judges from; a planner-schema
+# field the projection omits is invisible to the reviewer. Pin the AV3 additions —
+# behavior_ids (AV3-02) and predicted_hours (AV3-07) — in BOTH the planner schema
+# and the projection allow-list so they cannot drift apart.
+l18_bad=0
+l18_proj="$ROOT/references/plan-reviewer-projection.md"
+l18_plan="$ROOT/references/planner-prompt.md"
+for field in behavior_ids predicted_hours; do
+  grep -q "${field}:" "$l18_proj" || { violation L18 "AP-3 allow-list missing '${field}:' (plan review can't see it)"; l18_bad=1; }
+  grep -q "${field}:" "$l18_plan" || { violation L18 "planner schema missing '${field}:'"; l18_bad=1; }
+done
+(( l18_bad == 0 )) && ok L18
+
+# --- L19: Runbook PR is the bookkeeping home; file-surface block format (AV3-08) --
+# The rolling tracker PR is retired: bookkeeping lands on the Runbook PR
+# (autopilot/<slug>/runbook) under both no_force_push settings, and G7 emits a
+# grep-able predicted-file-surface block delimited by literal marker comments.
+l19_bad=0
+# (a) the file-surface block markers are pinned where they are emitted/documented.
+grep -q 'autopilot:file-surface:begin' "$ROOT/references/runbook-template.md" || { violation L19 "runbook-template.md missing the file-surface block markers"; l19_bad=1; }
+grep -q 'autopilot:file-surface:begin' "$ROOT/references/generate-lifecycle.md" || { violation L19 "generate-lifecycle.md G7 missing the file-surface block markers"; l19_bad=1; }
+# (b) the Runbook PR branch is named as the bookkeeping home.
+grep -q 'autopilot/<slug>/runbook' "$ROOT/references/drain-lifecycle.md" || { violation L19 "drain-lifecycle.md does not name the Runbook PR branch autopilot/<slug>/runbook"; l19_bad=1; }
+# (c) no doc reasserts the retired rolling-(tracker-)PR framing as active — any
+#     surviving mention must be flagged 'retired' on the same line.
+if hits=$(grep -nE 'rolling (tracker )?PR' "${DOCS[@]}" 2>/dev/null | grep -vi 'retired'); then
+  violation L19 "active 'rolling (tracker) PR' framing (retired by AV3-08): $(tr '\n' ' ' <<<"$hits")"
+  l19_bad=1
+fi
+# (d) the D7.1a fold is a SEPARATE commit on the runbook branch, never folded into
+#     a Story's code commit — pin against the retired atomic-fold model reappearing
+#     (the corpus adversarial round caught exactly this half-applied residue).
+if grep -qE 'atomic commit lands: impl edit|fold rides the Subtask' "$ROOT/references/tracker-delta-batching.md" 2>/dev/null; then
+  violation L19 "tracker-delta-batching.md describes the retired atomic-fold-into-Story-commit model (AV3-08: the fold is its own commit on the runbook branch)"
+  l19_bad=1
+fi
+(( l19_bad == 0 )) && ok L19
+
+# --- L20: Behavior coverage PR-body section format (MS §13.9 / AV3-05) ---------
+# D7.3 publishes the D6.3-verified Behavior-ID -> test-node-ID mapping in a
+# grep-able, marker-delimited `## Behavior coverage` block the PR Gate parses
+# (MS §13.11). Pin the heading + marker so the format cannot silently drift.
+l20_bad=0
+dlc="$ROOT/references/drain-lifecycle.md"
+grep -q '## Behavior coverage' "$dlc" || { violation L20 "drain-lifecycle.md does not define the '## Behavior coverage' PR-body section"; l20_bad=1; }
+grep -q 'autopilot:behavior-coverage' "$dlc" || { violation L20 "the Behavior coverage block is missing its grep-able marker (autopilot:behavior-coverage)"; l20_bad=1; }
+(( l20_bad == 0 )) && ok L20
+
+# --- L21: implementer anti-flakiness contract + design-validator routing (AV3-11) --
+# The five anti-flakiness rules live in the implementer prompt; the design
+# validator routes violations (test quality is design's remit). Pin both so a
+# rule can't be dropped from the prompt or silently un-routed.
+l21_bad=0
+l21_imp="$ROOT/references/implementer-prompt.md"
+l21_val="$ROOT/references/validator-prompts.md"
+for phrase in 'ANTI-FLAKINESS' 'sleeps for synchronization' 'Seeded randomness' 'Injected clock' 'Faked transport' 'Order-independent'; do
+  grep -qF "$phrase" "$l21_imp" || { violation L21 "implementer-prompt.md missing anti-flakiness rule: $phrase"; l21_bad=1; }
+done
+grep -qF 'Anti-flakiness contract' "$l21_val" || { violation L21 "design validator does not route the anti-flakiness contract"; l21_bad=1; }
+(( l21_bad == 0 )) && ok L21
+
+# --- L22: escalation criterion vendored byte-identical (ADR 0002 / AV3-13) ------
+# The ADR 0002 autonomy boundary + MUST-escalate trilist is vendored verbatim
+# into the planner AND implementer prompts (the same block as spec-gen S4). Diff
+# the copies; any drift is a red (a divergent escalation rule is a silent policy
+# fork). Extraction is strictly between the begin/end marker comments.
+l22_bad=0
+extract_vendored() {  # <file> -> text strictly between the vendored markers
+  awk '/vendored:escalation-criterion:begin/{f=1;next} /vendored:escalation-criterion:end/{f=0} f' "$1"
+}
+l22_vp="$(extract_vendored "$ROOT/references/planner-prompt.md")"
+l22_vi="$(extract_vendored "$ROOT/references/implementer-prompt.md")"
+[[ -n "$l22_vp" ]] || { violation L22 "planner-prompt.md is missing the vendored ADR 0002 escalation block"; l22_bad=1; }
+[[ -n "$l22_vi" ]] || { violation L22 "implementer-prompt.md is missing the vendored ADR 0002 escalation block"; l22_bad=1; }
+if [[ -n "$l22_vp" && "$l22_vp" != "$l22_vi" ]]; then
+  violation L22 "vendored escalation block drifted between planner and implementer prompts (ADR 0002 requires byte-identical copies)"
+  l22_bad=1
+fi
+(( l22_bad == 0 )) && ok L22
+
+# --- L23: as-built docs are Story deliverables (AV3-14) ------------------------
+# The runbook ledger reserves an As-built docs slot per Story, and the
+# integration validator enforces its presence in the Story PR for journey-bearing
+# Stories. Pin both so the deliverable can't silently drop.
+l23_bad=0
+grep -q 'As-built docs' "$ROOT/references/runbook-template.md" || { violation L23 "runbook-template.md missing the As-built docs Story deliverable slot"; l23_bad=1; }
+grep -q 'As-built docs are Story deliverables' "$ROOT/references/validator-prompts.md" || { violation L23 "integration validator missing the as-built docs rule (AV3-14)"; l23_bad=1; }
+(( l23_bad == 0 )) && ok L23
+
 if (( FAIL == 1 )); then
   echo "lint_consistency: FAIL" >&2
   exit 1
 fi
-echo "lint_consistency: PASS (16 rules)"
+echo "lint_consistency: PASS (23 rules)"
 exit 0

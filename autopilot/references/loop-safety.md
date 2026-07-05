@@ -46,7 +46,9 @@ check (high, blocking).
 ## 5. History is append-only during a drain
 
 No `--no-verify`, no trunk rebases, no amend/squash of per-cycle commits, no
-force-push except the rolling tracker PR pattern where the repo allows it.
+force-push except a consolidating force-push of the Runbook PR branch
+(`autopilot/<slug>/runbook`, AV3-08) where the repo allows it — under
+`no_force_push: true` even that is disabled and bookkeeping appends only.
 The TDD evidence D6 audits is immutable once written.
 *Enforced by:* Hard Contracts §5/§7; implementer prompt critical rules 5–6;
 conflict-resolution DO-NOT list.

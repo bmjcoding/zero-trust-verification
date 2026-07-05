@@ -203,15 +203,21 @@ with open(sys.argv[1], "w") as f:
 srv.serve_forever()
 PYEOF
 
-# MOCK_OK gates the HTTP-mock-dependent sections. A missing python3 or a bound-
-# but-unreachable server (both observed in locked-down sandboxes) SKIPS those
-# DC-backend HTTP tests rather than aborting the run, so the deterministic
+# MOCK_OK gates the HTTP-mock-dependent sections. A missing uv toolchain or a
+# bound-but-unreachable server (both observed in locked-down sandboxes) SKIPS
+# those DC-backend HTTP tests rather than aborting the run, so the deterministic
 # assertions, the gh-argv-shim GitHub-backend matrix, and the consistency lint
 # always execute. (AV3-15: the GitHub backend has zero dependency on this server.)
+#
+# ADR 0015: the mock server launches through `uv run` (self-bootstrapping Python
+# toolchain), not a bare `python3` — killing the python3-not-on-PATH fragility.
+# The server is stdlib-only, so `--no-project` runs it with no dependency
+# resolution and no CWD sensitivity. uv forwards SIGTERM to its python child, so
+# the EXIT-trap `kill "$SERVER_PID"` still cleans the server up.
 MOCK_OK=1
 PORT=""
-if command -v python3 >/dev/null 2>&1; then
-  python3 "$SANDBOX/mock_server.py" "$SANDBOX/port" 2>/dev/null &
+if command -v uv >/dev/null 2>&1; then
+  uv run --no-project python "$SANDBOX/mock_server.py" "$SANDBOX/port" 2>/dev/null &
   SERVER_PID=$!
   for _ in $(seq 1 50); do [[ -s "$SANDBOX/port" ]] && break; sleep 0.1; done
   PORT="$(cat "$SANDBOX/port" 2>/dev/null || true)"
@@ -730,6 +736,719 @@ out=$( cd "$CLONE" && bash "$HFA" --churn --days 30 ); rc=$?
 assert_eq T31 "empty churn window exits 0" "0" "$rc"
 assert_eq T31 "empty churn window prints nothing" "" "$out"
 
+echo "== audit_commit_shape.sh (AV3-06 D6.2 Story-range audit) =="
+
+ACS="$HERE/audit_commit_shape.sh"
+CS_REPO="$SANDBOX/cs-repo"
+git init -q "$CS_REPO"
+git -C "$CS_REPO" config user.email selftest@local
+git -C "$CS_REPO" config user.name selftest
+csc() { git -C "$CS_REPO" "$@"; }
+csci() { csc commit -q --allow-empty -m "$1"; }
+echo base > "$CS_REPO/f"; csc add f; csci "chore: base"; csc branch -M main
+CS_TRUNK=$(csc rev-parse HEAD)
+acs() { ( cd "$CS_REPO" && bash "$ACS" "$@" ); }
+
+# One Story branch accumulates Subtask A1's commit series, then B2's — the
+# PR-per-Story shape (AV3-06): the branch carries the WHOLE Story, D6.2 audits
+# only the Subtask that just landed.
+csc checkout -qb autopilot/demo/story1
+csci "test: A1.1 RED — a1 behavior 1"
+csci "feat: A1.1 GREEN — a1 behavior 1"
+CS_PREV=$(csc rev-parse HEAD)          # in_progress.prev_pushed_sha after A1
+csci "test: B2.1 RED — b2 behavior 1"
+csci "feat: B2.1 GREEN — b2 behavior 1"
+csci "test: B2.2 RED — b2 behavior 2"
+csci "feat: B2.2 GREEN — b2 behavior 2"
+
+# AV3-06.1 — the range fix: auditing B2 over prev_pushed_sha..HEAD sees ONLY B2's
+# commits, so a Story branch carrying A1's prior commits yields no scope-leak.
+out=$(acs --id B2 --base "$CS_PREV" 2>&1); rc=$?
+assert_eq "AV3-06.1" "Story-range B2 audit exits 0" "0" "$rc"
+assert_eq "AV3-06.1" "Story-range B2 audit is clean" "OK" "$out"
+
+# AV3-06.2 — the OLD whole-branch range (origin/<trunk>..HEAD) false-flags
+# tdd-scope-leak on A1's accumulated commits: exactly the regression the fix kills.
+out=$(acs --id B2 --base "$CS_TRUNK" 2>&1); rc=$?
+assert_eq "AV3-06.2" "whole-branch range reds B2" "1" "$rc"
+assert_contains "AV3-06.2" "whole-branch range is a scope-leak false-positive" "[BLOCKED: tdd-scope-leak]" "$out"
+
+# AV3-06.3 — RED/GREEN pairing + ordering enforced within the Subtask's own range.
+csc checkout -qb autopilot/demo/story2 "$CS_TRUNK"
+csci "test: C3.1 RED — missing green"
+out=$(acs --id C3 --base "$CS_TRUNK" 2>&1); rc=$?
+assert_eq "AV3-06.3" "RED without GREEN reds" "1" "$rc"
+assert_contains "AV3-06.3" "no-green reason emitted" "[BLOCKED: tdd-no-green]" "$out"
+csci "feat: C3.2 GREEN — green with no red for behavior 2"
+out=$(acs --id C3 --base "$(csc rev-parse HEAD~1)" 2>&1)
+assert_contains "AV3-06.3" "GREEN before RED is out-of-order" "[BLOCKED: tdd-out-of-order]" "$out"
+
+# AV3-06.4 — jira-key enforcement over the range (AP-22).
+csc checkout -qb autopilot/demo/story3 "$CS_TRUNK"
+csci "test: D4.1 [PROJ-7] RED — keyed"
+csci "feat: D4.1 [PROJ-7] GREEN — keyed"
+out=$(acs --id D4 --base "$CS_TRUNK" --jira-key PROJ-7 2>&1); rc=$?
+assert_eq "AV3-06.4" "keyed commits pass jira audit" "0" "$rc"
+csci "test: D4.2 RED — unkeyed"
+out=$(acs --id D4 --base "$(csc rev-parse HEAD~1)" --jira-key PROJ-7 2>&1)
+assert_contains "AV3-06.4" "unkeyed commit reds under enforce_jira_key" "[BLOCKED: jira-key-missing]" "$out"
+
+# AV3-06.5 — refactor / docs kinds have their own shapes.
+csc checkout -qb autopilot/demo/story4 "$CS_TRUNK"
+csci "refactor: E5 — decouple validator from registry"
+out=$(acs --id E5 --base "$CS_TRUNK" --kind refactor 2>&1); rc=$?
+assert_eq "AV3-06.5" "single refactor commit is valid refactor shape" "0" "$rc"
+csci "feat: E5.1 GREEN — behavior snuck into a refactor subtask"
+out=$(acs --id E5 --base "$CS_TRUNK" --kind refactor 2>&1)
+assert_contains "AV3-06.5" "test/feat in a refactor subtask is refactor-shape-wrong" "[BLOCKED: refactor-shape-wrong]" "$out"
+
+# AV3-06.6 — usage guardrails: missing args + unknown base.
+acs --id B2 >/dev/null 2>&1; rc=$?
+assert_eq "AV3-06.6" "missing --base is usage error 64" "64" "$rc"
+acs --id B2 --base deadbeefdeadbeef >/dev/null 2>&1; rc=$?
+assert_eq "AV3-06.6" "unknown base ref is usage error 64" "64" "$rc"
+
+# AV3-06.7 — adversarial round (executor lens): --jira-key must be enforced on
+# EVERY kind, not just code/test-only (AP-22 covers refactor/docs/config too).
+csc checkout -qb autopilot/demo/story5 "$CS_TRUNK"
+csci "refactor: F6 — unkeyed refactor"
+out=$(acs --id F6 --base "$CS_TRUNK" --kind refactor --jira-key PROJ-7 2>&1); rc=$?
+assert_eq "AV3-06.7" "unkeyed refactor reds under enforce_jira_key" "1" "$rc"
+assert_contains "AV3-06.7" "refactor jira-key-missing" "[BLOCKED: jira-key-missing]" "$out"
+csc checkout -qb autopilot/demo/story6 "$CS_TRUNK"
+csci "docs: G7 — unkeyed docs"
+out=$(acs --id G7 --base "$CS_TRUNK" --kind docs --jira-key PROJ-7 2>&1)
+assert_contains "AV3-06.7" "docs jira-key-missing" "[BLOCKED: jira-key-missing]" "$out"
+
+echo "== validate_plan_mapping.sh (AV3-07 sizing + AV3-02 behavior-mapping) =="
+
+VPM="$HERE/validate_plan_mapping.sh"
+vpm() { bash "$VPM" "$@"; }
+
+cat > "$SANDBOX/plan_valid.json" <<'J'
+{"subtasks":[
+  {"id":"A1","parent_story":"S-foo","kind":"code","estimated_size":"M","predicted_hours":12},
+  {"id":"A2","parent_story":"S-foo","kind":"code","estimated_size":"S","predicted_hours":3},
+  {"id":"B1","parent_story":"S-bar","kind":"code","estimated_size":"L","predicted_hours":48}
+]}
+J
+# AV3-07.1 — a plan whose Stories all predict <=48h with size-consistent hours is valid.
+out=$(vpm "$SANDBOX/plan_valid.json" 2>&1); rc=$?
+assert_eq "AV3-07.1" "size-consistent, <=48h plan is valid" "0" "$rc"
+assert_eq "AV3-07.1" "valid plan prints OK" "OK" "$out"
+
+cat > "$SANDBOX/plan_oversized.json" <<'J'
+{"subtasks":[
+  {"id":"A1","parent_story":"S-big","kind":"code","estimated_size":"M","predicted_hours":16},
+  {"id":"A2","parent_story":"S-big","kind":"code","estimated_size":"M","predicted_hours":16},
+  {"id":"A3","parent_story":"S-big","kind":"code","estimated_size":"M","predicted_hours":16},
+  {"id":"A4","parent_story":"S-big","kind":"code","estimated_size":"S","predicted_hours":4}
+]}
+J
+# AV3-07.2 — a Story whose Subtasks roll up past 48h is oversized and must split.
+out=$(vpm "$SANDBOX/plan_oversized.json" 2>&1); rc=$?
+assert_eq "AV3-07.2" "oversized Story refused" "1" "$rc"
+assert_eq "AV3-07.2" "oversized cites the story-id" "[GENERATE-FAILED: story-oversized: S-big]" "$out"
+
+cat > "$SANDBOX/plan_inconsistent.json" <<'J'
+{"subtasks":[{"id":"A1","parent_story":"S-x","kind":"code","estimated_size":"S","predicted_hours":9}]}
+J
+# AV3-07.3 — an S-labeled Subtask predicting >4h violates the S/M/L sanity mapping.
+out=$(vpm "$SANDBOX/plan_inconsistent.json" 2>&1); rc=$?
+assert_eq "AV3-07.3" "size-inconsistent Subtask refused" "1" "$rc"
+assert_eq "AV3-07.3" "size-inconsistent cites the subtask-id" "[GENERATE-FAILED: story-size-inconsistent: A1]" "$out"
+
+cat > "$SANDBOX/plan_missing_hours.json" <<'J'
+{"subtasks":[{"id":"A1","parent_story":"S-x","kind":"code","estimated_size":"M"}]}
+J
+# AV3-07.4 — a Subtask missing predicted_hours (or non-integer) is schema-inconsistent.
+out=$(vpm "$SANDBOX/plan_missing_hours.json" 2>&1); rc=$?
+assert_eq "AV3-07.4" "missing predicted_hours refused" "1" "$rc"
+assert_contains "AV3-07.4" "missing-hours reason is size-inconsistent" "story-size-inconsistent" "$out"
+
+# AV3-07.5 — boundary: an L-labeled Subtask at exactly 48h, sole Subtask of its
+# Story, is valid (<=48 both per-size and per-Story).
+cat > "$SANDBOX/plan_boundary.json" <<'J'
+{"subtasks":[{"id":"L1","parent_story":"S-edge","kind":"code","estimated_size":"L","predicted_hours":48}]}
+J
+out=$(vpm "$SANDBOX/plan_boundary.json" 2>&1); rc=$?
+assert_eq "AV3-07.5" "48h L-Subtask at the boundary is valid" "0" "$rc"
+
+# AV3-07.6 — usage guardrails.
+vpm >/dev/null 2>&1; rc=$?
+assert_eq "AV3-07.6" "no plan arg is usage error 64" "64" "$rc"
+vpm "$SANDBOX/does-not-exist.json" >/dev/null 2>&1; rc=$?
+assert_eq "AV3-07.6" "absent plan file is usage error 64" "64" "$rc"
+
+# AV3-07.7 — adversarial round (executor lens): a Subtask missing parent_story must
+# be refused, else two 40h Subtasks of one 80h Story slip under the 48h cap as
+# separate groups.
+cat > "$SANDBOX/plan_orphan.json" <<'J'
+{"subtasks":[
+  {"id":"ST-1.1","parent_story":"ST-1","kind":"code","estimated_size":"L","predicted_hours":40},
+  {"id":"ST-1.2","kind":"code","estimated_size":"L","predicted_hours":40}
+]}
+J
+out=$(vpm "$SANDBOX/plan_orphan.json" 2>&1); rc=$?
+assert_eq "AV3-07.7" "missing parent_story refused (no oversized masking)" "1" "$rc"
+assert_eq "AV3-07.7" "orphan cites the subtask-id" "[GENERATE-FAILED: subtask-missing-parent-story: ST-1.2]" "$out"
+
+# --- AV3-02: Subtask <-> Behavior-ID mapping (validate_plan_mapping.sh + manifest) --
+cat > "$SANDBOX/manifest.yaml" <<'Y'
+schema_version: 1
+manifest_revision: 1
+observability:
+  profile: payments
+environments: [dev, prod]
+behaviors:
+  - id: B-x-001
+    title: "one"
+    lifecycle: active
+    given: "g"
+    when: "w"
+    then: "t"
+  - id: B-x-002
+    title: "two"
+    lifecycle: active
+    given: "g"
+    when: "w"
+    then: "t"
+  - id: B-x-003
+    title: "gone"
+    lifecycle: withdrawn
+    withdrawn_reason: "superseded"
+Y
+MF="$SANDBOX/manifest.yaml"
+
+cat > "$SANDBOX/map_valid.json" <<'J'
+{"subtasks":[
+  {"id":"A1","parent_story":"S","kind":"code","estimated_size":"S","predicted_hours":3,"behavior_ids":["B-x-001"]},
+  {"id":"A2","parent_story":"S","kind":"test-only","estimated_size":"S","predicted_hours":2,"behavior_ids":["B-x-002"]},
+  {"id":"A3","parent_story":"S","kind":"refactor","estimated_size":"S","predicted_hours":2,"behavior_ids":[]}
+]}
+J
+# AV3-02.1 — full active coverage + a refactor Subtask exempt from mapping is valid.
+out=$(vpm "$SANDBOX/map_valid.json" "$MF" 2>&1); rc=$?
+assert_eq "AV3-02.1" "mapped plan (refactor exempt) is valid" "0" "$rc"
+assert_eq "AV3-02.1" "valid mapped plan prints OK" "OK" "$out"
+
+cat > "$SANDBOX/map_unmapped.json" <<'J'
+{"subtasks":[
+  {"id":"A1","parent_story":"S","kind":"code","estimated_size":"S","predicted_hours":3,"behavior_ids":[]},
+  {"id":"A2","parent_story":"S","kind":"code","estimated_size":"S","predicted_hours":2,"behavior_ids":["B-x-001","B-x-002"]}
+]}
+J
+# AV3-02.2 — a code Subtask with no Behavior IDs is unmapped-subtask.
+out=$(vpm "$SANDBOX/map_unmapped.json" "$MF" 2>&1); rc=$?
+assert_eq "AV3-02.2" "unmapped code Subtask refused" "1" "$rc"
+assert_eq "AV3-02.2" "unmapped cites the subtask-id" "[GENERATE-FAILED: unmapped-subtask: A1]" "$out"
+
+cat > "$SANDBOX/map_unowned.json" <<'J'
+{"subtasks":[{"id":"A1","parent_story":"S","kind":"code","estimated_size":"S","predicted_hours":3,"behavior_ids":["B-x-001"]}]}
+J
+# AV3-02.3 — an active manifest Behavior owned by no Subtask is unowned-behavior.
+out=$(vpm "$SANDBOX/map_unowned.json" "$MF" 2>&1); rc=$?
+assert_eq "AV3-02.3" "unowned active Behavior refused" "1" "$rc"
+assert_eq "AV3-02.3" "unowned cites the behavior-id" "[GENERATE-FAILED: unowned-behavior: B-x-002]" "$out"
+
+cat > "$SANDBOX/map_unknown.json" <<'J'
+{"subtasks":[
+  {"id":"A1","parent_story":"S","kind":"code","estimated_size":"S","predicted_hours":3,"behavior_ids":["B-x-001"]},
+  {"id":"A2","parent_story":"S","kind":"code","estimated_size":"S","predicted_hours":2,"behavior_ids":["B-x-002","B-x-003"]}
+]}
+J
+# AV3-02.4 — mapping a withdrawn / nonexistent Behavior is unknown-behavior
+# (B-x-003 is a tombstone; the active universe excludes it).
+out=$(vpm "$SANDBOX/map_unknown.json" "$MF" 2>&1); rc=$?
+assert_eq "AV3-02.4" "mapping a withdrawn Behavior refused" "1" "$rc"
+assert_eq "AV3-02.4" "unknown cites the behavior-id" "[GENERATE-FAILED: unknown-behavior: B-x-003]" "$out"
+
+# AV3-02.5 — manifest-LESS input keeps v2.4.0 semantics: no behavior_ids required.
+out=$(vpm "$SANDBOX/map_unmapped.json" 2>&1); rc=$?
+assert_eq "AV3-02.5" "manifest-less plan needs no behavior_ids" "0" "$rc"
+
+echo "== detect_input_mode.sh (AV3-01 mode inference) =="
+
+DIM="$HERE/detect_input_mode.sh"
+dim() { bash "$DIM" "$@"; }
+
+# AV3-01.1 — a valid+complete manifest goes straight through (ADR 0008), no flag.
+out=$(dim --intent generate --manifest m.yaml --validator-exit 0 2>/dev/null); rc=$?
+assert_eq "AV3-01.1" "complete manifest exits 0" "0" "$rc"
+assert_eq "AV3-01.1" "complete manifest -> STRAIGHT_THROUGH" "MODE=STRAIGHT_THROUGH" "$out"
+
+# AV3-01.2 — bare markdown (no companion manifest) -> GENERATE+pause.
+assert_eq "AV3-01.2" "bare markdown -> GENERATE_PAUSE" "MODE=GENERATE_PAUSE" "$(dim --intent generate 2>/dev/null)"
+# incomplete manifest is manifest-less (MS §11) -> also GENERATE_PAUSE.
+assert_eq "AV3-01.2" "incomplete manifest -> GENERATE_PAUSE" "MODE=GENERATE_PAUSE" "$(dim --intent generate --manifest m.yaml --validator-exit 3 2>/dev/null)"
+
+# AV3-01.3 — --yolo is the manifest-LESS override only.
+assert_eq "AV3-01.3" "manifest-less --yolo -> GENERATE_YOLO" "MODE=GENERATE_YOLO" "$(dim --intent generate --yolo 2>/dev/null)"
+assert_eq "AV3-01.3" "incomplete + --yolo -> GENERATE_YOLO" "MODE=GENERATE_YOLO" "$(dim --intent generate --manifest m.yaml --validator-exit 3 --yolo 2>/dev/null)"
+
+# AV3-01.4 — --yolo on a complete manifest is a no-op WARNING, mode unchanged.
+out=$(dim --intent generate --manifest m.yaml --validator-exit 0 --yolo 2>"$SANDBOX/dim_yolo.err"); rc=$?
+assert_eq "AV3-01.4" "yolo-on-complete stays STRAIGHT_THROUGH" "MODE=STRAIGHT_THROUGH" "$out"
+assert_eq "AV3-01.4" "yolo-on-complete exits 0" "0" "$rc"
+assert_contains "AV3-01.4" "yolo-on-complete warns no-op" "--yolo is a no-op on a complete manifest" "$(cat "$SANDBOX/dim_yolo.err")"
+
+# AV3-01.5 — schema-invalid (4) and unsupported (5) REFUSE; never degrade, never
+# --yolo-bypassable (MS §11).
+out=$(dim --intent generate --manifest m.yaml --validator-exit 4 2>/dev/null); rc=$?
+assert_eq "AV3-01.5" "schema-invalid refuses (exit 1)" "1" "$rc"
+assert_eq "AV3-01.5" "schema-invalid -> REFUSE-MANIFEST-INVALID" "MODE=REFUSE-MANIFEST-INVALID" "$out"
+out=$(dim --intent generate --manifest m.yaml --validator-exit 4 --yolo 2>/dev/null); rc=$?
+assert_eq "AV3-01.5" "--yolo cannot bypass a schema-invalid manifest" "1" "$rc"
+assert_eq "AV3-01.5" "unsupported -> REFUSE-MANIFEST-UNSUPPORTED" "MODE=REFUSE-MANIFEST-UNSUPPORTED" "$(dim --intent generate --manifest m.yaml --validator-exit 5 2>/dev/null)"
+
+# AV3-01.6 — runbook intents are unchanged.
+assert_eq "AV3-01.6" "--drain -> DRAIN" "MODE=DRAIN" "$(dim --intent drain 2>/dev/null)"
+assert_eq "AV3-01.6" "--resume -> RESUME" "MODE=RESUME" "$(dim --intent resume 2>/dev/null)"
+
+# AV3-01.7 — usage guardrails: a manifest with no validator exit, and a bad intent.
+dim --intent generate --manifest m.yaml >/dev/null 2>&1; rc=$?
+assert_eq "AV3-01.7" "manifest without validator-exit is usage error 64" "64" "$rc"
+dim --intent bogus >/dev/null 2>&1; rc=$?
+assert_eq "AV3-01.7" "unknown intent is usage error 64" "64" "$rc"
+
+echo "== validate_manifest.sh --union (AV3-03 multi-doc union) =="
+
+VMU="$HERE/validate_manifest.sh"
+# write a minimal manifest: <path> <profile> <environments-inline> <journey-id> <behavior-id>
+write_manifest() {
+  cat > "$1" <<Y
+schema_version: 1
+manifest_revision: 1
+observability:
+  profile: $2
+environments: [$3]
+journeys:
+  - id: $4
+    lifecycle: active
+    steps:
+      - name: "s"
+        vital_class: null
+behaviors:
+  - id: $5
+    lifecycle: active
+    given: g
+    when: w
+    then: t
+Y
+}
+write_manifest "$SANDBOX/u_a.yaml"        payments "dev, prod"       J-a-001 B-a-001
+write_manifest "$SANDBOX/u_b.yaml"        payments "dev, prod"       J-b-001 B-b-001
+write_manifest "$SANDBOX/u_collide.yaml"  payments "dev, prod"       J-a-001 B-c-001
+write_manifest "$SANDBOX/u_prof.yaml"     fraud   "dev, prod"       J-d-001 B-d-001
+write_manifest "$SANDBOX/u_env.yaml"      payments "dev, test, prod" J-e-001 B-e-001
+write_manifest "$SANDBOX/u_order.yaml"    payments "prod, dev"       J-f-001 B-f-001
+vmu() { bash "$VMU" "$@"; }
+
+# AV3-03.1 — two coherent manifests (disjoint IDs, same profile+environments).
+out=$(vmu --union "$SANDBOX/u_a.yaml" "$SANDBOX/u_b.yaml" 2>&1); rc=$?
+assert_eq "AV3-03.1" "coherent union exits 0" "0" "$rc"
+assert_eq "AV3-03.1" "coherent union prints OK" "OK" "$out"
+
+# AV3-03.2 — a Journey/Behavior ID shared across manifests is a union collision.
+out=$(vmu --union "$SANDBOX/u_a.yaml" "$SANDBOX/u_collide.yaml" 2>&1); rc=$?
+assert_eq "AV3-03.2" "id collision refused" "1" "$rc"
+assert_eq "AV3-03.2" "collision cites the id" "[GENERATE-FAILED: manifest-id-collision: J-a-001]" "$out"
+
+# AV3-03.3 — mismatched observability.profile across the union.
+out=$(vmu --union "$SANDBOX/u_a.yaml" "$SANDBOX/u_prof.yaml" 2>&1); rc=$?
+assert_eq "AV3-03.3" "profile mismatch refused" "1" "$rc"
+assert_eq "AV3-03.3" "profile mismatch token" "[GENERATE-FAILED: manifest-union-mismatch: profile]" "$out"
+
+# AV3-03.4 — mismatched environments across the union.
+out=$(vmu --union "$SANDBOX/u_a.yaml" "$SANDBOX/u_env.yaml" 2>&1); rc=$?
+assert_eq "AV3-03.4" "environments mismatch refused" "1" "$rc"
+assert_eq "AV3-03.4" "environments mismatch token" "[GENERATE-FAILED: manifest-union-mismatch: environments]" "$out"
+
+# AV3-03.5 — environments compared as a SET: same members, different order = OK.
+out=$(vmu --union "$SANDBOX/u_a.yaml" "$SANDBOX/u_order.yaml" 2>&1); rc=$?
+assert_eq "AV3-03.5" "environments set-equality (order-insensitive) is coherent" "0" "$rc"
+
+# AV3-03.6 — usage guardrails.
+vmu "$SANDBOX/u_a.yaml" "$SANDBOX/u_b.yaml" >/dev/null 2>&1; rc=$?
+assert_eq "AV3-03.6" "missing --union is usage error 64" "64" "$rc"
+vmu --union "$SANDBOX/u_a.yaml" >/dev/null 2>&1; rc=$?
+assert_eq "AV3-03.6" "a union of one is usage error 64" "64" "$rc"
+
+# AV3-03.7 — adversarial round (executor lens): the union checks must not be
+# fooled by legal YAML variants the canonical emitter doesn't use.
+# (a) block-list `environments:` must NOT extract to empty and pass a real mismatch.
+cat > "$SANDBOX/u_blk_dev.yaml" <<'Y'
+observability:
+  profile: payments
+environments:
+  - dev
+  - prod
+behaviors:
+  - id: B-blkA-001
+    lifecycle: active
+Y
+cat > "$SANDBOX/u_blk_stg.yaml" <<'Y'
+observability:
+  profile: payments
+environments:
+  - staging
+behaviors:
+  - id: B-blkB-001
+    lifecycle: active
+Y
+out=$(vmu --union "$SANDBOX/u_blk_dev.yaml" "$SANDBOX/u_blk_stg.yaml" 2>&1); rc=$?
+assert_eq "AV3-03.7" "block-list environments mismatch is caught (not empty-vs-empty)" "1" "$rc"
+assert_eq "AV3-03.7" "block-list mismatch token" "[GENERATE-FAILED: manifest-union-mismatch: environments]" "$out"
+# block-list, same set different order -> coherent.
+cat > "$SANDBOX/u_blk_rev.yaml" <<'Y'
+observability:
+  profile: payments
+environments:
+  - prod
+  - dev
+behaviors:
+  - id: B-blkC-001
+    lifecycle: active
+Y
+out=$(vmu --union "$SANDBOX/u_blk_dev.yaml" "$SANDBOX/u_blk_rev.yaml" 2>&1); rc=$?
+assert_eq "AV3-03.7" "block-list set-equality (order-insensitive) is coherent" "0" "$rc"
+# (b) a prose *mention* of a foreign ID must NOT register a false collision.
+cat > "$SANDBOX/u_prose.yaml" <<'Y'
+observability:
+  profile: payments
+environments: [dev, prod]
+behaviors:
+  - id: B-ship-002
+    lifecycle: active
+    description: "supersedes B-a-001 from the pricing spec"
+Y
+out=$(vmu --union "$SANDBOX/u_a.yaml" "$SANDBOX/u_prose.yaml" 2>&1); rc=$?
+assert_eq "AV3-03.7" "prose mention of a foreign id is NOT a collision" "0" "$rc"
+
+echo "== manifest_revision_gate.sh (AV3-04 revision drift) =="
+
+MRG="$HERE/manifest_revision_gate.sh"
+cat > "$SANDBOX/mrg_manifest.yaml" <<'Y'
+schema_version: 1
+manifest_revision: 2
+Y
+cat > "$SANDBOX/mrg_ok.tracker.md" <<'M'
+---
+STATUS: ACTIVE
+manifest_revision: 2
+session_lock: null
+---
+M
+cat > "$SANDBOX/mrg_drift.tracker.md" <<'M'
+---
+STATUS: ACTIVE
+manifest_revision: 1
+---
+M
+cat > "$SANDBOX/mrg_quoted.tracker.md" <<'M'
+---
+STATUS: ACTIVE
+manifest_revision: "2"
+---
+M
+cat > "$SANDBOX/mrg_manifestless.tracker.md" <<'M'
+---
+STATUS: ACTIVE
+consecutive_impl_blocks: 0
+---
+M
+cat > "$SANDBOX/mrg_paused_drift.tracker.md" <<'M'
+---
+STATUS: PAUSED
+status_reason: manifest-revision-drift
+manifest_revision: 1
+---
+M
+cat > "$SANDBOX/mrg_paused_other.tracker.md" <<'M'
+---
+STATUS: PAUSED
+status_reason: runtime-budget-expired
+---
+M
+mrg() { bash "$MRG" "$@"; }
+
+# AV3-04.1 — recorded == current: no drift.
+out=$(mrg drift "$SANDBOX/mrg_ok.tracker.md" "$SANDBOX/mrg_manifest.yaml" 2>&1); rc=$?
+assert_eq "AV3-04.1" "matching revision is clean (exit 0)" "0" "$rc"
+assert_contains "AV3-04.1" "clean prints OK" "OK recorded=2" "$out"
+
+# AV3-04.2 — recorded < current: drift detected (external-fault class -> PAUSE).
+out=$(mrg drift "$SANDBOX/mrg_drift.tracker.md" "$SANDBOX/mrg_manifest.yaml" 2>&1); rc=$?
+assert_eq "AV3-04.2" "revision drift exits 3" "3" "$rc"
+assert_eq "AV3-04.2" "drift cites recorded vs current" "DRIFT recorded=1 current=2" "$out"
+
+# AV3-04.3 — quoted YAML value parses (an LLM/yq writes manifest_revision: "2").
+out=$(mrg drift "$SANDBOX/mrg_quoted.tracker.md" "$SANDBOX/mrg_manifest.yaml" 2>&1); rc=$?
+assert_eq "AV3-04.3" "quoted recorded revision matches (clean)" "0" "$rc"
+
+# AV3-04.4 — a manifest-less tracker has no recorded revision -> check is N/A.
+out=$(mrg drift "$SANDBOX/mrg_manifestless.tracker.md" "$SANDBOX/mrg_manifest.yaml" 2>&1); rc=$?
+assert_eq "AV3-04.4" "manifest-less drain: drift check N/A (exit 0)" "0" "$rc"
+assert_eq "AV3-04.4" "manifest-less prints NO-MANIFEST" "NO-MANIFEST" "$out"
+
+# AV3-04.5 — Resume REFUSES a drift-paused tracker and points at --generate --merge.
+out=$(mrg resume-check "$SANDBOX/mrg_paused_drift.tracker.md" 2>&1); rc=$?
+assert_eq "AV3-04.5" "resume refuses a drift-paused tracker (exit 2)" "2" "$rc"
+assert_contains "AV3-04.5" "resume points at revision-regen" "--generate --merge" "$out"
+
+# AV3-04.6 — a pause for any OTHER reason stays plain-resumable.
+out=$(mrg resume-check "$SANDBOX/mrg_paused_other.tracker.md" 2>&1); rc=$?
+assert_eq "AV3-04.6" "non-drift pause is resumable (exit 0)" "0" "$rc"
+assert_eq "AV3-04.6" "non-drift pause prints RESUMABLE" "RESUMABLE" "$out"
+
+# AV3-04.7 — usage guardrails.
+mrg drift "$SANDBOX/mrg_ok.tracker.md" >/dev/null 2>&1; rc=$?
+assert_eq "AV3-04.7" "drift with one arg is usage error 64" "64" "$rc"
+mrg bogus-sub >/dev/null 2>&1; rc=$?
+assert_eq "AV3-04.7" "unknown subcommand is usage error 64" "64" "$rc"
+
+echo "== runbook_pr.sh + Runbook-PR fold (AV3-08) =="
+
+RPR="$HERE/runbook_pr.sh"
+cat > "$SANDBOX/rpr_body.md" <<'M'
+## Summary
+Extract the token bucket.
+
+## Predicted file surface
+<!-- autopilot:file-surface:begin -->
+- `api/limiter.py`
+- `lib/rate_limit/bucket.py`
+- `tests/test_bucket.py`
+<!-- autopilot:file-surface:end -->
+
+## Checklist
+M
+# AV3-08.1 — the predicted file-surface block is a grep-able, machine-parseable
+# list (G7 emits it into the Runbook PR body for foreign planners).
+out=$(bash "$RPR" file-surface "$SANDBOX/rpr_body.md" 2>&1); rc=$?
+assert_eq "AV3-08.1" "file-surface extraction exits 0" "0" "$rc"
+assert_eq "AV3-08.1" "file-surface entry count" "3" "$(printf '%s\n' "$out" | grep -c .)"
+assert_contains "AV3-08.1" "file-surface strips backticks/bullets" "lib/rate_limit/bucket.py" "$out"
+
+cat > "$SANDBOX/rpr_nomarkers.md" <<'M'
+## Summary
+No file surface block here.
+M
+# AV3-08.2 — a body missing the markers is a hard format error (never silent).
+bash "$RPR" file-surface "$SANDBOX/rpr_nomarkers.md" >/dev/null 2>&1; rc=$?
+assert_eq "AV3-08.2" "missing file-surface markers is exit 1" "1" "$rc"
+bash "$RPR" file-surface >/dev/null 2>&1; rc=$?
+assert_eq "AV3-08.2" "no body arg is usage error 64" "64" "$rc"
+
+# AV3-08.3 — tracker-fold fixture AGAINST THE RUNBOOK BRANCH: the retired rolling
+# tracker PR is replaced by one bookkeeping home. The fold commit lands on
+# autopilot/<slug>/runbook and carries the canonical "Tracker deltas folded in:"
+# body block.
+RB_REPO="$SANDBOX/rb-repo"
+git init -q "$RB_REPO"
+git -C "$RB_REPO" config user.email selftest@local
+git -C "$RB_REPO" config user.name selftest
+( cd "$RB_REPO" && echo base > f && git add f && git commit -qm "chore: base" && git branch -M main \
+  && git checkout -qb autopilot/demo/runbook \
+  && printf 'tracker\n' > t.md && git add t.md \
+  && git commit -q -m "chore: tracker fold — demo" -m "Tracker deltas folded in:
+- in_progress_claim: claimed A1
+- status_change: A1 pushed pr#7" )
+fold_branch=$(git -C "$RB_REPO" branch --contains HEAD --format='%(refname:short)' | grep -c 'autopilot/demo/runbook')
+assert_eq "AV3-08.3" "tracker fold commit is on the runbook branch" "1" "$fold_branch"
+assert_contains "AV3-08.3" "fold commit carries the deltas block" "Tracker deltas folded in:" "$(git -C "$RB_REPO" log -1 --pretty=%b)"
+
+echo "== claim_overlap.sh (AV3-09 claim consultation) =="
+
+CO="$HERE/claim_overlap.sh"
+TAB="$(printf '\t')"
+# Inventory columns: pr-ref <TAB> branch <TAB> state <TAB> age_bd <TAB> comma-files
+{
+  printf 'gh/101\tautopilot/other/story-a\tDRAFT\t1\tapi/limiter.py,lib/x.py\n'
+  printf 'gh/102\tautopilot/other/story-b\tOPEN\t0\tcore/engine.py\n'
+  printf 'gh/103\tautopilot/other/story-c\tDRAFT\t5\tdocs/old.md\n'
+  printf 'gh/104\tautopilot/mine/story-z\tDRAFT\t0\townpath.py\n'
+} > "$SANDBOX/claim_inv.tsv"
+co() { bash "$CO" --self-namespace autopilot/mine/ --inventory "$SANDBOX/claim_inv.tsv" "$@"; }
+
+# AV3-09.1 — a fresh foreign DRAFT PR overlapping our files is a BINDING claim.
+out=$(co api/limiter.py 2>&1); rc=$?
+assert_eq "AV3-09.1" "foreign draft overlap blocks (exit 2)" "2" "$rc"
+assert_contains "AV3-09.1" "binding claim emits blocked_by_pr" "blocked_by_pr=gh/101 class=BINDING" "$out"
+
+# AV3-09.2 — a foreign ready (non-draft OPEN) PR is a TERMINAL claim.
+out=$(co core/engine.py 2>&1); rc=$?
+assert_eq "AV3-09.2" "foreign ready overlap blocks (exit 2)" "2" "$rc"
+assert_contains "AV3-09.2" "terminal claim emits blocked_by_pr" "blocked_by_pr=gh/102 class=TERMINAL" "$out"
+
+# AV3-09.3 — a branch under our OWN drain namespace is never a foreign claim
+# (closes the re-GENERATE self-deadlock): only own overlap -> non-blocking.
+out=$(co ownpath.py 2>&1); rc=$?
+assert_eq "AV3-09.3" "own-namespace overlap does not block (exit 0)" "0" "$rc"
+assert_contains "AV3-09.3" "own-namespace claim is excluded" "excluded=gh/104" "$out"
+
+# AV3-09.4 — a foreign PR stale beyond 2 business days is ADVISORY, not blocking.
+out=$(co docs/old.md 2>&1); rc=$?
+assert_eq "AV3-09.4" "stale (>2bd) overlap is advisory (exit 0)" "0" "$rc"
+assert_contains "AV3-09.4" "stale claim is advisory" "advisory=gh/103" "$out"
+
+# AV3-09.5 — no shared files -> clean, silent.
+out=$(co unrelated/file.py 2>&1); rc=$?
+assert_eq "AV3-09.5" "no overlap is clean (exit 0)" "0" "$rc"
+assert_eq "AV3-09.5" "no overlap prints nothing" "" "$out"
+
+# AV3-09.6 — D2 eligibility: a claimed Subtask waits until its blocked_by_pr
+# resolves (MERGED/DECLINED/NONE eligible; OPEN/DRAFT ineligible).
+assert_eq "AV3-09.6" "blocked_by MERGED -> eligible (exit 0)" "0" "$(bash "$CO" eligibility --pr-state MERGED >/dev/null 2>&1; echo $?)"
+assert_eq "AV3-09.6" "blocked_by DECLINED -> eligible" "0" "$(bash "$CO" eligibility --pr-state DECLINED >/dev/null 2>&1; echo $?)"
+assert_eq "AV3-09.6" "blocked_by OPEN -> ineligible (exit 2)" "2" "$(bash "$CO" eligibility --pr-state OPEN >/dev/null 2>&1; echo $?)"
+assert_eq "AV3-09.6" "blocked_by DRAFT -> ineligible (exit 2)" "2" "$(bash "$CO" eligibility --pr-state DRAFT >/dev/null 2>&1; echo $?)"
+
+# AV3-09.7 — usage guardrails.
+bash "$CO" --inventory "$SANDBOX/claim_inv.tsv" >/dev/null 2>&1; rc=$?
+assert_eq "AV3-09.7" "no files is usage error 64" "64" "$rc"
+bash "$CO" eligibility --pr-state BOGUS >/dev/null 2>&1; rc=$?
+assert_eq "AV3-09.7" "unknown pr-state is usage error 64" "64" "$rc"
+
+echo "== claim_loss_attribution.sh (AV3-10 serialize-and-replan) =="
+
+CLA="$HERE/claim_loss_attribution.sh"
+
+# AV3-10.1 — the rebase's conflicting hunks intersect the claim-overlap set:
+# the divergence IS a claim collision -> route to D3 re-plan (within budget).
+out=$(bash "$CLA" --overlap-files "api/limiter.py,lib/x.py" --conflict-files "api/limiter.py,core/z.py" 2>&1); rc=$?
+assert_eq "AV3-10.1" "attributed divergence -> REPLAN (exit 0)" "0" "$rc"
+assert_contains "AV3-10.1" "REPLAN cites the colliding files" "REPLAN files=api/limiter.py" "$out"
+
+# AV3-10.2 — disjoint file sets: a genuine planning conflict, not a claim loss ->
+# normal impl-block escalation.
+out=$(bash "$CLA" --overlap-files "api/limiter.py" --conflict-files "core/z.py,other.py" 2>&1); rc=$?
+assert_eq "AV3-10.2" "disjoint divergence -> NOT-ATTRIBUTED (exit 1)" "1" "$rc"
+assert_eq "AV3-10.2" "not-attributed token" "NOT-ATTRIBUTED" "$out"
+
+# AV3-10.3 — no recorded claim overlap -> never attributed to a claim loss.
+out=$(bash "$CLA" --overlap-files "" --conflict-files "api/limiter.py" 2>&1); rc=$?
+assert_eq "AV3-10.3" "no overlap set -> NOT-ATTRIBUTED (exit 1)" "1" "$rc"
+
+# AV3-10.4 — re-plan is BOUNDED at 2 per Subtask; past that, normal escalation.
+out=$(bash "$CLA" --overlap-files "api/limiter.py" --conflict-files "api/limiter.py" --replans-so-far 2 2>&1); rc=$?
+assert_eq "AV3-10.4" "attributed but budget spent -> EXHAUSTED (exit 2)" "2" "$rc"
+assert_contains "AV3-10.4" "exhausted token" "REPLAN-BUDGET-EXHAUSTED" "$out"
+
+# AV3-10.5 — one re-plan already spent (1 < 2) still re-plans.
+out=$(bash "$CLA" --overlap-files "api/limiter.py" --conflict-files "api/limiter.py" --replans-so-far 1 2>&1); rc=$?
+assert_eq "AV3-10.5" "within re-plan budget -> REPLAN (exit 0)" "0" "$rc"
+
+# AV3-10.6 — usage guardrail.
+bash "$CLA" --overlap-files "a" >/dev/null 2>&1; rc=$?
+assert_eq "AV3-10.6" "missing --conflict-files is usage error 64" "64" "$rc"
+
+echo "== audit_behavior_binding.sh (AV3-05 behavior->test binding) =="
+
+ABB="$HERE/audit_behavior_binding.sh"
+BIND_REPO="$SANDBOX/bind-repo"
+git init -q "$BIND_REPO"
+git -C "$BIND_REPO" config user.email selftest@local
+git -C "$BIND_REPO" config user.name selftest
+bindc() { git -C "$BIND_REPO" "$@"; }
+echo base > "$BIND_REPO/f"; bindc add f; bindc commit -qm "chore: base"
+BIND_BASE=$(bindc rev-parse HEAD)
+# RED commits that NAME the bound test (subject or body) — the D6 evidence.
+bindc commit -q --allow-empty -m "test: A1.1 RED — rejects expired lock" -m "adds tests/test_pricing.py::test_rejects_expired_lock"
+bindc commit -q --allow-empty -m "feat: A1.1 GREEN — rejects expired lock"
+bindc commit -q --allow-empty -m "test: A1.2 RED — accepts valid lock (test_accepts_valid_lock)"
+bindc commit -q --allow-empty -m "feat: A1.2 GREEN — accepts valid lock"
+abb() { ( cd "$BIND_REPO" && bash "$ABB" "$@" ); }
+
+cat > "$SANDBOX/cov_ok.md" <<'M'
+## Behavior coverage
+<!-- autopilot:behavior-coverage -->
+- B-pricing-001: tests/test_pricing.py::test_rejects_expired_lock
+- B-pricing-002: tests/test_pricing.py::test_accepts_valid_lock
+M
+# AV3-05.1 — every mapped Behavior is bound to a test that a RED commit names.
+out=$(abb --coverage "$SANDBOX/cov_ok.md" --base "$BIND_BASE" 2>&1); rc=$?
+assert_eq "AV3-05.1" "fully-bound coverage exits 0" "0" "$rc"
+assert_eq "AV3-05.1" "fully-bound coverage prints OK" "OK" "$out"
+
+cat > "$SANDBOX/cov_unbound.md" <<'M'
+- B-pricing-001: tests/test_pricing.py::test_rejects_expired_lock
+- B-pricing-003:
+M
+# AV3-05.2 — a Behavior with no bound test node is unbound-behavior.
+out=$(abb --coverage "$SANDBOX/cov_unbound.md" --base "$BIND_BASE" 2>&1); rc=$?
+assert_eq "AV3-05.2" "unbound Behavior refused" "1" "$rc"
+assert_eq "AV3-05.2" "unbound cites the behavior-id" "[BLOCKED: unbound-behavior] B-pricing-003" "$out"
+
+cat > "$SANDBOX/cov_unproven.md" <<'M'
+- B-pricing-001: tests/test_pricing.py::test_rejects_expired_lock
+- B-pricing-009: tests/test_pricing.py::test_never_written
+M
+# AV3-05.3 — a bound test that no RED commit names is an unproven binding (the
+# implementer's self-report is not trusted; git log is the source of truth).
+out=$(abb --coverage "$SANDBOX/cov_unproven.md" --base "$BIND_BASE" 2>&1); rc=$?
+assert_eq "AV3-05.3" "unproven binding refused" "1" "$rc"
+assert_contains "AV3-05.3" "unproven cites the behavior + test" "[BLOCKED: unproven-binding] B-pricing-009 test_never_written" "$out"
+
+# AV3-05.4 — usage guardrail.
+abb --coverage "$SANDBOX/cov_ok.md" >/dev/null 2>&1; rc=$?
+assert_eq "AV3-05.4" "missing --base is usage error 64" "64" "$rc"
+
+# AV3-05.5 — adversarial round (executor lens): the bound test name must be matched
+# as a WHOLE WORD, not a substring — `test_accepts_valid_lock` must NOT be read as
+# proven when the only RED commit names `test_accepts_valid_lock_v2`.
+BIND_BASE2=$(bindc rev-parse HEAD)
+bindc commit -q --allow-empty -m "test: A2.1 RED — variant" -m "adds tests/test_pricing.py::test_accepts_valid_lock_v2"
+cat > "$SANDBOX/cov_substr.md" <<'M'
+- B-pricing-002: tests/test_pricing.py::test_accepts_valid_lock
+M
+out=$(abb --coverage "$SANDBOX/cov_substr.md" --base "$BIND_BASE2" 2>&1); rc=$?
+assert_eq "AV3-05.5" "substring-only test name is an unproven binding" "1" "$rc"
+assert_contains "AV3-05.5" "whole-word: _v2 does not prove the base name" "unproven-binding" "$out"
+
+echo "== determinism_gate.sh (AV3-12 N=5 flaky gate) =="
+
+DG="$HERE/determinism_gate.sh"
+
+# AV3-12.1 — a deterministic command agrees across all 5 rounds.
+out=$(bash "$DG" --cmd 'echo "2 passed"; exit 0' --random-cmd 'echo "2 passed"; exit 0' 2>/dev/null); rc=$?
+assert_eq "AV3-12.1" "deterministic command exits 0" "0" "$rc"
+assert_contains "AV3-12.1" "deterministic verdict" "DETERMINISTIC (5 rounds)" "$out"
+
+# AV3-12.2 — no gates.test_random -> the order-randomized round is SKIPPED with a
+# LOUD [note] (never silently), and the gate still passes.
+err=$(bash "$DG" --cmd 'echo ok; exit 0' 2>&1 >/dev/null); rc=$?
+assert_eq "AV3-12.2" "missing random-cmd still passes (exit 0)" "0" "$rc"
+assert_contains "AV3-12.2" "skipped-randomization note is loud" "order-randomized round SKIPPED" "$err"
+
+# AV3-12.3 — with a random-cmd, no skip note is emitted.
+err=$(bash "$DG" --cmd 'echo ok; exit 0' --random-cmd 'echo ok; exit 0' 2>&1 >/dev/null)
+assert_not_contains "AV3-12.3" "no skip note when randomization is available" "SKIPPED" "$err"
+
+# AV3-12.4 — a planted-flaky test whose EXIT CODE alternates is caught.
+printf '0' > "$SANDBOX/dg_cnt"
+out=$(bash "$DG" --cmd "n=\$(cat $SANDBOX/dg_cnt); echo \$((n+1))>$SANDBOX/dg_cnt; [ \$((n%2)) -eq 0 ] && exit 0 || exit 1" 2>/dev/null); rc=$?
+assert_eq "AV3-12.4" "exit-code-flaky test blocked (exit 1)" "1" "$rc"
+assert_contains "AV3-12.4" "flaky-test token emitted" "[BLOCKED: flaky-test]" "$out"
+
+# AV3-12.5 — same exit code every round but a DIFFERENT failing test name is
+# caught via the failure fingerprint (the "failure sets" comparison).
+printf '0' > "$SANDBOX/dg_cnt2"
+out=$(bash "$DG" --cmd "n=\$(cat $SANDBOX/dg_cnt2); echo \$((n+1))>$SANDBOX/dg_cnt2; [ \$((n%2)) -eq 0 ] && echo FAILED_test_alpha || echo FAILED_test_beta; exit 0" 2>/dev/null); rc=$?
+assert_eq "AV3-12.5" "failure-set-flaky test blocked (exit 1)" "1" "$rc"
+
+# AV3-12.6 — volatile durations/counts (digits) must NOT false-flag a stable
+# result (else the gate is useless on real runners).
+printf '0' > "$SANDBOX/dg_cnt3"
+out=$(bash "$DG" --cmd "n=\$(cat $SANDBOX/dg_cnt3); echo \$((n+1))>$SANDBOX/dg_cnt3; echo \"2 passed in 0.\${n}s\"; exit 0" 2>/dev/null); rc=$?
+assert_eq "AV3-12.6" "volatile durations do not false-flag (exit 0)" "0" "$rc"
+
+# AV3-12.7 — usage guardrails.
+bash "$DG" >/dev/null 2>&1; rc=$?
+assert_eq "AV3-12.7" "missing --cmd is usage error 64" "64" "$rc"
+bash "$DG" --cmd 'exit 0' --runs 1 >/dev/null 2>&1; rc=$?
+assert_eq "AV3-12.7" "runs < 2 is usage error 64" "64" "$rc"
+
 echo "== secret_get.sh (T25) =="
 
 # T25 — candidate list matches the documented resolver conventions
@@ -1040,10 +1759,10 @@ assert_contains H50 "unrecognised origin names the override knob" "AUTOPILOT_HOS
 ( cd "$GH_REPO_DIR" && bash "$HERE/host.sh" bogus-sub >/dev/null 2>&1 ); rc=$?
 assert_eq H50 "unknown subcommand -> usage 64" "64" "$rc"
 
-echo "== consistency lint (L1-L16) =="
+echo "== consistency lint (L1-L23) =="
 
 if bash "$HERE/lint_consistency.sh" >/dev/null 2>&1; then
-  pass LINT "lint_consistency.sh passes (16 rules)"
+  pass LINT "lint_consistency.sh passes (23 rules)"
 else
   fail LINT "lint_consistency.sh reports violations (run it directly for detail)"
 fi
@@ -1057,6 +1776,85 @@ if bash "$planted_dir/scripts/lint_consistency.sh" >/dev/null 2>&1; then
   fail L16 "L16 did NOT red a planted 'source-of-truth host' line"
 else
   pass L16 "L16 reds planted 'source-of-truth host' framing"
+fi
+
+# L17 must red a planted one-PR-per-Subtask framing (AV3-06 / AV3-16a acceptance):
+# fresh clean copy so the L16 plant above doesn't mask the result.
+planted17="$SANDBOX/planted-lint-17"
+cp -R "$ROOT" "$planted17"
+printf '\nAutopilot opens one PR per Subtask against the host.\n' >> "$planted17/references/loop-safety.md"
+if bash "$planted17/scripts/lint_consistency.sh" >/dev/null 2>&1; then
+  fail L17 "L17 did NOT red a planted 'one PR per Subtask' line"
+else
+  pass L17 "L17 reds planted 'one PR per Subtask' framing"
+fi
+
+# L18 must red an AP-3 allow-list that drops a pinned planner-schema field:
+# fresh copy, strip behavior_ids from the projection, expect the copied lint to red.
+planted18="$SANDBOX/planted-lint-18"
+cp -R "$ROOT" "$planted18"
+grep -v 'behavior_ids:' "$planted18/references/plan-reviewer-projection.md" > "$planted18/references/proj.tmp"
+mv "$planted18/references/proj.tmp" "$planted18/references/plan-reviewer-projection.md"
+if bash "$planted18/scripts/lint_consistency.sh" >/dev/null 2>&1; then
+  fail L18 "L18 did NOT red an AP-3 allow-list missing behavior_ids"
+else
+  pass L18 "L18 reds an AP-3 allow-list that drops behavior_ids"
+fi
+
+# L19 must red a doc that reasserts the retired rolling-tracker-PR framing:
+# fresh copy, plant an active mention, expect the copied lint to red.
+planted19="$SANDBOX/planted-lint-19"
+cp -R "$ROOT" "$planted19"
+printf '\nBookkeeping lands on the rolling tracker PR every fire.\n' >> "$planted19/references/loop-safety.md"
+if bash "$planted19/scripts/lint_consistency.sh" >/dev/null 2>&1; then
+  fail L19 "L19 did NOT red a planted active 'rolling tracker PR' line"
+else
+  pass L19 "L19 reds a planted active 'rolling tracker PR' framing"
+fi
+
+# L20 must red a drain-lifecycle whose Behavior-coverage marker was dropped.
+planted20="$SANDBOX/planted-lint-20"
+cp -R "$ROOT" "$planted20"
+grep -v 'autopilot:behavior-coverage' "$planted20/references/drain-lifecycle.md" > "$planted20/references/dlc.tmp"
+mv "$planted20/references/dlc.tmp" "$planted20/references/drain-lifecycle.md"
+if bash "$planted20/scripts/lint_consistency.sh" >/dev/null 2>&1; then
+  fail L20 "L20 did NOT red a dropped Behavior-coverage marker"
+else
+  pass L20 "L20 reds a dropped Behavior-coverage marker"
+fi
+
+# L21 must red an implementer prompt that drops an anti-flakiness rule.
+planted21="$SANDBOX/planted-lint-21"
+cp -R "$ROOT" "$planted21"
+grep -v 'Faked transport' "$planted21/references/implementer-prompt.md" > "$planted21/references/imp.tmp"
+mv "$planted21/references/imp.tmp" "$planted21/references/implementer-prompt.md"
+if bash "$planted21/scripts/lint_consistency.sh" >/dev/null 2>&1; then
+  fail L21 "L21 did NOT red a dropped anti-flakiness rule"
+else
+  pass L21 "L21 reds a dropped anti-flakiness rule"
+fi
+
+# L22 must red drift between the two vendored ADR-0002 escalation copies:
+# fresh copy, mutate a word inside the implementer's block, expect the lint to red.
+planted22="$SANDBOX/planted-lint-22"
+cp -R "$ROOT" "$planted22"
+sed 's/reject-and-alert/REWORDED-DRIFT/' "$planted22/references/implementer-prompt.md" > "$planted22/references/imp22.tmp"
+mv "$planted22/references/imp22.tmp" "$planted22/references/implementer-prompt.md"
+if bash "$planted22/scripts/lint_consistency.sh" >/dev/null 2>&1; then
+  fail L22 "L22 did NOT red a drifted vendored escalation copy"
+else
+  pass L22 "L22 reds a drifted vendored escalation copy"
+fi
+
+# L23 must red an integration validator that drops the as-built docs rule.
+planted23="$SANDBOX/planted-lint-23"
+cp -R "$ROOT" "$planted23"
+grep -v 'As-built docs are Story deliverables' "$planted23/references/validator-prompts.md" > "$planted23/references/val23.tmp"
+mv "$planted23/references/val23.tmp" "$planted23/references/validator-prompts.md"
+if bash "$planted23/scripts/lint_consistency.sh" >/dev/null 2>&1; then
+  fail L23 "L23 did NOT red a dropped as-built docs validator rule"
+else
+  pass L23 "L23 reds a dropped as-built docs validator rule"
 fi
 
 echo
