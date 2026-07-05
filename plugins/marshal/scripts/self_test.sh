@@ -1,0 +1,355 @@
+#!/usr/bin/env bash
+# self_test.sh — hermetic self-test for the Merge Marshal plugin's deterministic
+# substrate (marshal.sh, claim_overlap.sh, branch_age_watcher.sh) driven end-to-
+# end through a MOCK host backend (mock_host.py via uv, ADR 0015).
+#
+# Ground rules (mirroring autopilot/scripts/self_test.sh):
+#   - Hermetic: everything runs inside a mktemp -d sandbox with local BARE repos
+#     standing in for `origin`. No network, no host API, no credentials, no
+#     writes outside the sandbox.
+#   - Every assertion cites an id. A field-found bug lands here as a failing
+#     assertion before (or with) its fix.
+#   - The pure kernels (claim_overlap, branch_age) run with no external deps.
+#     The loop sections drive the mock host and therefore require uv (ADR 0015);
+#     they are gated on UV_OK and skipped-with-warning if uv is absent.
+#
+# Usage: bash plugins/marshal/scripts/self_test.sh
+# Exit 0 = all assertions pass; non-zero = at least one failure.
+#
+# Portability: bash 3.2 (macOS default) + BSD userland safe.
+
+set -u
+export LC_ALL=C
+
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT="$(cd "$HERE/../../.." && pwd)"   # repo root (has pyproject.toml)
+MARSHAL="$HERE/marshal.sh"
+CLAIM="$HERE/claim_overlap.sh"
+WATCH="$HERE/branch_age_watcher.sh"
+MOCK="$HERE/mock_host.sh"
+TAB="$(printf '\t')"
+
+PASS=0
+FAIL=0
+fail() { echo "FAIL [$1] $2" >&2; FAIL=$((FAIL+1)); }
+pass() { echo "ok   [$1] $2"; PASS=$((PASS+1)); }
+assert_eq()        { if [[ "$3" == "$4" ]]; then pass "$1" "$2"; else fail "$1" "$2 — expected [$3], got [$4]"; fi; }
+assert_contains()  { if grep -qF -- "$3" <<<"$4"; then pass "$1" "$2"; else fail "$1" "$2 — missing [$3] in:\n$4"; fi; }
+assert_not_contains() { if grep -qF -- "$3" <<<"$4"; then fail "$1" "$2 — found forbidden [$3]"; else pass "$1" "$2"; fi; }
+
+SANDBOX="$(mktemp -d)"
+cleanup() { rm -rf "$SANDBOX"; }
+trap cleanup EXIT INT TERM
+
+export GIT_AUTHOR_NAME=selftest GIT_AUTHOR_EMAIL=selftest@local \
+       GIT_COMMITTER_NAME=selftest GIT_COMMITTER_EMAIL=selftest@local
+export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null
+
+# ==============================================================================
+# claim_overlap.sh — the vendored canonical claim-overlap kernel (ADR 0009)
+# ==============================================================================
+echo "== claim_overlap.sh (CO) =="
+
+CLAIMS="$SANDBOX/claims.tsv"
+# PR1: a,b ; PR2: b,c ; PR3: b,d ; plus a duplicate (PR2,b) that must collapse.
+printf 'PR1\ta.py\nPR1\tb.py\nPR2\tb.py\nPR2\tc.py\nPR3\tb.py\nPR3\td.py\nPR2\tb.py\n' > "$CLAIMS"
+
+out="$(bash "$CLAIM" < "$CLAIMS")"
+assert_eq       CO01 "default: b.py contended by 3 distinct claims" "3${TAB}b.py" "$out"
+assert_not_contains CO02 "default: a.py (single claimant) not reported" "a.py" "$out"
+
+out="$(bash "$CLAIM" --threshold 4 < "$CLAIMS")"
+assert_eq       CO03 "threshold above max claimants -> empty" "" "$out"
+
+# Dedup: (PR2,b.py) appears twice but b.py must still count PR2 once (=> 3 total).
+dupout="$(printf 'X\tf\nX\tf\nY\tf\n' | bash "$CLAIM")"
+assert_eq       CO04 "duplicate (claim,file) pair collapses to one claimant" "2${TAB}f" "$dupout"
+
+out="$(bash "$CLAIM" --for PR1 < "$CLAIMS")"
+assert_contains CO05 "--for PR1: b.py collides with PR2" "b.py${TAB}PR2" "$out"
+assert_contains CO05 "--for PR1: b.py collides with PR3" "b.py${TAB}PR3" "$out"
+assert_not_contains CO06 "--for PR1: does not report a self-only file (a.py)" "a.py" "$out"
+assert_not_contains CO07 "--for PR1: never lists self as the other claim" "${TAB}PR1" "$out"
+
+assert_eq       CO08 "empty input -> empty output" "" "$(printf '' | bash "$CLAIM")"
+( printf '' | bash "$CLAIM" >/dev/null 2>&1 ); assert_eq CO09 "empty input exits 0" "0" "$?"
+
+# Determinism: identical bytes across two runs (the byte-identical-vendor lint
+# depends on stable, LC_ALL=C-sorted output).
+r1="$(bash "$CLAIM" < "$CLAIMS")"; r2="$(bash "$CLAIM" < "$CLAIMS")"
+assert_eq       CO10 "output is deterministic across runs" "$r1" "$r2"
+
+( bash "$CLAIM" --bogus < "$CLAIMS" >/dev/null 2>&1 ); assert_eq CO11 "unknown flag -> usage exit 64" "64" "$?"
+
+# ==============================================================================
+# branch_age_watcher.sh — staleness / 48h planning-failure watcher (ADR 0012/0009)
+# ==============================================================================
+echo "== branch_age_watcher.sh (BA) =="
+
+NOW=1000000; H=3600
+AGES="$SANDBOX/ages.tsv"
+printf 'fresh\t%s\nstale\t%s\nboundary\t%s\nfuture\t%s\n' \
+  $((NOW-1*H)) $((NOW-50*H)) $((NOW-48*H)) $((NOW+5*H)) > "$AGES"
+
+out="$(bash "$WATCH" --max-age-hours 48 --now $NOW < "$AGES")"
+assert_contains BA01 "50h branch flagged stale" "50${TAB}stale" "$out"
+assert_contains BA02 "boundary at exactly 48h flagged (>=)" "48${TAB}boundary" "$out"
+assert_not_contains BA03 "1h branch not flagged" "fresh" "$out"
+assert_not_contains BA04 "future-dated commit not flagged" "future" "$out"
+# Ordering: oldest first.
+assert_eq       BA05 "sorted by age desc (stale before boundary)" "50${TAB}stale
+48${TAB}boundary" "$out"
+
+out="$(bash "$WATCH" --max-age-hours 100 --now $NOW < "$AGES")"
+assert_eq       BA06 "no branch past a 100h ceiling -> empty" "" "$out"
+
+# --refs mode over a real repo with one old (2020) and one just-now branch.
+BAREPO="$SANDBOX/barepo"; mkdir -p "$BAREPO"
+( cd "$BAREPO" && git init -q \
+  && GIT_AUTHOR_DATE="2020-01-01T00:00:00Z" GIT_COMMITTER_DATE="2020-01-01T00:00:00Z" git commit -q --allow-empty -m init \
+  && git branch story/old \
+  && git checkout -q -b story/new \
+  && git commit -q --allow-empty -m recent )     # recent = real now, not stale
+out="$( cd "$BAREPO" && bash "$WATCH" --refs 'refs/heads/story/*' --max-age-hours 48 )"
+assert_contains BA07 "--refs flags the 2020 branch" "story/old" "$out"
+assert_not_contains BA08 "--refs does not flag the just-committed branch" "story/new" "$out"
+
+( bash "$WATCH" --now notanint < "$AGES" >/dev/null 2>&1 ); assert_eq BA09 "non-integer --now -> usage exit 64" "64" "$?"
+
+# ==============================================================================
+# marshal.sh — the serial backstop loop, via the MOCK host backend
+# ==============================================================================
+UV_OK=1
+if ! command -v uv >/dev/null 2>&1; then
+  UV_OK=0
+  echo "WARN: uv not found — Marshal loop sections (ML*) SKIPPED (ADR 0015 requires uv)" >&2
+fi
+
+CASE_N=0
+mk_case() {  # -> sets ORIGIN WC STATE ; fresh bare origin + working clone
+  CASE_N=$((CASE_N+1))
+  CASE="$SANDBOX/case$CASE_N"; mkdir -p "$CASE"
+  ORIGIN="$CASE/origin.git"; WC="$CASE/wc"; STATE="$CASE/state.json"
+  git init -q --bare "$ORIGIN"
+  git clone -q "$ORIGIN" "$WC" 2>/dev/null
+}
+main_init() {  # <defs-lines> <calls-lines>  (\n-separated); commits + pushes main
+  ( cd "$WC" && printf '%b' "$1" > defs.txt && printf '%b' "$2" > calls.txt \
+      && git add -A && git commit -qm init && git branch -M main && git push -q -u origin main )
+}
+mk_branch() {  # <name> <defs-lines> <calls-lines>  -- forks LOCAL main
+  # --allow-empty so a branch identical to main still exists as a live claim
+  # (the tests that need a real diff supply differing defs/calls).
+  ( cd "$WC" && git checkout -q main && git checkout -q -b "$1" \
+      && printf '%b' "$2" > defs.txt && printf '%b' "$3" > calls.txt \
+      && git add -A && git commit -q --allow-empty -m "$1" && git push -q -u origin "$1" \
+      && git checkout -q main )
+}
+mk_branch_files() {  # <name> <file=content>...  -- forks LOCAL main with arbitrary files
+  name="$1"; shift
+  ( cd "$WC" && git checkout -q main && git checkout -q -b "$name" \
+      && while (( $# )); do f="${1%%=*}"; c="${1#*=}"; printf '%b' "$c" > "$f"; shift; done \
+      && git add -A && git commit -q --allow-empty -m "$name" && git push -q -u origin "$name" \
+      && git checkout -q main )
+}
+edit_main() {  # <file=content>...  -- advances LOCAL main and pushes
+  ( cd "$WC" && git checkout -q main \
+      && while (( $# )); do f="${1%%=*}"; c="${1#*=}"; printf '%b' "$c" > "$f"; shift; done \
+      && git add -A && git commit -q --allow-empty -m advance && git push -q origin main )
+}
+run_marshal() {  # extra "VAR=val" env args ; echoes marshal stdout+stderr
+  ( cd "$WC" && env "$@" \
+      MARSHAL_HOST="$MOCK" MARSHAL_MOCK_STATE="$STATE" MARSHAL_MOCK_REPO="$ORIGIN" \
+      MARSHAL_UV_PROJECT="$ROOT" \
+      MARSHAL_BUILD_POLL_MAX=1 MARSHAL_BUILD_POLL_INTERVAL=0 \
+      bash "$MARSHAL" 2>&1 )
+}
+state_list() {  # <key: merges|comments> -> comma-joined nums (tolerant of an
+  # untouched seed file the mock never re-saved: default the key to []).
+  uv run --project "$ROOT" python -c 'import json,sys
+s=json.load(open(sys.argv[1]))
+print(",".join(str(x["num"]) for x in s.get(sys.argv[2], [])))' "$STATE" "$1"
+}
+
+if (( UV_OK )); then
+echo "== marshal.sh loop (ML) =="
+
+# ---- ML01/ML02: strict FIFO + one-PR-in-flight ------------------------------
+# Two approved, green, already-current PRs; the lower ready_ts merges, the pass
+# stops (one in flight), the higher-ts PR is untouched this pass.
+mk_case
+main_init 'foo\nbar\nbaz\n' 'foo\n'
+mk_branch story/a 'foo\nbar\nbaz\n' 'foo\nbaz\n'   # calls baz (defined) -> green
+mk_branch story/b 'foo\nbar\nbaz\n' 'foo\nbar\n'   # calls bar (defined) -> green
+cat > "$STATE" <<JSON
+{"trunk":"main","prs":[
+ {"num":10,"branch":"story/a","ready_ts":200,"approval":"APPROVED"},
+ {"num":11,"branch":"story/b","ready_ts":100,"approval":"APPROVED"}]}
+JSON
+out="$(run_marshal)"
+assert_contains ML01 "FIFO order is by ready_ts (11 before 10)" "candidates n=2 order=11,10" "$out"
+assert_contains ML01 "lower-ts PR 11 merges first" "merge pr=11" "$out"
+assert_not_contains ML02 "one PR in flight: PR 10 not merged in the same pass" "merge pr=10" "$out"
+assert_eq       ML02 "only PR 11 recorded merged" "11" "$(state_list merges)"
+
+# ---- ML03: real rebase onto advanced main + compose-verify + merge ----------
+# main advances by APPENDING a def (disjoint from the branch's calls edit), so
+# the branch is NOT already-current and must actually rebase — cleanly.
+mk_case
+main_init 'foo\nbar\n' 'foo\n'
+mk_branch story/c 'foo\nbar\n' 'foo\nbar\n'         # calls bar -> green, edits calls.txt
+# advance main on a disjoint file (defs.txt) so story/c must rebase but won't conflict
+edit_main 'defs.txt=foo\nbar\nqux\n'
+cat > "$STATE" <<JSON
+{"trunk":"main","prs":[{"num":20,"branch":"story/c","ready_ts":100,"approval":"APPROVED"}]}
+JSON
+out="$(run_marshal)"
+assert_contains ML03 "story/c rebases cleanly (not already-current)" "rebase pr=20 result=clean" "$out"
+assert_contains ML03 "compose-verify green on the post-rebase sha" "build pr=20 sha=" "$out"
+assert_contains ML03 "PR 20 merges after clean rebase" "merge pr=20" "$out"
+assert_eq       ML03 "PR 20 recorded merged" "20" "$(state_list merges)"
+
+# ---- ML04: Composition Break — clean rebase, RED composed build -------------
+# main REMOVES a symbol (bar); the branch adds a CALL to bar on a disjoint file
+# edit. Each is green at its own fork point; composed, the call is undefined.
+mk_case
+main_init 'foo\nbar\n' 'foo\n'
+mk_branch story/d 'foo\nbar\n' 'foo\nbar\n'         # branch edits calls.txt (adds bar)
+edit_main 'defs.txt=foo\n'                          # main removes bar (a rename/removal)
+cat > "$STATE" <<JSON
+{"trunk":"main","prs":[{"num":30,"branch":"story/d","ready_ts":100,"approval":"APPROVED"}]}
+JSON
+out="$(run_marshal)"
+assert_contains ML04 "rebase is clean (disjoint files)" "rebase pr=30 result=clean" "$out"
+assert_contains ML04 "composed build is FAILED" "state=FAILED" "$out"
+assert_contains ML04 "kickback reason=build-failed" "kickback pr=30 reason=build-failed" "$out"
+assert_not_contains ML04 "composition break is NOT merged" "merge pr=30" "$out"
+assert_eq       ML04 "a kickback comment was posted to PR 30" "30" "$(state_list comments)"
+assert_eq       ML04 "nothing merged" "" "$(state_list merges)"
+
+# ---- ML05: D7.0 file-budget refuse ------------------------------------------
+# The branch and main both add the SAME 3 files relative to the fork point
+# (overlap = 3 files > 2-file budget) -> refuse before rebasing, kickback, no
+# build, no merge.
+mk_case
+main_init 'foo\n' 'foo\n'
+mk_branch_files story/e 'f1.txt=branch\n' 'f2.txt=branch\n' 'f3.txt=branch\n'
+edit_main 'f1.txt=trunk\n' 'f2.txt=trunk\n' 'f3.txt=trunk\n'
+cat > "$STATE" <<JSON
+{"trunk":"main","prs":[{"num":40,"branch":"story/e","ready_ts":100,"approval":"APPROVED"}]}
+JSON
+out="$(run_marshal)"
+assert_contains ML05 "rebase refused on the file budget" "result=refuse-budget" "$out"
+assert_contains ML05 "overlap is 3 files" "overlap_files=3" "$out"
+assert_contains ML05 "kickback reason=rebase-budget" "kickback pr=40 reason=rebase-budget" "$out"
+assert_not_contains ML05 "budget-refused PR is not built" "build pr=40" "$out"
+assert_eq       ML05 "budget-refused PR is not merged" "" "$(state_list merges)"
+
+# ---- ML06: rebase CONFLICT refuse (within file budget) ----------------------
+# main and branch edit the SAME single file with conflicting hunks: 1 file is
+# within the 2-file budget, so it passes the budget gate but the rebase itself
+# conflicts -> refuse-conflict.
+mk_case
+main_init 'foo\n' 'foo\n'
+mk_branch story/f 'foo\n' 'foo\nBRANCHLINE\n'      # branch edits calls.txt
+edit_main 'calls.txt=foo\nTRUNKLINE\n'             # main edits the same file -> conflict
+cat > "$STATE" <<JSON
+{"trunk":"main","prs":[{"num":50,"branch":"story/f","ready_ts":100,"approval":"APPROVED"}]}
+JSON
+out="$(run_marshal)"
+assert_contains ML06 "rebase refused on a real conflict" "rebase pr=50 result=refuse-conflict" "$out"
+assert_contains ML06 "kickback reason=rebase-conflict" "kickback pr=50 reason=rebase-conflict" "$out"
+assert_eq       ML06 "conflicting PR is not merged" "" "$(state_list merges)"
+
+# ---- ML07: red head evicted, next green merged in the SAME pass --------------
+mk_case
+main_init 'foo\nbar\n' 'foo\n'
+mk_branch story/red   'foo\nbar\n' 'foo\nNOPE\n'   # calls NOPE (undefined) -> red
+mk_branch story/green 'foo\nbar\n' 'foo\nbar\n'    # calls bar -> green
+cat > "$STATE" <<JSON
+{"trunk":"main","prs":[
+ {"num":60,"branch":"story/red","ready_ts":100,"approval":"APPROVED"},
+ {"num":61,"branch":"story/green","ready_ts":200,"approval":"APPROVED"}]}
+JSON
+out="$(run_marshal)"
+assert_contains ML07 "red head is kicked back" "kickback pr=60 reason=build-failed" "$out"
+assert_contains ML07 "next-in-line green PR merges" "merge pr=61" "$out"
+assert_eq       ML07 "only the green PR merged" "61" "$(state_list merges)"
+
+# ---- ML08: INPROGRESS -> wait (never merge an unverified composition) --------
+mk_case
+main_init 'foo\n' 'foo\n'
+mk_branch story/wip 'foo\n' 'foo\n__INPROGRESS__\n'
+cat > "$STATE" <<JSON
+{"trunk":"main","prs":[{"num":70,"branch":"story/wip","ready_ts":100,"approval":"APPROVED"}]}
+JSON
+out="$(run_marshal)"
+assert_contains ML08 "in-flight composed build reported" "state=INPROGRESS" "$out"
+assert_contains ML08 "marshal waits, does not merge" "wait pr=70 state=INPROGRESS" "$out"
+assert_contains ML08 "pass summary records the wait" "done merged=none evicted=0 waited=70" "$out"
+assert_eq       ML08 "nothing merged while building" "" "$(state_list merges)"
+
+# ---- ML09: PENDING approval is excluded from the candidate set --------------
+mk_case
+main_init 'foo\n' 'foo\n'
+mk_branch story/pending 'foo\n' 'foo\n'
+cat > "$STATE" <<JSON
+{"trunk":"main","prs":[{"num":80,"branch":"story/pending","ready_ts":100,"approval":"PENDING"}]}
+JSON
+out="$(run_marshal)"
+assert_contains ML09 "no approved candidates" "candidates n=0 order=none" "$out"
+assert_not_contains ML09 "pending PR is never considered" "consider pr=80" "$out"
+
+# ---- ML10: hotfix pin overrides FIFO + approval; logged to Force Audit -------
+# The pinned PR (90) has a LATER ready_ts than 91 AND is only PENDING; the pin
+# moves it to the head and the human vouches for it. It still must pass the
+# composed build (zero-trust never bypassed).
+mk_case
+main_init 'foo\nbar\n' 'foo\n'
+mk_branch story/hot 'foo\nbar\n' 'foo\nbar\n'      # green
+mk_branch story/norm 'foo\nbar\n' 'foo\nbar\n'     # green, earlier ts, approved
+cat > "$STATE" <<JSON
+{"trunk":"main","prs":[
+ {"num":90,"branch":"story/hot","ready_ts":500,"approval":"PENDING"},
+ {"num":91,"branch":"story/norm","ready_ts":100,"approval":"APPROVED"}]}
+JSON
+AUDIT="$CASE/force-audit.log"
+out="$(run_marshal MARSHAL_HOTFIX_PIN=90 MARSHAL_FORCE_AUDIT_LOG="$AUDIT" MARSHAL_NOW=1700000000 MARSHAL_ACTOR=bailey)"
+assert_contains ML10 "pin moves PR 90 to the head" "candidates n=2 order=90,91" "$out"
+assert_contains ML10 "pinned hotfix merges first" "merge pr=90" "$out"
+assert_eq       ML10 "pinned PR 90 recorded merged (one in flight; 91 waits)" "90" "$(state_list merges)"
+audit_body="$(cat "$AUDIT" 2>/dev/null || true)"
+assert_contains ML10 "Force Audit line written for the pin" "hotfix-pin" "$audit_body"
+assert_contains ML10 "Force Audit records the PR number" "pr=90" "$audit_body"
+assert_contains ML10 "Force Audit records the actor" "actor=bailey" "$audit_body"
+
+# ---- ML11: pin ignored when the pinned PR is not ready -----------------------
+mk_case
+main_init 'foo\n' 'foo\n'
+mk_branch story/only 'foo\n' 'foo\n'
+cat > "$STATE" <<JSON
+{"trunk":"main","prs":[{"num":95,"branch":"story/only","ready_ts":100,"approval":"APPROVED"}]}
+JSON
+AUDIT2="$CASE/force-audit.log"
+out="$(run_marshal MARSHAL_HOTFIX_PIN=999 MARSHAL_FORCE_AUDIT_LOG="$AUDIT2")"
+assert_contains ML11 "pin of a non-ready PR is logged ignored" "pin pr=999 ignored=not-ready" "$out"
+assert_eq       ML11 "no Force Audit line written for an ignored pin" "0" "$([[ -f "$AUDIT2" ]] && wc -l < "$AUDIT2" | tr -d ' ' || echo 0)"
+
+# ---- ML12: empty queue -> clean no-op ---------------------------------------
+mk_case
+main_init 'foo\n' 'foo\n'
+cat > "$STATE" <<JSON
+{"trunk":"main","prs":[]}
+JSON
+out="$(run_marshal)"
+assert_contains ML12 "no candidates" "candidates n=0 order=none" "$out"
+assert_contains ML12 "clean no-op summary" "done merged=none evicted=0 waited=none" "$out"
+
+fi  # UV_OK
+
+# ==============================================================================
+echo
+echo "==============================="
+echo "PASS=$PASS FAIL=$FAIL"
+echo "==============================="
+(( FAIL == 0 ))
