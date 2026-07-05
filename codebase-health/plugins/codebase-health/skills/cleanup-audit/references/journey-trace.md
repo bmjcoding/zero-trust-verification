@@ -14,21 +14,28 @@ findings. Nothing else writes this file.
 
 - **`audit/`-only, idempotent.** Regenerated whole on every run — never merged,
   never appended. Running the same audit twice produces the same file.
-- **Schema-versioned.** `schema_version` is 1; consumers check it before reading
-  anything else.
+- **Schema-versioned.** `schema_version` is **2** (was 1 through v1.4.0; the
+  CH-02 register item bumps it, MS §13.10). Consumers check it before reading
+  anything else. v2 is a **purely additive** bump — it adds journey-level
+  `manifest_journey_id` and step-level `event_name`, both OPTIONAL. A v1 file
+  simply omits them and stays readable; a reader that needs only v1 fields
+  works unchanged against both (the `state.json` schema_version-2 optional-count
+  precedent, `audit-state-and-verify.md`). The audit WRITES v2; missing field ≠
+  corrupt file.
 - **Line numbers are allowed here** — this is a per-run artifact, rebuilt every
   audit. They are still **never** allowed in finding fingerprints
   (`audit-state-and-verify.md`).
 
-## Schema (`schema_version` 1)
+## Schema (`schema_version` 2)
 
 ```json
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "source_run": {"kind": "audit", "date": "2026-07-03", "git_sha": "abc1234"},
   "journeys": [
     {
       "name": "Transfers",
+      "manifest_journey_id": "J-transfers-001",
       "source": "README.md:41",
       "criticality": "CORE",
       "criticality_reason": "README '## Transfers' quickstart; money-movement verbs",
@@ -40,6 +47,7 @@ findings. Nothing else writes this file.
           "path": "src/billing.py",
           "symbol": "transfer_funds",
           "line": 12,
+          "event_name": null,
           "vital_class": "money",
           "emission_grade": "DARK",
           "alert_seam": null,
@@ -51,6 +59,7 @@ findings. Nothing else writes this file.
           "path": "src/billing.py",
           "symbol": "_format_memo",
           "line": 88,
+          "event_name": null,
           "vital_class": null,
           "emission_grade": null,
           "alert_seam": null,
@@ -66,6 +75,20 @@ findings. Nothing else writes this file.
 
 Field notes:
 
+- `manifest_journey_id` **(v2, OPTIONAL — the §12 join key)** — the intended↔
+  discovered backref (MS §12 row 1). `journey-walker` sets it to the manifest
+  `journeys[].id` when a manifest is present AND a confident journey↔journey
+  match exists; `null` otherwise (a fuzzy match is **no join** — MS §12 row 1 —
+  and the §12 comparator falls back to exact `name` match, then says "not
+  covered", never guesses). Absent on a v1 file; absence ≠ corruption.
+- `event_name` **(v2, OPTIONAL — the §12 step join key)** — the discovered
+  emitted event name for the step, giving MS §12 row 2 a real string-equality
+  join key against the manifest `steps[].event_name`. `journey-walker` populates
+  it from the same walk that grades `emission_grade` (the emission it graded IS
+  the event it names), seeded from the `TELEMETRY_RE` candidates; `null` on DARK
+  steps (nothing was emitted, so there is nothing to name) and on non-vital
+  steps. This is why the §12 join reads a real field instead of re-deriving a
+  symbol from `telemetry.txt` (which has no symbol column). Absent on a v1 file.
 - `verdict` — `WORKS` / `BROKEN` / `DEGRADED` / `UNDOCUMENTED-BEHAVIOR`, the
   existing journey-walker vocabulary, unchanged. Verdict and emission grade are
   **separate axes**: a journey can be `WORKS` and still carry DARK vitals.
@@ -109,7 +132,12 @@ findings cap at MED under the 1.4.0 absence-finding gate (`severity-rubric.md`).
 
 Missing file, unparseable JSON, or an unknown `schema_version` all mean the same
 thing: **no trace**. All-or-nothing — never salvage partial journeys from a
-corrupt file (same rule as `state.json`: degrade, never act).
+corrupt file (same rule as `state.json`: degrade, never act). Both
+`schema_version` **1 and 2 are known/supported** (v2 only adds the two optional
+fields above); "unknown" means a version this reader does not recognize (a
+future `> 2`), which degrades to no-trace exactly like a missing file. A v1 file
+is NOT unknown — it parses, its two v2 fields are simply absent (treated as
+`null`), and no journey-scoped facet reads it as corrupt.
 
 - **Say so.** Every consumer that wanted the trace reports the degrade
   explicitly (Not-covered section, downgrade note) — silent truncation is a

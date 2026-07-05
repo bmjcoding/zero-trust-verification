@@ -1,5 +1,56 @@
 # Changelog
 
+## Unreleased — PR Gate + Verification-Manifest integration (register CH-01..CH-10)
+
+The audit tier gains its step-4-checker deltas: a diff-scoped **PR Gate mode**
+and **Verification-Manifest** consumption. All read-only, warn-only, degrade-to-
+less; the 1.4.0 posture and the eight ratchets are untouched. Register:
+`docs/specs/codebase-health-register.md`. Manifest artifacts (validator + schema)
+are CONSUMED, never re-authored (ADR 0001).
+
+- **Manifest ingestion + consumer degrade** (CH-01) — `ingest_manifest.sh` emits a
+  `MODE` token (COMPLETE/INCOMPLETE/ABSENT/SCHEMA-INVALID/UNSUPPORTED) off the
+  vendored `validate_manifest.sh` exit code; the MS §11 degrade table is verbatim
+  (schema-invalid is a defect, never degraded to manifest-less; every non-complete
+  MODE surfaces both manifest facets in Not-covered — no silent skip).
+- **`journeys.json` v2** (CH-02) — additive `manifest_journey_id` (journey) +
+  `event_name` (step), the MS §12 join keys; a v1 file still parses (missing field
+  ≠ corrupt). `references/journey-trace.md` bumped to schema v2.
+- **§12 intended↔discovered comparator** (CH-03) — `manifest_join.sh`/`.py` joins
+  intent to discovery every MS §12 row, full truth tables (OBSERVED/LOG-ONLY/DARK
+  + paged←paged seam lattices, env-collapse, idempotency, criticality drift).
+  Two fingerprint scopes: step `path:symbol:slug` and journey-scoped
+  `<source-no-line>:<name>:slug` (⟨CH-AMEND-A⟩).
+- **PR Gate diff-scoped mode** (CH-04) — `pr_gate.sh` composes the diff surface
+  from the existing positional-BASE_REF `check_new_debt.sh` plus new sibling
+  scripts; never runs a whole-repo walk or writes `journeys.json`; no `--diff`
+  flag added (the arg-parser contract is asserted).
+- **Memory-rot facet, deterministic layer** (CH-05) — `check_memory_rot.sh` flags a
+  deleted symbol still referenced by manifest/journeys/docs/ADRs
+  (`memory-rot-dangling-ref`, ADR-0004 blocking); `lifecycle:withdrawn` tombstones
+  suppress; renames are aliased, not flagged.
+- **Behavior-ID coverage** (CH-06) — `check_behavior_coverage.sh` verifies PR-body
+  `## Behavior coverage` claims against RED-commit + test-node proof (evidence, not
+  self-report); unproven → ADR-0004 blocking; manifest-absent → skip + `[note]`.
+- **SG-8 provenance + main-lineage ID reservation** (CH-07) — `check_provenance.sh`
+  flags manifest single-writer edits from non-spec branches (comment-only,
+  ⟨CH-AMEND-C⟩) and reserves IDs on main's lineage only (⟨MS-AMEND-3⟩).
+- **Config-profile absence-severity** (CH-08) — the join reads
+  `observability.profile` by name, degrades unknown → `default` + `[note]`, and the
+  1.4.0 severity cap holds regardless of profile (a profile never lifts the ceiling).
+- **History checks** (CH-09) — `check_manifest_history.sh`: `spec_hash` recompute
+  (comment-only rot, MS §9), `manifest_revision` monotonicity, and ID
+  reuse/renumber/tombstone-reuse (MS §11 blocking) vs prior main-lineage revisions.
+- **Consistency-lint host + self-test growth** (CH-10) — repo-level
+  `scripts/lint_consistency.sh` (schema byte-identity + the shared `## Behavior
+  coverage` format, one canonical `docs/specs/behavior-coverage-format.md`);
+  self-test 138 → 255 assertions (23 sections; manifest-reading ones `[skip]`
+  loudly without the validator); `pr_gate_expected` register added to
+  `EXPECTED_FINDINGS.yaml`.
+- **uv migration** (ADR 0015) — the plugin's Python (`run_audit.sh`,
+  `check_new_debt.sh`, `self_test.sh`) routes through a uv-first `pyrun`/`PYRUN`
+  helper against a minimal plugin `pyproject.toml`, python3 fallback preserved.
+
 ## 1.4.0 — the test-health & observability release
 
 Driven by five verified gaps: no mechanism audited target test suites for nondeterminism or vacuity (the taxonomy actively exempted tests); a flaky closing test could round a finding up to FIXED; stdout-as-log-channel, missing business-event instrumentation, and missing idempotency guards were invisible; journeys were traced for correctness only; and slop (giant files, clones, commented-out blocks, lying names) taxed the highest-volume maintainer — the coding agent — unmeasured. Accepted spec: `docs/SPEC_1.4.0.md`.
