@@ -203,15 +203,21 @@ with open(sys.argv[1], "w") as f:
 srv.serve_forever()
 PYEOF
 
-# MOCK_OK gates the HTTP-mock-dependent sections. A missing python3 or a bound-
-# but-unreachable server (both observed in locked-down sandboxes) SKIPS those
-# DC-backend HTTP tests rather than aborting the run, so the deterministic
+# MOCK_OK gates the HTTP-mock-dependent sections. A missing uv toolchain or a
+# bound-but-unreachable server (both observed in locked-down sandboxes) SKIPS
+# those DC-backend HTTP tests rather than aborting the run, so the deterministic
 # assertions, the gh-argv-shim GitHub-backend matrix, and the consistency lint
 # always execute. (AV3-15: the GitHub backend has zero dependency on this server.)
+#
+# ADR 0015: the mock server launches through `uv run` (self-bootstrapping Python
+# toolchain), not a bare `python3` — killing the python3-not-on-PATH fragility.
+# The server is stdlib-only, so `--no-project` runs it with no dependency
+# resolution and no CWD sensitivity. uv forwards SIGTERM to its python child, so
+# the EXIT-trap `kill "$SERVER_PID"` still cleans the server up.
 MOCK_OK=1
 PORT=""
-if command -v python3 >/dev/null 2>&1; then
-  python3 "$SANDBOX/mock_server.py" "$SANDBOX/port" 2>/dev/null &
+if command -v uv >/dev/null 2>&1; then
+  uv run --no-project python "$SANDBOX/mock_server.py" "$SANDBOX/port" 2>/dev/null &
   SERVER_PID=$!
   for _ in $(seq 1 50); do [[ -s "$SANDBOX/port" ]] && break; sleep 0.1; done
   PORT="$(cat "$SANDBOX/port" 2>/dev/null || true)"
