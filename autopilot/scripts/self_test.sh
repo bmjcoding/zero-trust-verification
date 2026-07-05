@@ -1267,6 +1267,57 @@ assert_eq "AV3-10.5" "within re-plan budget -> REPLAN (exit 0)" "0" "$rc"
 bash "$CLA" --overlap-files "a" >/dev/null 2>&1; rc=$?
 assert_eq "AV3-10.6" "missing --conflict-files is usage error 64" "64" "$rc"
 
+echo "== audit_behavior_binding.sh (AV3-05 behavior->test binding) =="
+
+ABB="$HERE/audit_behavior_binding.sh"
+BIND_REPO="$SANDBOX/bind-repo"
+git init -q "$BIND_REPO"
+git -C "$BIND_REPO" config user.email selftest@local
+git -C "$BIND_REPO" config user.name selftest
+bindc() { git -C "$BIND_REPO" "$@"; }
+echo base > "$BIND_REPO/f"; bindc add f; bindc commit -qm "chore: base"
+BIND_BASE=$(bindc rev-parse HEAD)
+# RED commits that NAME the bound test (subject or body) — the D6 evidence.
+bindc commit -q --allow-empty -m "test: A1.1 RED — rejects expired lock" -m "adds tests/test_pricing.py::test_rejects_expired_lock"
+bindc commit -q --allow-empty -m "feat: A1.1 GREEN — rejects expired lock"
+bindc commit -q --allow-empty -m "test: A1.2 RED — accepts valid lock (test_accepts_valid_lock)"
+bindc commit -q --allow-empty -m "feat: A1.2 GREEN — accepts valid lock"
+abb() { ( cd "$BIND_REPO" && bash "$ABB" "$@" ); }
+
+cat > "$SANDBOX/cov_ok.md" <<'M'
+## Behavior coverage
+<!-- autopilot:behavior-coverage -->
+- B-pricing-001: tests/test_pricing.py::test_rejects_expired_lock
+- B-pricing-002: tests/test_pricing.py::test_accepts_valid_lock
+M
+# AV3-05.1 — every mapped Behavior is bound to a test that a RED commit names.
+out=$(abb --coverage "$SANDBOX/cov_ok.md" --base "$BIND_BASE" 2>&1); rc=$?
+assert_eq "AV3-05.1" "fully-bound coverage exits 0" "0" "$rc"
+assert_eq "AV3-05.1" "fully-bound coverage prints OK" "OK" "$out"
+
+cat > "$SANDBOX/cov_unbound.md" <<'M'
+- B-pricing-001: tests/test_pricing.py::test_rejects_expired_lock
+- B-pricing-003:
+M
+# AV3-05.2 — a Behavior with no bound test node is unbound-behavior.
+out=$(abb --coverage "$SANDBOX/cov_unbound.md" --base "$BIND_BASE" 2>&1); rc=$?
+assert_eq "AV3-05.2" "unbound Behavior refused" "1" "$rc"
+assert_eq "AV3-05.2" "unbound cites the behavior-id" "[BLOCKED: unbound-behavior] B-pricing-003" "$out"
+
+cat > "$SANDBOX/cov_unproven.md" <<'M'
+- B-pricing-001: tests/test_pricing.py::test_rejects_expired_lock
+- B-pricing-009: tests/test_pricing.py::test_never_written
+M
+# AV3-05.3 — a bound test that no RED commit names is an unproven binding (the
+# implementer's self-report is not trusted; git log is the source of truth).
+out=$(abb --coverage "$SANDBOX/cov_unproven.md" --base "$BIND_BASE" 2>&1); rc=$?
+assert_eq "AV3-05.3" "unproven binding refused" "1" "$rc"
+assert_contains "AV3-05.3" "unproven cites the behavior + test" "[BLOCKED: unproven-binding] B-pricing-009 test_never_written" "$out"
+
+# AV3-05.4 — usage guardrail.
+abb --coverage "$SANDBOX/cov_ok.md" >/dev/null 2>&1; rc=$?
+assert_eq "AV3-05.4" "missing --base is usage error 64" "64" "$rc"
+
 echo "== secret_get.sh (T25) =="
 
 # T25 — candidate list matches the documented resolver conventions
@@ -1577,10 +1628,10 @@ assert_contains H50 "unrecognised origin names the override knob" "AUTOPILOT_HOS
 ( cd "$GH_REPO_DIR" && bash "$HERE/host.sh" bogus-sub >/dev/null 2>&1 ); rc=$?
 assert_eq H50 "unknown subcommand -> usage 64" "64" "$rc"
 
-echo "== consistency lint (L1-L19) =="
+echo "== consistency lint (L1-L20) =="
 
 if bash "$HERE/lint_consistency.sh" >/dev/null 2>&1; then
-  pass LINT "lint_consistency.sh passes (19 rules)"
+  pass LINT "lint_consistency.sh passes (20 rules)"
 else
   fail LINT "lint_consistency.sh reports violations (run it directly for detail)"
 fi
@@ -1628,6 +1679,17 @@ if bash "$planted19/scripts/lint_consistency.sh" >/dev/null 2>&1; then
   fail L19 "L19 did NOT red a planted active 'rolling tracker PR' line"
 else
   pass L19 "L19 reds a planted active 'rolling tracker PR' framing"
+fi
+
+# L20 must red a drain-lifecycle whose Behavior-coverage marker was dropped.
+planted20="$SANDBOX/planted-lint-20"
+cp -R "$ROOT" "$planted20"
+grep -v 'autopilot:behavior-coverage' "$planted20/references/drain-lifecycle.md" > "$planted20/references/dlc.tmp"
+mv "$planted20/references/dlc.tmp" "$planted20/references/drain-lifecycle.md"
+if bash "$planted20/scripts/lint_consistency.sh" >/dev/null 2>&1; then
+  fail L20 "L20 did NOT red a dropped Behavior-coverage marker"
+else
+  pass L20 "L20 reds a dropped Behavior-coverage marker"
 fi
 
 echo
