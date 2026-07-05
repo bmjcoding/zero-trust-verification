@@ -31,9 +31,16 @@ the Spec; task decomposition lives in the runbook; test-ID bindings live downstr
   defense; no raw-text scanning is required or permitted.
 - **Validation layering (normative):** the vendored JSON Schema
   (`schema/verification-manifest/v1.schema.json`) enforces ONLY structure: types, enums,
-  ID regexes (§6), required/optional per §3's table, and `incomplete_fields` non-empty
-  iff `completeness: incomplete`. The §10 completeness rules MUST NOT be schema-enforced —
-  an incomplete manifest is always schema-valid, so a resumed spec-tier session can load it.
+  ID regexes (§6), required/optional per §3's table, `spec_hash` present iff
+  `completeness: complete`, `incomplete_fields` non-empty iff `completeness: incomplete`,
+  and the **absence-when-null** step constraints (§4: when `vital_class` is null,
+  `required_emission`/`alert_seam`/`event_name` MUST be absent). The §10 completeness
+  rules MUST NOT be schema-enforced — an incomplete manifest is always schema-valid, so a
+  resumed spec-tier session can load it. In particular the **presence** conditionals
+  (`alert_seam.default`/`event_name`/`required_emission` required on a non-null vital step;
+  `idempotency` required on a money/external-side-effect step) are completeness rules 1–2,
+  NOT schema constraints — a manifest missing them is *incomplete* (exit 3), never
+  *schema-invalid* (exit 4). (MS-AMEND-4, reconciled with §13.1; see ADR 0014.)
 - **Location & name:** colocated with its Spec as `<spec-basename>.manifest.yaml`.
 - **One Spec → one manifest.** For multi-doc invocations (`--generate @a.md @b.md`):
   IDs (§6) MUST be unique across the union; a union-time collision is
