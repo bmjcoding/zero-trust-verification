@@ -5,7 +5,7 @@ status: accepted
 date: 2026-07-04
 ---
 
-The Verification Manifest validator is built in Python 3 with **ruamel.yaml** (YAML 1.2 core-schema parsing) and **jsonschema** (reference Draft validator), pinned in `requirements-dev.txt` and isolated in a project-local venv. `scripts/validate_manifest.sh` is a thin bash wrapper preserving the suite's shell exit-code contract (0/3/4/5); `scripts/validate_manifest.py` holds the logic so it is unit-testable. The JSON Schema file (`schema/verification-manifest/v1.schema.json`) is the single structural source of truth, validated by jsonschema — no hand-rolled structural checks that could drift from it.
+The Verification Manifest validator is built in Python 3 with **ruamel.yaml** (YAML 1.2 core-schema parsing) and **jsonschema** (reference Draft validator), pinned in `pyproject.toml` + `uv.lock` and run via **uv** (ADR 0015 supersedes the original venv/requirements-dev.txt packaging detail). `scripts/validate_manifest.sh` is a thin bash wrapper preserving the suite's shell exit-code contract (0/3/4/5); `scripts/validate_manifest.py` holds the logic so it is unit-testable. The JSON Schema file (`schema/verification-manifest/v1.schema.json`) is the single structural source of truth, validated by jsonschema — no hand-rolled structural checks that could drift from it.
 
 ## Considered Options
 
