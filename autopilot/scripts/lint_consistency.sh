@@ -224,9 +224,38 @@ grep -q 'gates.test_scoped' "$ROOT/references/drain-lifecycle.md" || { violation
 grep -q '^gates:' "$ROOT/references/runbook-template.md" || { violation L15 "runbook-template.md does not define the gates: block"; l15_bad=1; }
 (( l15_bad == 0 )) && ok L15
 
+# --- L16: the host adapter is the single PR/build surface (ADR 0013, AV3-16b) --
+# The v2.4.0 "Bitbucket DC is the source-of-truth host / gh is NOT a dependency"
+# framing is retired: PR/build ops route through scripts/host.sh, which
+# dispatches to per-host backends. Any doc reasserting the single-host framing,
+# or calling a backend script as THE surface, is a runtime coin-flip.
+l16_bad=0
+# (a) Retired single-host framing must not reappear in the doc set.
+if hits=$(grep_docs 'source-of-truth host|CLI is NOT a dependency'); then
+  violation L16 "retired single-host framing (host adapter is the surface now): $(tr '\n' ' ' <<<"$hits")"
+  l16_bad=1
+fi
+# (b) SKILL.md must name host.sh as the PR/build surface and carry the rewritten
+#     Hard Contract 11 wording.
+grep -q 'scripts/host.sh' "$ROOT/SKILL.md" || { violation L16 "SKILL.md does not reference scripts/host.sh as the PR/build surface"; l16_bad=1; }
+grep -q 'host adapter is the single PR/build surface' "$ROOT/SKILL.md" || { violation L16 "Hard Contract 11 does not carry the host-adapter wording"; l16_bad=1; }
+# (c) Operational PR/build invocations ANYWHERE in the doc set must go through
+#     host.sh, never a backend script directly (Hard Contract 11). Scans the full
+#     DOCS array (SKILL + README + all references) — the whole corpus, not just
+#     the lifecycle files — so a direct call cannot hide in a prompt or the
+#     README. Matches `<backend>.sh <verb>` (invocation form); the reference-index
+#     rows that merely NAME a backend and list its verbs use backticks/colons,
+#     not this form, so they are not false-positived.
+verbs='pr-open|pr-ready|pr-state|pr-comment|pr-merge-strategies|pr-merge|pr-approve|pr-decline|build-status'
+if hits=$(grep -l -E "(bitbucket|github)\.sh ($verbs)" "${DOCS[@]}" 2>/dev/null); then
+  violation L16 "doc calls a backend script directly (use host.sh): $(tr '\n' ' ' <<<"$hits")"
+  l16_bad=1
+fi
+(( l16_bad == 0 )) && ok L16
+
 if (( FAIL == 1 )); then
   echo "lint_consistency: FAIL" >&2
   exit 1
 fi
-echo "lint_consistency: PASS (15 rules)"
+echo "lint_consistency: PASS (16 rules)"
 exit 0

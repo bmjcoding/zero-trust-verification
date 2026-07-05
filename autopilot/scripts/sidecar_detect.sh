@@ -46,7 +46,7 @@ fi
 # 2s connect + 2s overall, retry once, no auth header.
 BODY_TMP=$(mktemp)
 RESP=$(curl -sS --max-time 4 --connect-timeout 2 --retry 1 --retry-delay 1 \
-  "${CA_ARG[@]}" \
+  ${CA_ARG[@]+"${CA_ARG[@]}"} \
   -H 'Accept: text/plain' \
   -o "$BODY_TMP" -w "%{http_code}" \
   "$HEALTH_URL" 2>/dev/null) || RESP="000"
