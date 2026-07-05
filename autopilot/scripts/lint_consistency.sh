@@ -328,9 +328,28 @@ done
 grep -qF 'Anti-flakiness contract' "$l21_val" || { violation L21 "design validator does not route the anti-flakiness contract"; l21_bad=1; }
 (( l21_bad == 0 )) && ok L21
 
+# --- L22: escalation criterion vendored byte-identical (ADR 0002 / AV3-13) ------
+# The ADR 0002 autonomy boundary + MUST-escalate trilist is vendored verbatim
+# into the planner AND implementer prompts (the same block as spec-gen S4). Diff
+# the copies; any drift is a red (a divergent escalation rule is a silent policy
+# fork). Extraction is strictly between the begin/end marker comments.
+l22_bad=0
+extract_vendored() {  # <file> -> text strictly between the vendored markers
+  awk '/vendored:escalation-criterion:begin/{f=1;next} /vendored:escalation-criterion:end/{f=0} f' "$1"
+}
+l22_vp="$(extract_vendored "$ROOT/references/planner-prompt.md")"
+l22_vi="$(extract_vendored "$ROOT/references/implementer-prompt.md")"
+[[ -n "$l22_vp" ]] || { violation L22 "planner-prompt.md is missing the vendored ADR 0002 escalation block"; l22_bad=1; }
+[[ -n "$l22_vi" ]] || { violation L22 "implementer-prompt.md is missing the vendored ADR 0002 escalation block"; l22_bad=1; }
+if [[ -n "$l22_vp" && "$l22_vp" != "$l22_vi" ]]; then
+  violation L22 "vendored escalation block drifted between planner and implementer prompts (ADR 0002 requires byte-identical copies)"
+  l22_bad=1
+fi
+(( l22_bad == 0 )) && ok L22
+
 if (( FAIL == 1 )); then
   echo "lint_consistency: FAIL" >&2
   exit 1
 fi
-echo "lint_consistency: PASS (21 rules)"
+echo "lint_consistency: PASS (22 rules)"
 exit 0

@@ -1671,10 +1671,10 @@ assert_contains H50 "unrecognised origin names the override knob" "AUTOPILOT_HOS
 ( cd "$GH_REPO_DIR" && bash "$HERE/host.sh" bogus-sub >/dev/null 2>&1 ); rc=$?
 assert_eq H50 "unknown subcommand -> usage 64" "64" "$rc"
 
-echo "== consistency lint (L1-L21) =="
+echo "== consistency lint (L1-L22) =="
 
 if bash "$HERE/lint_consistency.sh" >/dev/null 2>&1; then
-  pass LINT "lint_consistency.sh passes (21 rules)"
+  pass LINT "lint_consistency.sh passes (22 rules)"
 else
   fail LINT "lint_consistency.sh reports violations (run it directly for detail)"
 fi
@@ -1744,6 +1744,18 @@ if bash "$planted21/scripts/lint_consistency.sh" >/dev/null 2>&1; then
   fail L21 "L21 did NOT red a dropped anti-flakiness rule"
 else
   pass L21 "L21 reds a dropped anti-flakiness rule"
+fi
+
+# L22 must red drift between the two vendored ADR-0002 escalation copies:
+# fresh copy, mutate a word inside the implementer's block, expect the lint to red.
+planted22="$SANDBOX/planted-lint-22"
+cp -R "$ROOT" "$planted22"
+sed 's/reject-and-alert/REWORDED-DRIFT/' "$planted22/references/implementer-prompt.md" > "$planted22/references/imp22.tmp"
+mv "$planted22/references/imp22.tmp" "$planted22/references/implementer-prompt.md"
+if bash "$planted22/scripts/lint_consistency.sh" >/dev/null 2>&1; then
+  fail L22 "L22 did NOT red a drifted vendored escalation copy"
+else
+  pass L22 "L22 reds a drifted vendored escalation copy"
 fi
 
 echo
