@@ -14,12 +14,38 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SKILL_SCRIPTS="$ROOT/plugins/codebase-health/skills/cleanup-audit/scripts"
 FIXTURE_SRC="$ROOT/test-fixtures/planted"
 
+# ── PR-Gate / manifest wiring (CH-01..CH-10). The Verification-Manifest
+# validator, its schema, and the §13.4 join fixture pair are repo-root
+# artifacts vendored per ADR 0001 — CH items CONSUME them. In this monorepo
+# they sit one level above codebase-health/; a standalone install would vendor
+# them (and set $VALIDATE_MANIFEST). Every manifest-reading section below
+# [skip]s loudly when the validator is absent (blocked-on the spec-gen drain),
+# so this self-test stays green outside the monorepo — never a silent pass.
+REPO_ROOT="$(cd "$ROOT/.." && pwd)"
+VALIDATE_MANIFEST="${VALIDATE_MANIFEST:-$REPO_ROOT/scripts/validate_manifest.sh}"
+export VALIDATE_MANIFEST
+JOIN_FIX="$REPO_ROOT/tests/fixtures/join"          # reference PASS pair (manifest.yaml + journeys.json v2)
+MANIFEST_FIX="$REPO_ROOT/tests/fixtures/manifest"  # shared validator fixture suite (no second schema copy)
+CH_FIX="$ROOT/test-fixtures/pr-gate"               # plugin-local CH fail-variant / history / rot fixtures
+have_validator() { [ -x "$VALIDATE_MANIFEST" ]; }
+
+# uv-first Python (ADR 0015 "everything uv"): a hermetic interpreter with no
+# hand-managed venv. Falls back to python3 (the validate_manifest.sh precedent)
+# so the self-test still runs where uv is absent.
+if command -v uv >/dev/null 2>&1 && [ -f "$REPO_ROOT/pyproject.toml" ]; then
+  PYRUN=(uv run --quiet --project "$REPO_ROOT" python)
+else
+  PYRUN=(python3)
+fi
+
 PASS=0
 FAIL=0
 ok()   { PASS=$((PASS+1)); echo "  ok  - $1"; }
 fail() { FAIL=$((FAIL+1)); echo "  FAIL - $1"; }
 assert_grep()     { if grep -qiE "$2" "$1" 2>/dev/null; then ok "$3"; else fail "$3"; fi; }
 assert_not_grep() { if grep -qiE "$2" "$1" 2>/dev/null; then fail "$3"; else ok "$3"; fi; }
+# assert_py CODE MSG — CODE is Python that exits 0 on pass, non-zero on fail.
+assert_py()       { if "${PYRUN[@]}" -c "$1" >/dev/null 2>&1; then ok "$2"; else fail "$2"; fi; }
 
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
@@ -102,7 +128,7 @@ A paragraph with a pipe | that must stay a paragraph.
 | --- | --- |
 | IL-H1 | HIGH |
 EOF
-python3 "$SKILL_SCRIPTS/render_report.py" "$WORK/report.md" -o "$WORK/report.html" >/dev/null 2>&1
+"${PYRUN[@]}" "$SKILL_SCRIPTS/render_report.py" "$WORK/report.md" -o "$WORK/report.html" >/dev/null 2>&1
 assert_grep "$WORK/report.html" '<h3 id="high-fake-validator[^"]*"><span class="pill high">HIGH</span>' "heading-format finding gets a severity pill"
 assert_grep "$WORK/report.html" '<h3 id="safe-deletion-workflow">Safe Deletion Workflow</h3>' "ordinary 'Safe ...' heading NOT pill-ified"
 assert_grep "$WORK/report.html" '<p>A paragraph with a pipe \|' "pipe-in-prose stays a paragraph"
@@ -126,7 +152,7 @@ if [ "$rc" -eq 1 ]; then ok "--strict exits 1 on new debt (CI gate)"; else fail 
 # hook mode on a TRACKED file: emits hookSpecificOutput JSON (the only channel Claude sees)
 echo '{"tool_input":{"file_path":"new.py"}}' | bash "$SKILL_SCRIPTS/check_new_debt.sh" --hook > hookout.txt 2>&1; rc=$?
 if [ "$rc" -eq 0 ] && grep -q '"hookSpecificOutput"' hookout.txt && grep -q "TODO" hookout.txt; then ok "hook mode (tracked file): additionalContext JSON with the debt"; else fail "hook mode (tracked file): additionalContext JSON [rc=$rc]"; fi
-python3 -c "import json,sys; json.load(open('hookout.txt'))" 2>/dev/null && ok "hook output is valid JSON" || fail "hook output is valid JSON"
+"${PYRUN[@]}" -c "import json,sys; json.load(open('hookout.txt'))" 2>/dev/null && ok "hook output is valid JSON" || fail "hook output is valid JSON"
 # hook mode on an UNTRACKED file (the common 'Claude wrote a new file' case — no diff exists)
 printf '# FIXME: brand new debt\n' > untracked.py
 echo '{"tool_input":{"file_path":"untracked.py"}}' | bash "$SKILL_SCRIPTS/check_new_debt.sh" --hook > hookout2.txt 2>&1; rc=$?
@@ -208,7 +234,7 @@ cat > "$WORK/table.md" <<'EOF'
 | IL-H1 | OPEN | uses `a | b` pipe in code |
 Coverage: 10 of 12 files | 2 skipped.
 EOF
-python3 "$SKILL_SCRIPTS/render_report.py" "$WORK/table.md" -o "$WORK/table.html" >/dev/null 2>&1
+"${PYRUN[@]}" "$SKILL_SCRIPTS/render_report.py" "$WORK/table.md" -o "$WORK/table.html" >/dev/null 2>&1
 assert_grep "$WORK/table.html" 'uses <code>a \| b</code> pipe in code' "backtick-pipe cell kept intact (no truncation)"
 assert_grep "$WORK/table.html" '<p>Coverage: 10 of 12 files \| 2 skipped.</p>' "single-pipe prose after table stays prose"
 assert_grep "$WORK/table.html" '<td><span class="pill high">OPEN</span></td>' "verify-status pill rendered"
@@ -223,7 +249,7 @@ echo '{"files":[],"issues":[]}'
 SHIM
 chmod +x bin/knip
 PATH="$WORK/nodeproj/bin:$PATH" bash "$SKILL_SCRIPTS/run_audit.sh" . > "$WORK/knip.log" 2>&1
-python3 -c "import json; json.load(open('audit/ts_knip.json'))" 2>/dev/null && ok "ts_knip.json is pure JSON" || fail "ts_knip.json is pure JSON"
+"${PYRUN[@]}" -c "import json; json.load(open('audit/ts_knip.json'))" 2>/dev/null && ok "ts_knip.json is pure JSON" || fail "ts_knip.json is pure JSON"
 grep -q "a knip warning" audit/ts_knip.err && ok "knip stderr captured in sidecar .err" || fail "knip stderr captured in sidecar .err"
 
 echo "== 8. shared classifiers + test-health deterministic layer (SPEC_1.4.0 §8) =="
@@ -371,11 +397,11 @@ else
 fi
 assert_not_grep "$GFI" 'node_modules' "X1: vendored files absent from giant_files.txt"
 # ND1 — deterministic per Decision 8: the byte-identical pair in REAL jscpd output
-python3 -c "import json; json.load(open('$DUP'))" 2>/dev/null && ok "dup_jscpd.json is valid JSON (real tool output, normalized)" || fail "dup_jscpd.json is valid JSON (real tool output, normalized)"
+"${PYRUN[@]}" -c "import json; json.load(open('$DUP'))" 2>/dev/null && ok "dup_jscpd.json is valid JSON (real tool output, normalized)" || fail "dup_jscpd.json is valid JSON (real tool output, normalized)"
 assert_grep "$DUP" 'report_email\.py' "ND1: report_email.py present in dup_jscpd.json"
 assert_grep "$DUP" 'report_slack\.py' "ND1: report_slack.py present in dup_jscpd.json (the clone pair)"
 assert_not_grep "$DUP" 'megamodule\.py' "GF1/ND1 precision: varied helper bodies keep megamodule.py out of dup_jscpd.json"
-if python3 - "$WORK/planted/planted_pkg" <<'PY'
+if "${PYRUN[@]}" - "$WORK/planted/planted_pkg" <<'PY'
 import re, sys
 root = sys.argv[1]
 def body(name):
@@ -474,6 +500,546 @@ assert_not_grep "$TXG" '# PLANT' "LOCK TX7 placement: no PLANT annotation line l
 # import-mode-sensitive dotted string (green at time of adding).
 assert_grep     "$WORK/planted/tests/conftest.py" 'sys\.modules' "LOCK N3 QA: frozen_clock patches via sys.modules (import-mode-proof)"
 assert_not_grep "$WORK/planted/tests/conftest.py" '"tests\.test_clock_random\.datetime"' "LOCK N3 QA: import-mode-sensitive dotted-string target gone from conftest"
+
+echo "== 14. CH-01 manifest ingestion + consumer degrade (MS §8/§11/§13.10) =="
+# RED-FIRST: ingest_manifest.sh is net-new — every assertion below fails on two
+# consecutive runs until the script lands. Manifest-reading, so it [skip]s
+# loudly when the vendored validator is absent (blocked-on the spec-gen drain).
+if have_validator; then
+  ING="$SKILL_SCRIPTS/ingest_manifest.sh"
+  # MODE matrix — all five tokens off the shared validator fixture suite (no
+  # second schema copy): valid-complete, incomplete, boolean-in-enum (norway),
+  # unsupported-version, plus a nonexistent path for ABSENT.
+  bash "$ING" "$JOIN_FIX/manifest.yaml"                 > "$WORK/ing_complete.txt"  2>&1
+  bash "$ING" "$MANIFEST_FIX/incomplete.yaml"           > "$WORK/ing_incomp.txt"    2>&1
+  bash "$ING" "$MANIFEST_FIX/norway-enum.yaml"          > "$WORK/ing_invalid.txt"   2>&1
+  bash "$ING" "$MANIFEST_FIX/unsupported-version.yaml"  > "$WORK/ing_unsup.txt"     2>&1
+  bash "$ING" "$WORK/no-such-manifest.yaml"             > "$WORK/ing_absent.txt"     2>&1
+  assert_grep "$WORK/ing_complete.txt" '^MODE=COMPLETE$'       "CH-01: complete manifest -> MODE=COMPLETE (exit 0)"
+  assert_grep "$WORK/ing_incomp.txt"   '^MODE=INCOMPLETE$'     "CH-01: incomplete manifest -> MODE=INCOMPLETE (exit 3)"
+  assert_grep "$WORK/ing_invalid.txt"  '^MODE=SCHEMA-INVALID$' "CH-01: boolean-in-enum manifest -> MODE=SCHEMA-INVALID (exit 4)"
+  assert_grep "$WORK/ing_unsup.txt"    '^MODE=UNSUPPORTED$'    "CH-01: schema_version 2 -> MODE=UNSUPPORTED (exit 5)"
+  assert_grep "$WORK/ing_absent.txt"   '^MODE=ABSENT$'        "CH-01: missing manifest -> MODE=ABSENT"
+  # Degrade table (invariant 4 + 6): absent/incomplete/unsupported each surface
+  # BOTH manifest facets in Not-covered — never a silent skip.
+  assert_grep "$WORK/ing_absent.txt" '\[not-covered\] manifest-coverage .§12 join.' "CH-01 degrade: absent -> coverage facet in Not-covered (no silent skip)"
+  assert_grep "$WORK/ing_absent.txt" '\[not-covered\] rot-vs-manifest'              "CH-01 degrade: absent -> rot-vs-manifest facet in Not-covered"
+  assert_grep "$WORK/ing_incomp.txt" '\[not-covered\] manifest-coverage'            "CH-01 degrade: incomplete -> coverage facet in Not-covered (as-absent, MS §11)"
+  assert_grep "$WORK/ing_unsup.txt"  'MANIFEST-UNSUPPORTED: schema_version 2 > supported 1' "CH-01: unsupported names the offending version (MS §8)"
+  # MS §11: schema-invalid is a DEFECT, never degraded to manifest-less — it
+  # reports the schema error and is NOT treated as an absence.
+  assert_grep     "$WORK/ing_invalid.txt" 'schema-invalid|not one of'  "CH-01: schema-invalid reports the schema error (not a silent skip)"
+  assert_grep     "$WORK/ing_invalid.txt" 'DEFECT, not an absence'     "CH-01: schema-invalid framed as defect, never degraded to manifest-less (MS §11)"
+  assert_not_grep "$WORK/ing_invalid.txt" 'heuristic journeys'         "CH-01: schema-invalid does NOT take the absent/manifest-less degrade path"
+  # Reporter posture (loop-safety invariant 1): ingest never blocks — exit 0 on
+  # every MODE, including schema-invalid and unsupported.
+  bash "$ING" "$MANIFEST_FIX/norway-enum.yaml" >/dev/null 2>&1; rc=$?
+  if [ "$rc" -eq 0 ]; then ok "CH-01: ingest exits 0 on schema-invalid (reporter, never blocks — invariant 1)"; else fail "CH-01: ingest exits 0 on schema-invalid [rc=$rc]"; fi
+else
+  echo "  [skip] validate_manifest.sh absent — CH-01 manifest-ingestion checks skipped (blocked-on the spec-gen validator drain)"
+fi
+
+echo "== 15. CH-02 journeys.json v2: manifest_journey_id + step event_name (MS §12/§13.10) =="
+# Both fields are OPTIONAL and additive: a v2 file carries them, a v1 file omits
+# them and STILL parses (missing field != corrupt). The reference v2 half is the
+# repo-root §13.4 join pair; the v1 half is a plugin-local fixture.
+V2J="$JOIN_FIX/journeys.json"
+V1J="$CH_FIX/journeys.v1.json"
+assert_py "import json,sys; d=json.load(open('$V2J')); sys.exit(0 if d.get('schema_version')==2 else 1)" "CH-02: v2 journeys.json parses (schema_version==2)"
+assert_py "import json,sys; d=json.load(open('$V1J')); sys.exit(0 if d.get('schema_version')==1 else 1)" "CH-02: v1 journeys.json still parses (missing field != corrupt, degrade rule)"
+# v2 journey carries the backref; a vital v2 step carries event_name.
+assert_py "import json,sys; j=json.load(open('$V2J'))['journeys'][0]; sys.exit(0 if j.get('manifest_journey_id') else 1)" "CH-02: v2 journey carries manifest_journey_id backref"
+assert_py "import json,sys; s=json.load(open('$V2J'))['journeys'][0]['steps'][0]; sys.exit(0 if s.get('event_name') and s.get('vital_class') else 1)" "CH-02: v2 vital step carries event_name (real §12 row-2 join key)"
+# additive proof: the v1 file has NEITHER new field.
+assert_not_grep "$V1J" 'manifest_journey_id' "CH-02: v1 fixture omits manifest_journey_id (additive, not required)"
+assert_not_grep "$V1J" 'event_name'          "CH-02: v1 fixture omits step event_name (additive, not required)"
+# journey-trace.md schema doc bumped to v2 with both optional fields documented.
+JT="$SKILL_SCRIPTS/../references/journey-trace.md"
+assert_grep "$JT" 'schema_version.* 2'      "CH-02: journey-trace.md schema documented as v2"
+assert_grep "$JT" 'manifest_journey_id'     "CH-02: journey-trace.md documents manifest_journey_id (journey-level)"
+assert_grep "$JT" 'event_name'              "CH-02: journey-trace.md documents step event_name"
+# the §13.4 backref points at an EXISTING manifest journeys[].id (not a dangling ref).
+if have_validator; then
+  MJID="$("${PYRUN[@]}" -c "import json; print(json.load(open('$V2J'))['journeys'][0]['manifest_journey_id'])" 2>/dev/null)"
+  if [ -n "$MJID" ] && grep -qE "id:[[:space:]]*$MJID\b" "$JOIN_FIX/manifest.yaml"; then
+    ok "CH-02: v2 backref ($MJID) points at an existing manifest journeys[].id (§13.4 pair)"
+  else
+    fail "CH-02: v2 backref points at an existing manifest journeys[].id (§13.4 pair) [mjid=$MJID]"
+  fi
+else
+  echo "  [skip] validate_manifest.sh absent — CH-02 §13.4-pair backref check skipped"
+fi
+
+echo "== 16. CH-03 §12 intended↔discovered comparator — every row, full truth tables (MS §12) =="
+# RED-FIRST: manifest_join.sh/.py are net-new. Manifest-reading + YAML, so this
+# [skip]s loudly without the vendored validator/toolchain (blocked-on the drain).
+if have_validator; then
+  JOINSH="$SKILL_SCRIPTS/manifest_join.sh"
+  MREF="$JOIN_FIX/manifest.yaml"; JREF="$JOIN_FIX/journeys.json"
+  # helper: run the join into $WORK/join.out (extra args after journeys, e.g. --env=prod)
+  JOIN() { if [ -n "${3:-}" ]; then bash "$JOINSH" "$1" "$2" "$3" > "$WORK/join.out" 2>&1; else bash "$JOINSH" "$1" "$2" > "$WORK/join.out" 2>&1; fi; }
+  # helper: assert a ROW <kind> has verdict <verdict>
+  row_is()  { if grep -qE "^ROW $1 $2\b" "$WORK/join.out"; then ok "$3"; else fail "$3 [got: $(grep -E "^ROW $1 " "$WORK/join.out" | head -1)]"; fi; }
+  # helper: mutate the reference discovered journeys.json (exposes j=journey, s=step0)
+  mut() { "${PYRUN[@]}" -c "import json; d=json.load(open('$JREF')); j=d['journeys'][0]; s=j['steps'][0]; $1; json.dump(d,open('$2','w'))"; }
+
+  # manifest intent variants via portable single-line scalar swaps (no in-place sed).
+  sed 's/required_emission: OBSERVED/required_emission: LOG-ONLY/' "$MREF" > "$WORK/m_logonly.yaml"
+  sed 's/default: paged/default: dashboard-only/'                  "$MREF" > "$WORK/m_seamdash.yaml"
+  sed 's/default: paged/default: none/'                            "$MREF" > "$WORK/m_seamnone.yaml"
+
+  # ── reference pair: every row PASSes ──────────────────────────────────────
+  JOIN "$MREF" "$JREF"
+  row_is journey-backref PASS "CH-03 backref: exact manifest_journey_id match -> PASS"
+  row_is criticality     PASS "CH-03 criticality: declared CORE == derived CORE -> PASS"
+  row_is emission        PASS "CH-03 emission(OBSERVED): grade OBSERVED -> PASS"
+  row_is seam            PASS "CH-03 seam(paged): discovered paged -> PASS"
+  row_is idempotency     PASS "CH-03 idempotency(required): guard present -> PASS"
+  assert_grep "$WORK/join.out" '^ROW compensation NOTE' "CH-03 compensation: informational NOTE (no pass/fail)"
+  # CH-AMEND-A fingerprint scopes: step rows path:symbol; journey rows source(no line):name
+  assert_grep "$WORK/join.out" 'ROW emission .*fpsrc=app/payments\.py:capture:manifest-emission-drift'                "CH-03 CH-AMEND-A: step row uses path:symbol fingerprint"
+  assert_grep "$WORK/join.out" 'ROW criticality .*fpsrc=app/payments\.py:Payment capture:manifest-criticality-drift'  "CH-03 CH-AMEND-A: journey row uses <source-no-line>:<name> fingerprint (line stripped)"
+  assert_not_grep "$WORK/join.out" 'fpsrc=app/payments\.py:12'  "CH-03 CH-AMEND-A: no line numbers leak into any fingerprint (audit-state-and-verify.md)"
+
+  # ── emission lattice (rows 3+4): intent OBSERVED / LOG-ONLY × {OBSERVED,LOG-ONLY,DARK}
+  mut "s['emission_grade']='LOG-ONLY'" "$WORK/j.json"; JOIN "$MREF" "$WORK/j.json"; row_is emission FAIL "CH-03 emission(OBSERVED): grade LOG-ONLY -> FAIL"
+  mut "s['emission_grade']='DARK'"     "$WORK/j.json"; JOIN "$MREF" "$WORK/j.json"; row_is emission FAIL "CH-03 emission(OBSERVED): grade DARK -> FAIL"
+  mut "s['emission_grade']='OBSERVED'" "$WORK/j.json"; JOIN "$WORK/m_logonly.yaml" "$WORK/j.json"; row_is emission PASS "CH-03 emission(LOG-ONLY): grade OBSERVED -> PASS"
+  mut "s['emission_grade']='LOG-ONLY'" "$WORK/j.json"; JOIN "$WORK/m_logonly.yaml" "$WORK/j.json"; row_is emission PASS "CH-03 emission(LOG-ONLY): grade LOG-ONLY -> PASS"
+  mut "s['emission_grade']='DARK'"     "$WORK/j.json"; JOIN "$WORK/m_logonly.yaml" "$WORK/j.json"; row_is emission FAIL "CH-03 emission(LOG-ONLY): grade DARK -> FAIL (DARK never satisfies)"
+  # emission severity: DARK on a traced CORE money path -> HIGH (severity-rubric 1.4.0 amendment)
+  mut "s['emission_grade']='DARK'"     "$WORK/j.json"; JOIN "$MREF" "$WORK/j.json"
+  assert_grep "$WORK/join.out" '^ROW emission FAIL sev=HIGH' "CH-03 emission severity: DARK on traced CORE money path -> HIGH"
+
+  # ── seam lattice (row 5) ──────────────────────────────────────────────────
+  mut "s['alert_seam']='dashboard-only'" "$WORK/j.json"; JOIN "$MREF" "$WORK/j.json"; row_is seam FAIL "CH-03 seam(paged): discovered dashboard-only -> FAIL"
+  mut "s['alert_seam']='unknown'"        "$WORK/j.json"; JOIN "$MREF" "$WORK/j.json"; row_is seam NEEDS-VERIFICATION "CH-03 seam(paged): discovered unknown -> NEEDS-VERIFICATION (not a violation)"
+  mut "s['alert_seam']='paged'"          "$WORK/j.json"; JOIN "$WORK/m_seamdash.yaml" "$WORK/j.json"; row_is seam PASS "CH-03 seam(dashboard-only): discovered paged -> PASS (dashboard-only<-paged)"
+  mut "s['alert_seam']='dashboard-only'" "$WORK/j.json"; JOIN "$WORK/m_seamdash.yaml" "$WORK/j.json"; row_is seam PASS "CH-03 seam(dashboard-only): discovered dashboard-only -> PASS"
+  mut "s['alert_seam']='paged'"          "$WORK/j.json"; JOIN "$WORK/m_seamnone.yaml" "$WORK/j.json"; row_is seam PASS "CH-03 seam(none): discovered paged -> PASS (none<-anything)"
+  mut "s['alert_seam']='unknown'"        "$WORK/j.json"; JOIN "$WORK/m_seamnone.yaml" "$WORK/j.json"; row_is seam PASS "CH-03 seam(none): discovered unknown -> PASS (unknown satisfies only intent none)"
+  # env selection: env-keyed intent map collapses to the audited-env key
+  mut "s['alert_seam']='dashboard-only'" "$WORK/j.json"
+  JOIN "$CH_FIX/manifest.seam-env.yaml" "$WORK/j.json" "--env=prod";    row_is seam PASS "CH-03 seam env-collapse: --env=prod picks 'none' -> PASS against dashboard-only"
+  JOIN "$CH_FIX/manifest.seam-env.yaml" "$WORK/j.json" "--env=default"; row_is seam FAIL "CH-03 seam env-collapse: --env=default picks 'paged' -> FAIL against dashboard-only"
+
+  # ── idempotency lattice (row 6) ───────────────────────────────────────────
+  mut "s['duplicate_guard']='absent'" "$WORK/j.json"; JOIN "$MREF" "$WORK/j.json"; row_is idempotency FAIL "CH-03 idempotency(required): guard absent -> FAIL"
+  assert_grep "$WORK/join.out" '^ROW idempotency FAIL sev=HIGH' "CH-03 idempotency severity: absent on traced CORE money write -> HIGH (ADR-0004 blocking class)"
+  mut "s['duplicate_guard']='n/a'"    "$WORK/j.json"; JOIN "$MREF" "$WORK/j.json"; row_is idempotency NEEDS-VERIFICATION "CH-03 idempotency(required): guard n/a -> NEEDS-VERIFICATION"
+
+  # ── criticality drift (row 8) ─────────────────────────────────────────────
+  mut "j['criticality']='SUPPORTING'" "$WORK/j.json"; JOIN "$MREF" "$WORK/j.json"; row_is criticality FAIL "CH-03 criticality: declared CORE != derived SUPPORTING -> FAIL (MED needs-verification)"
+  assert_grep "$WORK/join.out" '^ROW criticality FAIL sev=MED' "CH-03 criticality drift caps at MED needs-verification"
+
+  # ── backref fallbacks (row 1) + no-join not-covered ───────────────────────
+  mut "j['manifest_journey_id']=None" "$WORK/j.json"; JOIN "$MREF" "$WORK/j.json"
+  assert_grep "$WORK/join.out" 'backref=NAME' "CH-03 backref: absent id falls back to exact name match -> NAME"
+  row_is journey-backref PASS "CH-03 backref: name-fallback still joins -> PASS"
+  mut "j['manifest_journey_id']=None; j['name']='Totally Different Journey'" "$WORK/j.json"; JOIN "$MREF" "$WORK/j.json"
+  row_is journey-backref NO-JOIN "CH-03 backref: absent id + non-matching name -> NO-JOIN"
+  assert_grep     "$WORK/join.out" '\[not-covered\] journey' "CH-03 no-join: emits a Not-covered line (invariant 6)"
+  assert_not_grep "$WORK/join.out" '^ROW criticality FAIL'   "CH-03 no-join: does NOT emit a false criticality drift finding"
+
+  # ── event_name step join (row 2): non-matching discovered event -> not-covered
+  mut "s['event_name']='some.other.event'" "$WORK/j.json"; JOIN "$MREF" "$WORK/j.json"
+  assert_grep "$WORK/join.out" 'STEP pay.captured match=NONE'                "CH-03 step-join: manifest event_name with no discovered emitter -> match=NONE"
+  assert_grep "$WORK/join.out" "\[not-covered\] step event_name 'pay.captured'" "CH-03 step-join: unmatched step is Not-covered, not a false drift finding"
+else
+  echo "  [skip] validate_manifest.sh absent — CH-03 §12 comparator truth tables skipped (blocked-on the spec-gen validator drain)"
+fi
+
+echo "== 17. CH-08 config-profile awareness for absence-severity (ADR 0006) =="
+# The profile is a bare NAME string; the deterministic layer reads the name and
+# degrades unknown -> default. It NEVER lifts the severity ceiling — the 1.4.0
+# absence-severity cap holds regardless of profile (question floor, not ceiling).
+if have_validator; then
+  JOINSH="$SKILL_SCRIPTS/manifest_join.sh"; MREF="$JOIN_FIX/manifest.yaml"; JREF="$JOIN_FIX/journeys.json"
+  # payments (recognized) is read by name off the reference manifest.
+  bash "$JOINSH" "$MREF" "$JREF" > "$WORK/prof_known.out" 2>&1
+  assert_grep "$WORK/prof_known.out" '^PROFILE payments recognized' "CH-08: comparator reads the profile name ('payments' recognized)"
+  # unknown profile -> default + loud [note], no crash, no silent default.
+  sed 's/profile: payments/profile: acme-nonexistent/' "$MREF" > "$WORK/m_unkprof.yaml"
+  bash "$JOINSH" "$WORK/m_unkprof.yaml" "$JREF" > "$WORK/prof_unknown.out" 2>&1
+  assert_grep "$WORK/prof_unknown.out" '^PROFILE acme-nonexistent unknown->default' "CH-08: unknown profile degrades to default"
+  assert_grep "$WORK/prof_unknown.out" "\[note\] observability.profile 'acme-nonexistent' not recognized" "CH-08: unknown profile emits a loud [note] (no silent default)"
+  assert_grep "$WORK/prof_unknown.out" '^ROW '  "CH-08: unknown profile does NOT crash — rows still emitted"
+  # cap-holds: a DARK emission on an UNtraced (derived-SUPPORTING) step caps at
+  # MED even under the payments profile — the profile cannot push an untraced
+  # absence above the 1.4.0 rubric gate. (The SAME step on a traced CORE money
+  # path is HIGH, asserted in CH-03 — proving it is the trace, never the profile,
+  # that authorizes HIGH.)
+  "${PYRUN[@]}" -c "import json; d=json.load(open('$JREF')); j=d['journeys'][0]; j['criticality']='SUPPORTING'; j['steps'][0]['emission_grade']='DARK'; json.dump(d,open('$WORK/j_untraced.json','w'))"
+  bash "$JOINSH" "$MREF" "$WORK/j_untraced.json" > "$WORK/cap.out" 2>&1
+  assert_grep     "$WORK/cap.out" '^ROW emission FAIL sev=MED'  "CH-08 cap: DARK on an untraced step under the payments profile stays MED"
+  assert_not_grep "$WORK/cap.out" '^ROW emission FAIL sev=HIGH' "CH-08 cap: the profile cannot lift an untraced absence to HIGH (1.4.0 rubric gate holds)"
+else
+  echo "  [skip] validate_manifest.sh absent — CH-08 profile-awareness checks skipped (blocked-on the spec-gen validator drain)"
+fi
+
+echo "== 18. CH-04 PR Gate diff-scoped mode (ADR 0003; MS §13.10) =="
+# git fixture (section-5 precedent): base commit + a diff introducing a marker.
+# pr_gate over the base must FIRE the per-diff siblings on the positional
+# BASE_REF, must NOT write journeys.json, and must NOT trigger a whole-repo walk.
+PRG="$WORK/prg"; mkdir -p "$PRG"
+( cd "$PRG"
+  git init -q && git -c user.email=t@t -c user.name=t commit -q --allow-empty -m base
+  printf 'def f():\n    return 1\n' > mod.py
+  git add mod.py && git -c user.email=t@t -c user.name=t commit -qm add-mod
+  printf '# TODO: finish the thing\ndef g():\n    return None\n' >> mod.py
+  git add mod.py && git -c user.email=t@t -c user.name=t commit -qm add-debt )
+BASECOMMIT="$(cd "$PRG" && git rev-parse HEAD~1)"
+( cd "$PRG" && bash "$SKILL_SCRIPTS/pr_gate.sh" "$BASECOMMIT" ) > "$WORK/prg.out" 2>&1
+assert_grep "$WORK/prg.out" 'PR Gate — diff-scoped mode' "CH-04: pr_gate announces diff-scoped mode"
+assert_grep "$WORK/prg.out" 'TODO: finish the thing'     "CH-04: per-diff sibling (check_new_debt.sh) fires on the positional BASE_REF"
+# whole-repo facets NOT invoked: no journeys.json written anywhere under the target
+if [ -z "$(find "$PRG" -name journeys.json 2>/dev/null)" ]; then
+  ok "CH-04: no journeys.json written in diff mode (whole-repo walk not triggered)"
+else
+  fail "CH-04: no journeys.json written in diff mode"
+fi
+assert_grep "$WORK/prg.out" 'journeys.json is never written here'                    "CH-04: pr_gate states it never writes journeys.json (ADR 0003 point 2)"
+assert_grep "$WORK/prg.out" '\[not-covered\] rot-vs-journeys: no prior journeys.json' "CH-04 degrade: missing prior journeys.json -> loud Not-covered (never full-walks)"
+assert_grep "$WORK/prg.out" '\[not-covered\] manifest-coverage .§12 join.: no manifest' "CH-04 degrade: missing manifest -> loud Not-covered"
+# --diff is NOT a recognized flag on check_new_debt.sh (arg-parser contract): the
+# token is swallowed as BASE and fails to resolve — never a silent clean pass.
+( cd "$PRG" && bash "$SKILL_SCRIPTS/check_new_debt.sh" --diff ) > "$WORK/diffflag.out" 2>&1; rc=$?
+if [ "$rc" -eq 1 ] && grep -q "cannot resolve base ref '--diff'" "$WORK/diffflag.out"; then
+  ok "CH-04: --diff is NOT a recognized flag on check_new_debt.sh (swallowed as BASE — arg-parser contract protected)"
+else
+  fail "CH-04: --diff must be swallowed as BASE and fail to resolve (no --diff flag added) [rc=$rc]"
+fi
+
+echo "== 19. CH-05 memory-rot facet — deterministic layer (ADR 0003 point 1; ADR 0004) =="
+# git fixture: a base defining symbols that memory (ADR + journeys + manifest)
+# references, then a diff deleting/moving them. The deterministic layer flags a
+# dangling ref, suppresses a tombstone, and aliases a rename.
+ROT="$WORK/rot"; mkdir -p "$ROT"
+( cd "$ROT"
+  git init -q && git config user.email t@t && git config user.name t
+  mkdir -p docs/adr src
+  printf 'def transfer_funds(a, b):\n    return a + b\n\ndef keep_me():\n    return 1\n\ndef orphan_helper():\n    return 9\n' > src/billing.py
+  printf 'def test_legacy_capture():\n    assert True\n' > src/legacy_test.py
+  printf '# ADR 0001: money movement\ntransfer_funds is the money-movement entrypoint.\n' > docs/adr/0001-x.md
+  printf '{ "schema_version": 2, "journeys": [ {"name":"Transfers","steps":[{"path":"src/billing.py","symbol":"transfer_funds","vital_class":"money"}]} ] }\n' > journeys.json
+  cat > manifest.yaml <<'YAML'
+schema_version: 1
+manifest_revision: 1
+behaviors:
+  - id: B-legacy-001
+    title: "Legacy capture"
+    lifecycle: withdrawn
+    withdrawn_reason: "capture path removed in favor of the new flow"
+    test_name_hint: "test_legacy_capture"
+    given: "x"
+    when: "y"
+    then: "z"
+YAML
+  git add -A && git commit -qm base
+  # the change: delete transfer_funds (rot), delete the tombstoned test (suppress),
+  # delete orphan_helper (clean — nothing references it), move keep_me (rename).
+  printf 'def only_left():\n    return 2\n' > src/billing.py
+  printf 'def keep_me():\n    return 1\n' > src/util.py
+  rm src/legacy_test.py
+  git add -A && git commit -qm change )
+RBASE="$(cd "$ROT" && git rev-parse HEAD~1)"
+( cd "$ROT" && bash "$SKILL_SCRIPTS/check_memory_rot.sh" "$RBASE" --manifest manifest.yaml --journeys journeys.json ) > "$WORK/rot.out" 2>&1
+assert_grep     "$WORK/rot.out" "\[FINDING blocking\] memory-rot-dangling-ref: 'transfer_funds'" "CH-05: deleted symbol still referenced by manifest/journeys/ADR -> memory-rot-dangling-ref (blocking)"
+assert_grep     "$WORK/rot.out" "fpsrc=src/billing\.py:transfer_funds:memory-rot-dangling-ref"    "CH-05: finding carries a path:symbol:slug fingerprint (no line number)"
+assert_grep     "$WORK/rot.out" "rot-suppressed tombstone. 'test_legacy_capture'"                 "CH-05: lifecycle:withdrawn tombstone suppresses the rot finding (MS §6)"
+assert_not_grep "$WORK/rot.out" "memory-rot-dangling-ref: 'test_legacy_capture'"                  "CH-05: tombstoned deletion emits NO dangling-ref finding"
+assert_grep     "$WORK/rot.out" "rot-suppressed alias. rename: 'keep_me'"                         "CH-05: renamed/moved symbol is aliased (git-follow/symbol-grep), not flagged"
+assert_not_grep "$WORK/rot.out" "memory-rot-dangling-ref: 'keep_me'"                              "CH-05: renamed symbol emits NO dangling-ref finding (rename is not closure)"
+assert_not_grep "$WORK/rot.out" "memory-rot-dangling-ref: 'orphan_helper'"                        "CH-05: cleanly-deleted unreferenced symbol emits NO finding (precision)"
+
+echo "== 20. CH-06 behavior-ID coverage — claimed vs proven (MS §13.11; ADR 0004) =="
+# git fixture: a RED commit proves B-pay-001; a real test node proves B-pay-002;
+# B-pay-003 is claimed but has neither -> the ADR-0004 blocking finding.
+BCOV="$WORK/bcov"; mkdir -p "$BCOV"
+( cd "$BCOV"
+  git init -q && git config user.email t@t && git config user.name t
+  git commit -q --allow-empty -m base
+  mkdir -p tests
+  printf 'def test_capture_is_idempotent():\n    assert True\n' > tests/test_capture.py
+  git add -A && git commit -qm "RED B-pay-001 test_capture_is_idempotent: failing before impl"
+  printf 'def test_refund_once():\n    assert True\n' > tests/test_refund.py
+  git add -A && git commit -qm "add refund test node for B-pay-002" )
+BCBASE="$(cd "$BCOV" && git rev-parse HEAD~2)"
+cat > "$BCOV/manifest.yaml" <<'YAML'
+schema_version: 1
+behaviors:
+  - id: B-pay-001
+  - id: B-pay-002
+  - id: B-pay-003
+YAML
+cat > "$BCOV/pr_mixed.md" <<'MD'
+# PR
+## Behavior coverage
+- B-pay-001: tests/test_capture.py::test_capture_is_idempotent
+- B-pay-002: tests/test_refund.py::test_refund_once
+- B-pay-003: tests/test_missing.py::test_never_written
+MD
+cat > "$BCOV/pr_clean.md" <<'MD'
+# PR
+## Behavior coverage
+- B-pay-001: tests/test_capture.py::test_capture_is_idempotent
+- B-pay-002: tests/test_refund.py::test_refund_once
+MD
+( cd "$BCOV" && bash "$SKILL_SCRIPTS/check_behavior_coverage.sh" manifest.yaml pr_mixed.md "$BCBASE" ) > "$WORK/bcov_mixed.out" 2>&1; rc=$?
+assert_grep "$WORK/bcov_mixed.out" '\[coverage\] B-pay-001 proven via RED-commit'       "CH-06: RED commit in range proves a claimed behavior"
+assert_grep "$WORK/bcov_mixed.out" '\[coverage\] B-pay-002 proven via test-node'        "CH-06: an existing test node proves a claimed behavior"
+assert_grep "$WORK/bcov_mixed.out" '\[FINDING blocking\] behavior-claimed-unproven: behavior B-pay-003' "CH-06: claimed-but-unproven behavior -> ADR-0004 blocking finding"
+if [ "$rc" -eq 1 ]; then ok "CH-06: unproven claim yields a blocking exit (deterministic, may gate)"; else fail "CH-06: unproven claim yields a blocking exit [rc=$rc]"; fi
+( cd "$BCOV" && bash "$SKILL_SCRIPTS/check_behavior_coverage.sh" manifest.yaml pr_clean.md "$BCBASE" ) > "$WORK/bcov_clean.out" 2>&1; rc=$?
+if [ "$rc" -eq 0 ]; then ok "CH-06: every claim proven -> clean pass (exit 0)"; else fail "CH-06: every claim proven -> clean pass [rc=$rc]"; fi
+assert_not_grep "$WORK/bcov_clean.out" 'FINDING blocking' "CH-06: no blocking finding when every claimed behavior is proven"
+# degrade: manifest absent -> skip + loud [note], never blocks a manifest-less PR
+( cd "$BCOV" && bash "$SKILL_SCRIPTS/check_behavior_coverage.sh" /no/such/manifest.yaml pr_mixed.md "$BCBASE" ) > "$WORK/bcov_nomani.out" 2>&1; rc=$?
+assert_grep "$WORK/bcov_nomani.out" '\[note\] no manifest' "CH-06 degrade: manifest absent -> loud [note] (MS §11)"
+if [ "$rc" -eq 0 ]; then ok "CH-06 degrade: manifest-absent never blocks (exit 0)"; else fail "CH-06 degrade: manifest-absent never blocks [rc=$rc]"; fi
+
+echo "== 21. CH-07 SG-8 provenance + main-lineage ID reservation (spec-gen SG-8; MS §6) =="
+# git fixture: main seeds the manifest (reserving B-main-001); a never-merged
+# branch hand-edits confirmation/completeness and adds B-branch-001.
+PROV="$WORK/prov"; mkdir -p "$PROV"
+( cd "$PROV"
+  git init -q -b main && git config user.email t@t && git config user.name t
+  cat > manifest.yaml <<'YAML'
+schema_version: 1
+manifest_revision: 1
+completeness: incomplete
+behaviors:
+  - id: B-main-001
+    confirmation: proposed
+YAML
+  git add -A && git commit -qm "main: seed manifest"
+  git checkout -q -b feature/hand-edit
+  cat > manifest.yaml <<'YAML'
+schema_version: 1
+manifest_revision: 2
+completeness: complete
+behaviors:
+  - id: B-main-001
+    confirmation: confirmed
+  - id: B-branch-001
+    confirmation: proposed
+YAML
+  git add -A && git commit -qm "hand-edit manifest confirmation/completeness" )
+PMAIN="$(cd "$PROV" && git rev-parse main)"
+# non-spec branch -> provenance finding (comment-only, CH-AMEND-C)
+( cd "$PROV" && bash "$SKILL_SCRIPTS/check_provenance.sh" "$PMAIN" "feature/hand-edit" --manifest manifest.yaml --main-ref "$PMAIN" ) > "$WORK/prov_nonspec.out" 2>&1; rc=$?
+assert_grep "$WORK/prov_nonspec.out" '\[FINDING comment-only\] sg8-provenance-hand-edit'      "CH-07: manifest single-writer edit from a non-spec branch -> provenance finding"
+assert_grep "$WORK/prov_nonspec.out" 'COMMENT-ONLY .⟨CH-AMEND-C⟩'                              "CH-07: provenance finding ships comment-only (CH-AMEND-C, not silently promoted to blocking)"
+if [ "$rc" -eq 0 ]; then ok "CH-07: comment-only provenance never blocks (exit 0)"; else fail "CH-07: comment-only provenance never blocks [rc=$rc]"; fi
+# spec-session branch -> clean (the authorized single writer)
+( cd "$PROV" && bash "$SKILL_SCRIPTS/check_provenance.sh" "$PMAIN" "spec/payments" --manifest manifest.yaml --main-ref "$PMAIN" ) > "$WORK/prov_spec.out" 2>&1
+assert_grep     "$WORK/prov_spec.out" '\[clean\] provenance'          "CH-07: same edit from a spec-session branch -> clean (MS §7 authorized writer)"
+assert_not_grep "$WORK/prov_spec.out" 'FINDING'                       "CH-07: spec-session edit emits no provenance finding"
+# main-lineage reservation: main IDs reserved; never-merged-branch IDs not reserved
+assert_grep "$WORK/prov_nonspec.out" '\[reserved\] B-main-001'        "CH-07: an ID on main's lineage IS reserved (MS §6)"
+assert_grep "$WORK/prov_nonspec.out" '\[not-reserved\] B-branch-001'  "CH-07: an ID only on a never-merged branch is NOT reserved (⟨MS-AMEND-3⟩)"
+
+echo "== 22. CH-09 spec_hash · manifest_revision monotonicity · ID reuse/renumber (MS §9/§11/§13.11) =="
+# git-init inline fixture (section-5 precedent): a base rev-2 manifest on a
+# lineage + a committed spec whose bytes hash to spec.spec_hash. Each check runs
+# the current (working-tree) manifest against `git show <base>:manifest`.
+sha256_of() { if command -v sha256sum >/dev/null 2>&1; then sha256sum; else shasum -a 256; fi | cut -d' ' -f1; }
+HIST="$WORK/hist"; mkdir -p "$HIST"
+SPEC_LINE='Payment capture spec.'
+HHASH="sha256:$(printf '%s\n' "$SPEC_LINE" | sha256_of)"
+write_manifest() { cat > "$HIST/manifest.yaml"; }  # reads heredoc from stdin
+( cd "$HIST"
+  git init -q -b main && git config user.email t@t && git config user.name t
+  printf '%s\n' "$SPEC_LINE" > payments.md )
+cat > "$HIST/manifest.yaml" <<YAML
+schema_version: 1
+manifest_revision: 2
+completeness: complete
+spec:
+  path: payments.md
+  title: "Payment capture"
+  spec_hash: "$HHASH"
+behaviors:
+  - id: B-pay-001
+    title: "Captures once"
+    lifecycle: active
+  - id: B-pay-002
+    title: "Refunds once"
+    lifecycle: active
+  - id: B-pay-003
+    title: "Legacy path"
+    lifecycle: withdrawn
+    withdrawn_reason: "retired"
+YAML
+( cd "$HIST" && git add -A && git commit -qm "base rev2" )
+HBASE="$(cd "$HIST" && git rev-parse HEAD)"
+hist_run() { ( cd "$HIST" && bash "$SKILL_SCRIPTS/check_manifest_history.sh" manifest.yaml "$HBASE" ) > "$WORK/hist.out" 2>&1; hrc=$?; }
+
+# clean counterpart: identical manifest -> every check clean, exit 0
+hist_run
+assert_grep "$WORK/hist.out" '\[clean\] spec_hash'          "CH-09 clean: recomputed spec_hash matches (complete manifest)"
+assert_grep "$WORK/hist.out" '\[clean\] manifest_revision'  "CH-09 clean: revision monotonic"
+assert_grep "$WORK/hist.out" '\[clean\] id reuse/renumber'  "CH-09 clean: no ID reuse/renumber/tombstone-reuse"
+if [ "$hrc" -eq 0 ]; then ok "CH-09 clean: no blocking finding (exit 0)"; else fail "CH-09 clean exit 0 [rc=$hrc]"; fi
+# the recompute matches the CANONICAL `git show :<path> | sha256sum` definition
+CANON="sha256:$(cd "$HIST" && git show :payments.md | sha256_of)"
+RECOMP="$(grep -oE 'recomputed sha256:[0-9a-f]{64}' "$WORK/hist.out" | sed 's/recomputed //')"
+if [ "$RECOMP" = "$CANON" ]; then ok "CH-09: recompute equals canonical git show :<path> | sha256sum (byte-for-byte, shared definition)"; else fail "CH-09: recompute matches canonical byte-hash [recomp=$RECOMP canon=$CANON]"; fi
+
+# spec_hash-mismatch: edit the committed spec, keep the declared hash -> comment-only rot (does NOT gate)
+( cd "$HIST" && printf '%s\n' "$SPEC_LINE EDITED" > payments.md && git add payments.md )
+hist_run
+assert_grep "$WORK/hist.out" '\[FINDING comment-only\] spec-hash-rot' "CH-09: edited Spec + unchanged spec_hash -> spec-hash-rot (comment-only, MS §9)"
+if [ "$hrc" -eq 0 ]; then ok "CH-09: spec-hash-rot is comment-only — does NOT gate (exit 0)"; else fail "CH-09: spec-hash-rot must not gate [rc=$hrc]"; fi
+( cd "$HIST" && git checkout -q payments.md )
+
+# monotonicity: content change, revision NOT bumped -> finding
+write_manifest <<YAML
+schema_version: 1
+manifest_revision: 2
+completeness: complete
+spec:
+  path: payments.md
+  title: "Payment capture"
+  spec_hash: "$HHASH"
+behaviors:
+  - id: B-pay-001
+    title: "Captures once"
+    lifecycle: active
+  - id: B-pay-002
+    title: "Refunds twice"
+    lifecycle: active
+  - id: B-pay-003
+    title: "Legacy path"
+    lifecycle: withdrawn
+    withdrawn_reason: "retired"
+YAML
+hist_run
+assert_grep "$WORK/hist.out" 'manifest-revision-non-monotonic' "CH-09: content change without a revision bump -> non-monotonic finding"
+
+# ID-reuse: same ID bound to a different entry (rev bumped to isolate) -> blocking
+write_manifest <<YAML
+schema_version: 1
+manifest_revision: 3
+completeness: complete
+spec:
+  path: payments.md
+  title: "Payment capture"
+  spec_hash: "$HHASH"
+behaviors:
+  - id: B-pay-001
+    title: "A completely different behavior"
+    lifecycle: active
+  - id: B-pay-002
+    title: "Refunds once"
+    lifecycle: active
+  - id: B-pay-003
+    title: "Legacy path"
+    lifecycle: withdrawn
+    withdrawn_reason: "retired"
+YAML
+hist_run
+assert_grep "$WORK/hist.out" '\[FINDING blocking\] id-reuse: B-pay-001' "CH-09: ID reused for a different entry -> blocking (MS §11)"
+if [ "$hrc" -eq 1 ]; then ok "CH-09: ID-reuse gates (blocking exit 1)"; else fail "CH-09: ID-reuse must gate [rc=$hrc]"; fi
+
+# renumber: same entry, new ID -> blocking
+write_manifest <<YAML
+schema_version: 1
+manifest_revision: 3
+completeness: complete
+spec:
+  path: payments.md
+  title: "Payment capture"
+  spec_hash: "$HHASH"
+behaviors:
+  - id: B-pay-001
+    title: "Captures once"
+    lifecycle: active
+  - id: B-pay-050
+    title: "Refunds once"
+    lifecycle: active
+  - id: B-pay-003
+    title: "Legacy path"
+    lifecycle: withdrawn
+    withdrawn_reason: "retired"
+YAML
+hist_run
+assert_grep "$WORK/hist.out" "\[FINDING blocking\] id-renumber: entry 'Refunds once' renumbered B-pay-002 -> B-pay-050" "CH-09: entry renumbered -> blocking (MS §11)"
+
+# tombstone-reuse: a withdrawn ID resurrected -> blocking (reserved forever)
+write_manifest <<YAML
+schema_version: 1
+manifest_revision: 3
+completeness: complete
+spec:
+  path: payments.md
+  title: "Payment capture"
+  spec_hash: "$HHASH"
+behaviors:
+  - id: B-pay-001
+    title: "Captures once"
+    lifecycle: active
+  - id: B-pay-002
+    title: "Refunds once"
+    lifecycle: active
+  - id: B-pay-003
+    title: "A brand new behavior on a reused id"
+    lifecycle: active
+YAML
+hist_run
+assert_grep "$WORK/hist.out" '\[FINDING blocking\] id-tombstone-reuse: B-pay-003' "CH-09: reusing a tombstoned (withdrawn) ID -> blocking (MS §6, reserved forever)"
+
+# incomplete manifest: spec_hash check skipped (⟨MS-AMEND-1⟩)
+write_manifest <<YAML
+schema_version: 1
+manifest_revision: 3
+completeness: incomplete
+incomplete_fields: ["spec.spec_hash"]
+spec:
+  path: payments.md
+  title: "Payment capture"
+behaviors:
+  - id: B-pay-001
+    title: "Captures once"
+    lifecycle: active
+  - id: B-pay-002
+    title: "Refunds once"
+    lifecycle: active
+  - id: B-pay-003
+    title: "Legacy path"
+    lifecycle: withdrawn
+    withdrawn_reason: "retired"
+YAML
+hist_run
+assert_grep "$WORK/hist.out" 'MS-AMEND-1' "CH-09: incomplete manifest -> spec_hash check skipped (⟨MS-AMEND-1⟩)"
+
+echo "== 23. CH-10 consistency-lint host + uv migration (1.4.0 house rules) =="
+# Repo-level cross-plugin lint (MS §13.3 vendoring host): schema byte-identity +
+# the shared `## Behavior coverage` format. [skip]s outside the monorepo.
+LINT="$REPO_ROOT/scripts/lint_consistency.sh"
+if [ -x "$LINT" ]; then
+  bash "$LINT" > "$WORK/lint.out" 2>&1; rc=$?
+  if [ "$rc" -eq 0 ]; then ok "CH-10: repo-level lint_consistency.sh passes (schema byte-identity + behavior-coverage format)"; else fail "CH-10: repo-level lint passes [rc=$rc]"; fi
+  assert_grep "$WORK/lint.out" '\[V1\].*schema'                   "CH-10: V1 covers the vendored manifest schema copy (ADR 0001)"
+  assert_grep "$WORK/lint.out" '\[V2\].*behavior-coverage format' "CH-10: V2 covers the shared ## Behavior coverage format (CH-06)"
+  # the byte-identity rule has TEETH: a drifted vendored copy is caught.
+  DR="$WORK/lintroot"; mkdir -p "$DR/schema/verification-manifest" "$DR/plugins/x/schema/verification-manifest"
+  cp "$REPO_ROOT/schema/verification-manifest/v1.schema.json" "$DR/schema/verification-manifest/v1.schema.json"
+  { cat "$REPO_ROOT/schema/verification-manifest/v1.schema.json"; echo '  // drifted byte'; } > "$DR/plugins/x/schema/verification-manifest/v1.schema.json"
+  LINT_ROOT="$DR" bash "$LINT" > "$WORK/lint_drift.out" 2>&1; rc=$?
+  assert_grep "$WORK/lint_drift.out" 'LINT-FAIL \[V1\].*DRIFTED' "CH-10: lint catches a drifted vendored schema copy (byte-identity has teeth)"
+  if [ "$rc" -ne 0 ]; then ok "CH-10: lint exits non-zero on drift (a gate that would actually block)"; else fail "CH-10: lint must exit non-zero on drift [rc=$rc]"; fi
+else
+  echo "  [skip] repo-level scripts/lint_consistency.sh absent (standalone install) — CH-10 cross-plugin lint checks skipped"
+fi
+# the canonical behavior-coverage format doc is the ONE source both plugins vendor.
+assert_grep "$REPO_ROOT/docs/specs/behavior-coverage-format.md" 'behavior-id.: .test-path.::.test-node' "CH-10: canonical ## Behavior coverage format pinned in one doc (CH-06 producer+consumer)"
+# uv migration (ADR 0015): the plugin's Python routes through pyrun/uv, not bare python3.
+assert_grep     "$SKILL_SCRIPTS/py_run.sh"         'uv run'    "CH-10 uv: py_run.sh defines the uv-first runner (ADR 0015)"
+assert_grep     "$SKILL_SCRIPTS/run_audit.sh"      'pyrun '    "CH-10 uv: run_audit.sh jscpd-normalize routed through pyrun"
+assert_grep     "$SKILL_SCRIPTS/check_new_debt.sh" 'pyrun '    "CH-10 uv: check_new_debt.sh hook-JSON routed through pyrun"
+assert_not_grep "$SKILL_SCRIPTS/run_audit.sh"      'python3 -c' "CH-10 uv: no bare 'python3 -c' left in run_audit.sh"
+assert_not_grep "$SKILL_SCRIPTS/check_new_debt.sh" 'python3 -c' "CH-10 uv: no bare 'python3 -c' left in check_new_debt.sh"
 
 echo
 echo "== self-test: $PASS passed, $FAIL failed =="

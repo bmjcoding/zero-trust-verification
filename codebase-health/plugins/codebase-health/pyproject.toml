@@ -1,0 +1,15 @@
+[project]
+name = "codebase-health"
+version = "1.4.0"
+description = "codebase-health audit plugin — deterministic-substrate Python (stdlib only; routed through uv per ADR 0015)"
+requires-python = ">=3.10"
+# The plugin's own Python (render_report.py, the jscpd-normalize and hook-JSON
+# one-liners) is STDLIB-ONLY by design — no third-party deps. This minimal
+# project exists so `uv run --project <plugin>` gives a hermetic interpreter
+# without a hand-managed venv and WITHOUT syncing the target repo's dependencies
+# (ADR 0015 "everything uv"). The §12 manifest join needs ruamel.yaml and routes
+# through the repo-root project instead (that dep lives with the vendored validator).
+dependencies = []
+
+[tool.uv]
+package = false
