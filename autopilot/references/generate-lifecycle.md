@@ -4,6 +4,32 @@
 **Loading-preamble reminder.** Every step below honours the delegation contract in `SKILL.md` §"Loading preamble" and Hard Contract §10: orchestrator dispatches subagents; direct tool use is limited to tracker/runbook Read/Edit, short-output git, and skill scripts. `--yolo`, `--jira`, `--consolidate=auto`, `--slug=`, `--merge`, `--overwrite`, and `--force` do NOT relax the delegation contract. Before any tool call, name the subagent you are about to dispatch.
 
 
+## Step G0 — Mode inference (ADR 0008 / AV3-01)
+
+
+Before G1, decide the GENERATE *shape* from the input's companion Verification Manifest. Locate `<spec-basename>.manifest.yaml` next to each input doc; if present, validate it with the **manifest validator** (the spec-tier's single-file `validate_manifest.sh`, vendored per ADR 0001; exit codes 0 complete · 3 incomplete · 4 schema-invalid · 5 unsupported) and capture the exit code. For multi-doc invocations also run autopilot's own `scripts/validate_manifest.sh --union` (AV3-03) first. Then run:
+
+
+```bash
+bash ${SKILL_DIR}/scripts/detect_input_mode.sh \
+  --intent generate [--manifest <path>] [--validator-exit <n>] [--yolo]
+# -> MODE=STRAIGHT_THROUGH | GENERATE_PAUSE | GENERATE_YOLO
+#    | REFUSE-MANIFEST-INVALID | REFUSE-MANIFEST-UNSUPPORTED
+```
+
+
+| MODE | Meaning | G8 behavior |
+|---|---|---|
+| `STRAIGHT_THROUGH` | valid + complete manifest (validator exit 0) | run the drain immediately, no review pause, no flag — the manifest is the vetting (ADR 0008) |
+| `GENERATE_PAUSE` | bare markdown, or incomplete manifest (exit 3 — consumable by nothing but a resumed spec session, MS §11) | default review path — write artifacts, print summary, exit |
+| `GENERATE_YOLO` | the manifest-less `--yolo` override | skip review, arm the drain, and append a `## Force Audit` entry (AP-11) |
+| `REFUSE-MANIFEST-INVALID` | validator exit 4 (schema-invalid) | refuse; report the schema error; NEVER degrade to manifest-less (MS §11); `--yolo` cannot bypass |
+| `REFUSE-MANIFEST-UNSUPPORTED` | validator exit 5 (`schema_version` > supported) | refuse `[MANIFEST-UNSUPPORTED]` |
+
+
+`--drain`/`--resume` intents map straight to `DRAIN`/`RESUME` (unchanged). For multi-doc invocations, run the union validation (G4, AV3-03) before deciding `STRAIGHT_THROUGH`.
+
+
 ## Step G1 — Pre-flight
 
 
