@@ -343,6 +343,21 @@ For `kind: docs | config`: expect exactly one commit of the appropriate type (`d
 Failure dispatch matches Step D5 (typed BLOCKED, increment `consecutive_impl_blocks`).
 
 
+### D6.3 — Behavior-ID → test binding audit (MS §13.9 / AV3-05)
+
+
+Manifest-backed drains only (a Subtask with `behavior_ids[]`). Build the `## Behavior coverage` mapping (Behavior ID → the pytest-style test node IDs that cover it) and verify it against the git log — the implementer's self-report is not the source of truth:
+
+
+```bash
+bash ${SKILL_DIR}/scripts/audit_behavior_binding.sh --coverage <coverage-file> --base <prev_pushed_sha-or-origin/<trunk>>
+# OK exit 0 · [BLOCKED: unbound-behavior] <B-id> · [BLOCKED: unproven-binding] <B-id> <test>
+```
+
+
+Every mapped Behavior must have ≥1 bound test node (`unbound-behavior` otherwise), and each bound test's function name must be NAMED in a `test: ... RED` commit in the Subtask's range (`unproven-binding` otherwise — a coverage claim with no RED evidence). Failure dispatch matches D5 (typed `[BLOCKED]` (impl)). The verified mapping feeds D7.3's PR-body section and D7.4's tracker mirror (consumed by the PR Gate per MS §13.11).
+
+
 ## Step D7 — Pre-push rebase + commit + PR
 
 
@@ -403,7 +418,16 @@ Under `branching.no_force_push: false` the delta was already committed directly 
    bash ${SKILL_DIR}/scripts/host.sh pr-open --draft \
      --title "<story-title>" --src autopilot/<slug>/<story-id> --dest <base-branch> --body-file <body-file>
    ```
-   `host.sh` dispatches to the detected backend (Hard Contract 11 — never call a backend directly). Dest = the rebase base from D7.0. Body file = Summary + Test plan + per-Subtask TDD sequence + Checklist. On a DC server that predates draft PRs the backend applies the `[DRAFT]`-title-prefix fallback transparently (`AUTOPILOT_BITBUCKET_DRAFT_MODE`, HD03/HD05/HD07).
+   `host.sh` dispatches to the detected backend (Hard Contract 11 — never call a backend directly). Dest = the rebase base from D7.0. Body file = Summary + Test plan + per-Subtask TDD sequence + Checklist + (manifest-backed drains) the **`## Behavior coverage`** section. On a DC server that predates draft PRs the backend applies the `[DRAFT]`-title-prefix fallback transparently (`AUTOPILOT_BITBUCKET_DRAFT_MODE`, HD03/HD05/HD07).
+
+   **`## Behavior coverage` (MS §13.9 / AV3-05).** The Story PR body carries the D6.3-verified Behavior-ID → test-node-ID mapping in a grep-able, marker-delimited block so the PR Gate (MS §13.11) can parse it:
+
+   ```markdown
+   ## Behavior coverage
+   <!-- autopilot:behavior-coverage -->
+   - B-pricing-001: tests/test_pricing.py::test_rejects_expired_lock
+   - B-pricing-002: tests/test_pricing.py::test_a, tests/test_pricing.py::test_b
+   ```
 2. **A later Subtask of a Story whose draft PR already exists** → the push in D7.2 already updated the PR; append a `host.sh pr-comment` "Subtask `<id>` landed" note. Do NOT open a second PR.
 3. **This Subtask completes the Story** (after it goes `[x] Done`, ALL of the Story's Subtasks are `[x] Done` — checked by set membership, never by position) → flip the draft to ready-for-review: `bash ${SKILL_DIR}/scripts/host.sh pr-ready --num <story-pr-number>`. A Story PR that still has any `[ ]` or `[BLOCKED]` Subtask stays draft. (The ready-flip is also reached from the D7.5 green path and the D1.4 external-merge path — wherever the Subtask that closes the Story transitions to Done.)
 
@@ -414,7 +438,7 @@ Under `branching.no_force_push: true` with a non-empty D7.1a fold, the PR body A
 Under `branching.single_branch_single_pr: true`, the coarser collapse still applies: D7.3 opens ONE PR on the first successful Subtask of the whole drain; subsequent Subtasks push to the same branch and update the existing PR via `host.sh pr-comment`.
 
 
-**Step D7.4 — Tracker update.** Set `in_progress.pr_number = <num>` (the Story PR — the same number for every Subtask of the Story), `in_progress.awaiting_ci = true`, `in_progress.pushed_at = <iso8601>`, `in_progress.pushed_sha = <HEAD sha just pushed>` (consumed by D7.5's `ci_check.sh --sha`), `in_progress.ci_check_count = 0`, `last_heartbeat_at = <now>`. Also record the Story's `last_pushed_sha = pushed_sha` on the Story's tracker entry: the NEXT Subtask of this Story reads it as its `prev_pushed_sha` (the D6.2 audit base — AV3-06). The Story's first Subtask has no predecessor, so its audit base is `origin/<trunk>`.
+**Step D7.4 — Tracker update.** Set `in_progress.pr_number = <num>` (the Story PR — the same number for every Subtask of the Story), `in_progress.awaiting_ci = true`, `in_progress.pushed_at = <iso8601>`, `in_progress.pushed_sha = <HEAD sha just pushed>` (consumed by D7.5's `ci_check.sh --sha`), `in_progress.ci_check_count = 0`, `last_heartbeat_at = <now>`. Also record the Story's `last_pushed_sha = pushed_sha` on the Story's tracker entry: the NEXT Subtask of this Story reads it as its `prev_pushed_sha` (the D6.2 audit base — AV3-06). The Story's first Subtask has no predecessor, so its audit base is `origin/<trunk>`. On a manifest-backed drain, **mirror the `## Behavior coverage` mapping to the tracker** (AV3-05) alongside the Subtask entry, so the binding survives across fires and is auditable without the PR.
 
 
 - Under `branching.no_force_push: false`: commit the status delta directly to the Runbook PR branch (`autopilot/<slug>/runbook`, AV3-08).

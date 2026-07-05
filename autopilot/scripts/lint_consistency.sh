@@ -305,9 +305,19 @@ if hits=$(grep -nE 'rolling tracker PR' "${DOCS[@]}" 2>/dev/null | grep -vi 'ret
 fi
 (( l19_bad == 0 )) && ok L19
 
+# --- L20: Behavior coverage PR-body section format (MS §13.9 / AV3-05) ---------
+# D7.3 publishes the D6.3-verified Behavior-ID -> test-node-ID mapping in a
+# grep-able, marker-delimited `## Behavior coverage` block the PR Gate parses
+# (MS §13.11). Pin the heading + marker so the format cannot silently drift.
+l20_bad=0
+dlc="$ROOT/references/drain-lifecycle.md"
+grep -q '## Behavior coverage' "$dlc" || { violation L20 "drain-lifecycle.md does not define the '## Behavior coverage' PR-body section"; l20_bad=1; }
+grep -q 'autopilot:behavior-coverage' "$dlc" || { violation L20 "the Behavior coverage block is missing its grep-able marker (autopilot:behavior-coverage)"; l20_bad=1; }
+(( l20_bad == 0 )) && ok L20
+
 if (( FAIL == 1 )); then
   echo "lint_consistency: FAIL" >&2
   exit 1
 fi
-echo "lint_consistency: PASS (19 rules)"
+echo "lint_consistency: PASS (20 rules)"
 exit 0
