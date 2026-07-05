@@ -868,6 +868,50 @@ assert_eq "AV3-07.6" "no plan arg is usage error 64" "64" "$rc"
 vpm "$SANDBOX/does-not-exist.json" >/dev/null 2>&1; rc=$?
 assert_eq "AV3-07.6" "absent plan file is usage error 64" "64" "$rc"
 
+echo "== detect_input_mode.sh (AV3-01 mode inference) =="
+
+DIM="$HERE/detect_input_mode.sh"
+dim() { bash "$DIM" "$@"; }
+
+# AV3-01.1 — a valid+complete manifest goes straight through (ADR 0008), no flag.
+out=$(dim --intent generate --manifest m.yaml --validator-exit 0 2>/dev/null); rc=$?
+assert_eq "AV3-01.1" "complete manifest exits 0" "0" "$rc"
+assert_eq "AV3-01.1" "complete manifest -> STRAIGHT_THROUGH" "MODE=STRAIGHT_THROUGH" "$out"
+
+# AV3-01.2 — bare markdown (no companion manifest) -> GENERATE+pause.
+assert_eq "AV3-01.2" "bare markdown -> GENERATE_PAUSE" "MODE=GENERATE_PAUSE" "$(dim --intent generate 2>/dev/null)"
+# incomplete manifest is manifest-less (MS §11) -> also GENERATE_PAUSE.
+assert_eq "AV3-01.2" "incomplete manifest -> GENERATE_PAUSE" "MODE=GENERATE_PAUSE" "$(dim --intent generate --manifest m.yaml --validator-exit 3 2>/dev/null)"
+
+# AV3-01.3 — --yolo is the manifest-LESS override only.
+assert_eq "AV3-01.3" "manifest-less --yolo -> GENERATE_YOLO" "MODE=GENERATE_YOLO" "$(dim --intent generate --yolo 2>/dev/null)"
+assert_eq "AV3-01.3" "incomplete + --yolo -> GENERATE_YOLO" "MODE=GENERATE_YOLO" "$(dim --intent generate --manifest m.yaml --validator-exit 3 --yolo 2>/dev/null)"
+
+# AV3-01.4 — --yolo on a complete manifest is a no-op WARNING, mode unchanged.
+out=$(dim --intent generate --manifest m.yaml --validator-exit 0 --yolo 2>"$SANDBOX/dim_yolo.err"); rc=$?
+assert_eq "AV3-01.4" "yolo-on-complete stays STRAIGHT_THROUGH" "MODE=STRAIGHT_THROUGH" "$out"
+assert_eq "AV3-01.4" "yolo-on-complete exits 0" "0" "$rc"
+assert_contains "AV3-01.4" "yolo-on-complete warns no-op" "--yolo is a no-op on a complete manifest" "$(cat "$SANDBOX/dim_yolo.err")"
+
+# AV3-01.5 — schema-invalid (4) and unsupported (5) REFUSE; never degrade, never
+# --yolo-bypassable (MS §11).
+out=$(dim --intent generate --manifest m.yaml --validator-exit 4 2>/dev/null); rc=$?
+assert_eq "AV3-01.5" "schema-invalid refuses (exit 1)" "1" "$rc"
+assert_eq "AV3-01.5" "schema-invalid -> REFUSE-MANIFEST-INVALID" "MODE=REFUSE-MANIFEST-INVALID" "$out"
+out=$(dim --intent generate --manifest m.yaml --validator-exit 4 --yolo 2>/dev/null); rc=$?
+assert_eq "AV3-01.5" "--yolo cannot bypass a schema-invalid manifest" "1" "$rc"
+assert_eq "AV3-01.5" "unsupported -> REFUSE-MANIFEST-UNSUPPORTED" "MODE=REFUSE-MANIFEST-UNSUPPORTED" "$(dim --intent generate --manifest m.yaml --validator-exit 5 2>/dev/null)"
+
+# AV3-01.6 — runbook intents are unchanged.
+assert_eq "AV3-01.6" "--drain -> DRAIN" "MODE=DRAIN" "$(dim --intent drain 2>/dev/null)"
+assert_eq "AV3-01.6" "--resume -> RESUME" "MODE=RESUME" "$(dim --intent resume 2>/dev/null)"
+
+# AV3-01.7 — usage guardrails: a manifest with no validator exit, and a bad intent.
+dim --intent generate --manifest m.yaml >/dev/null 2>&1; rc=$?
+assert_eq "AV3-01.7" "manifest without validator-exit is usage error 64" "64" "$rc"
+dim --intent bogus >/dev/null 2>&1; rc=$?
+assert_eq "AV3-01.7" "unknown intent is usage error 64" "64" "$rc"
+
 echo "== secret_get.sh (T25) =="
 
 # T25 — candidate list matches the documented resolver conventions
