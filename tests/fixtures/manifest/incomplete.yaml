@@ -1,0 +1,35 @@
+schema_version: 1
+manifest_revision: 1
+# Declared-incomplete manifest: schema-valid, resumable, no completeness-rule
+# violations — the validator returns exit 3 (INCOMPLETE). Extends the shared
+# manifest fixture suite for the codebase-health CH-01 MODE matrix (no second
+# copy of the schema; the ingest reader reuses this suite).
+spec:
+  path: ./payments.md
+  title: "Payment capture"
+completeness: incomplete
+incomplete_fields:
+  - "journeys[J-pay-001].steps[0].required_emission"
+observability:
+  profile: payments
+environments: [dev, prod]
+journeys:
+  - id: J-pay-001
+    name: "Payment capture"
+    lifecycle: active
+    criticality: SUPPORTING
+    criticality_reason: "Not yet confirmed CORE"
+    confirmation: proposed
+    steps:
+      - name: "Capture authorized"
+        vital_class: null
+behaviors:
+  - id: B-pay-001
+    title: "Captures an authorized payment once"
+    lifecycle: active
+    journey: J-pay-001
+    criticality: SUPPORTING
+    confirmation: proposed
+    given: "An authorized payment intent"
+    when: "Capture is requested"
+    then: "The payment is captured"

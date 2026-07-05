@@ -771,3 +771,96 @@ expected_noise:
       Category-C-shaped agent flag is correct on its face; scored as neither
       recall nor precision. N2's deterministic artifact contract is
       unaffected. Registered post-1.4.0-eval, found by blind eval.
+
+# ---------------------------------------------------------------------------
+# PR-Gate / Verification-Manifest findings (CH-01..CH-10 register). Scored NOT
+# against the planted/ corpus but against the PR-Gate fixtures (repo-root
+# tests/fixtures/join, plugin test-fixtures/pr-gate, and the git-init-inline
+# history fixtures self_test.sh builds). Every `expected_by: deterministic` row
+# is asserted mechanically in the CH-0x self_test.sh section named below; every
+# `expected_by: agent` row has NO automated red and is scored ONLY by the manual
+# blind-corpus eval (the honesty clause; loop-safety invariant 9). Slugs are the
+# canonical fingerprint slugs (audit-state-and-verify.md + CH-AMEND-A journey form).
+pr_gate_expected:
+  # -- CH-03 §12 comparator drift rows (self_test section 16) --
+  - id: CH03-emission
+    check: CH-03
+    slug: manifest-emission-drift
+    fingerprint_scope: step (path:symbol)
+    note: required_emission vs discovered emission_grade (OBSERVED-only / LOG-ONLY
+      lattice). DARK on a traced CORE money/auth path is HIGH; else caps MED.
+    expected_by: deterministic
+  - id: CH03-seam
+    check: CH-03
+    slug: manifest-seam-drift
+    fingerprint_scope: step (path:symbol)
+    note: env-collapsed alert_seam intent vs discovered seam (paged<-paged lattice);
+      discovered unknown -> needs-verification, never a violation.
+    expected_by: deterministic
+  - id: CH03-idempotency
+    check: CH-03
+    slug: manifest-idempotency-drift
+    fingerprint_scope: step (path:symbol)
+    note: idempotency.required vs duplicate_guard; absent on a traced CORE money
+      write is HIGH (ADR-0004 blocking class), n/a -> needs-verification.
+    expected_by: deterministic
+  - id: CH03-criticality
+    check: CH-03
+    slug: manifest-criticality-drift
+    fingerprint_scope: journey (<source-no-line>:<name>, CH-AMEND-A)
+    note: declared vs derived criticality. The DRIFT verdict (string mismatch) is
+      deterministic; the DERIVATION of the discovered criticality is agent work.
+    expected_by: deterministic
+  - id: CH03-criticality-derivation
+    check: CH-03
+    slug: manifest-criticality-drift
+    note: whether the journeys.json derived criticality is itself correct on a real
+      repo is agent judgment — scored in the blind eval only, never self-test.
+    expected_by: agent
+  # -- CH-05 memory-rot (self_test section 19) --
+  - id: CH05-dangling
+    check: CH-05
+    slug: memory-rot-dangling-ref
+    note: deleted/renamed symbol still referenced by manifest/journeys/docs/ADRs;
+      tombstone (lifecycle:withdrawn) suppresses; rename is aliased not flagged.
+      ADR-0004 blocking class.
+    expected_by: deterministic
+  - id: CH05-semantic-drift
+    check: CH-05
+    slug: memory-rot-semantic-drift
+    note: an agent judging drift on the flagged excerpts (an ADR the code now
+      contradicts, a behavior-changed path). Comment-only (ADR 0004); blind-eval only.
+    expected_by: agent
+  # -- CH-06 behavior coverage (self_test section 20) --
+  - id: CH06-unproven
+    check: CH-06
+    slug: behavior-claimed-unproven
+    note: a PR-body-claimed behavior with no RED commit in range and no existing
+      test node. ADR-0004 blocking class; evidence is git-log/test-node, not self-report.
+    expected_by: deterministic
+  # -- CH-07 provenance (self_test section 21) --
+  - id: CH07-provenance
+    check: CH-07
+    slug: sg8-provenance-hand-edit
+    note: manifest single-writer fields edited from a non-spec branch. Ships
+      COMMENT-ONLY (CH-AMEND-C); block-vs-comment flagged for Bailey, not applied.
+    expected_by: deterministic
+  # -- CH-09 history (self_test section 22) --
+  - id: CH09-spechash
+    check: CH-09
+    slug: spec-hash-rot
+    note: recomputed sha256 of the committed Spec bytes != declared spec_hash.
+      Comment-only initially (MS §9); runs only at completeness:complete.
+    expected_by: deterministic
+  - id: CH09-monotonicity
+    check: CH-09
+    slug: manifest-revision-non-monotonic
+    note: content change without a revision bump, or a skipped revision, vs the
+      prior main-lineage revision.
+    expected_by: deterministic
+  - id: CH09-idreuse
+    check: CH-09
+    slug: id-reuse / id-renumber / id-tombstone-reuse
+    note: an ID rebound to a different entry, an entry renumbered, or a tombstoned
+      ID resurrected, vs the prior main-lineage revision. MS §11 blocking class.
+    expected_by: deterministic
