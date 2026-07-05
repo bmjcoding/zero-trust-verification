@@ -28,10 +28,15 @@ auto-seed table.
 Any guard that cannot read the state it guards must refuse, not proceed:
 `detect_concurrent_drain.sh` exits 4 (refuse) on unreadable/corrupt lock
 state; D1 refuses the fire when `STATUS` is unreadable or not `ACTIVE`;
-D3.0 blocks on any staleness ambiguity. The one deliberate fail-open is a
+D3.0 blocks on any staleness ambiguity; the D2 claim-eligibility gate routes
+`claim_overlap.sh eligibility` exit 64 (an unresolvable `host.sh pr-state` —
+`UNKNOWN` from a read that succeeded but returned an unmappable state, or an empty
+state when the read itself died) to `HUMAN_NEEDED — claim-eligibility-usage-error`
+rather than run a Subtask against an unresolved claim. The one deliberate fail-open is a
 MISSING tracker file at GENERATE time (nothing exists to collide with).
 *Enforced by:* `detect_concurrent_drain.sh` exit-code contract (self-tested);
-D1/D3.0 step text.
+`claim_overlap.sh` eligibility exit-64 contract (self-tested, AV3-09.8);
+D1/D2/D3.0 step text.
 
 ## 4. Detection and verification paths never edit product code
 

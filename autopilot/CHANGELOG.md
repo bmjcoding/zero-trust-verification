@@ -4,6 +4,48 @@ All notable changes to the autopilot skill. Format follows Keep a Changelog; ver
 
 **Release gate (v2.4.0, GAPS M3/M6).** Every behavioral claim in a release entry MUST cite the `scripts/self_test.sh` assertion id (Txx) or `scripts/lint_consistency.sh` rule id (Lxx) that proves it, or be tagged `[doc-only]`. Both scripts must pass before tagging. Any drain failure attributable to the skill must land a failing self-test assertion before (or with) its fix — a gap found once may not recur silently. (This gate exists because v2.1.0–v2.3.0 shipped multiple claimed-but-unimplemented behaviors; see docs/GAPS_SPEC.md §B.)
 
+## [3.0.1] - 2026-07-05
+
+**autopilot v3 — P2 hardening.** Two fail-open edges surfaced by the v3
+adversarial review (PR #19), each fixed test-first. Per the M3 gate both fixes
+land a failing self-test assertion before the fix; the suite grew 312 → **319**
+assertions (L1–L23 unchanged), all green on bash 3.2.57.
+
+### Fixed
+
+- **P2-a — determinism gate param-index blind spot (D6.4 / AV3-12).**
+  `scripts/determinism_gate.sh` fingerprinted failure output by blanket-stripping
+  ALL digits (`tr -d '0-9'`) before hashing, which collapsed a parametrized pytest
+  test that fails a different case index each round (`test_login[0]` vs
+  `test_login[1]` → both `test_login[]`) to one signature and reported
+  `DETERMINISTIC` — false-greening that common real flaky pattern. The fingerprint
+  now volatile-normalizes into an order-independent failure skeleton that keeps a
+  **`::` node-id token verbatim** (so its parametrize index survives) and
+  digit-strips every other token plus `0x` addresses; lines are sorted so a mere
+  reorder of the SAME failure set (expected under the order-randomized round) is
+  not mistaken for flake. Keying on the node-id token — not on brackets, which also
+  hold volatile durations like `[123 ns]` — preserves the index without
+  false-reddening a deterministic run whose output carries a bracketed number. New
+  **AV3-12.8** plants a param-index-flipping flaky test and asserts it is caught
+  (`[BLOCKED: flaky-test]`, exit 1); it reds against the old digit-stripping logic
+  (the existing AV3-12.5 uses letter-only names and sidestepped the case). New
+  **AV3-12.9** is the false-RED regression guard: a stable node id beside a volatile
+  bracketed duration stays `DETERMINISTIC`. (Scoped to pytest/unittest `::` node
+  ids; non-bracket subtest-index notations like Go's `/case_N` remain out of scope.)
+  AV3-12.1–.7 unchanged.
+- **P2-b — D2 claim-eligibility fail-closed edge (ADR 0009 / AV3-09).** When
+  `host.sh pr-state` returns `UNKNOWN` — a read that SUCCEEDED but whose PR state was
+  null / unmappable to the vocabulary (a genuinely unreadable read instead dies
+  `exit 1`, leaving an empty state) — `claim_overlap.sh eligibility` exits 64, but
+  `references/drain-lifecycle.md` D2 documented only exit 0 (eligible) and exit 2
+  (blocked) — leaving the exit-64 path unspecified, so the claim poll was not wired
+  to fail closed (loop-safety invariant 3). D2 now routes exit 64 to `STATUS:
+  HUMAN_NEEDED — claim-eligibility-usage-error` (external fault, no counter
+  increment), matching D7.5's `ci-check-usage-error` and D1.0's
+  `lock-check-usage-error`. New **AV3-09.8** pins that BOTH `UNKNOWN` and an empty
+  state fail closed as exit 64 (never 0/eligible). `[doc-only]` dispatch row added to
+  drain-lifecycle.md D2 + loop-safety invariant 3 enforcement list.
+
 ## [3.0.0] - 2026-07-05
 
 **autopilot v3** — Verification-Manifest consumption, PR-per-Story granularity,
