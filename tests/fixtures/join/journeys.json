@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "source_run": { "kind": "audit", "date": "2026-07-04", "git_sha": "deadbeef" },
+  "journeys": [
+    {
+      "name": "Payment capture",
+      "manifest_journey_id": "J-pay-001",
+      "source": "app/payments.py:12",
+      "criticality": "CORE",
+      "criticality_reason": "money-movement verbs in docs",
+      "verdict": "WORKS",
+      "executed": true,
+      "path_complexity": "CLEAN",
+      "steps": [
+        {
+          "path": "app/payments.py",
+          "symbol": "capture",
+          "line": 20,
+          "event_name": "pay.captured",
+          "vital_class": "money",
+          "emission_grade": "OBSERVED",
+          "alert_seam": "paged",
+          "duplicate_guard": "present",
+          "compensation_note": "terminal",
+          "complexity_flags": []
+        }
+      ]
+    }
+  ]
+}
