@@ -54,6 +54,9 @@ subtasks:
     acceptance_criteria:         # crisp, testable; what "done" means
       - <criterion>
     estimated_size: <S | M | L>  # S<3 files & <100 LOC; M=4-8 files & 100-500 LOC; L=>8 files or >500 LOC
+    predicted_hours: <int>       # ADR 0012 / AV3-07: your honest wall-clock prediction for THIS
+                                 # Subtask. Sanity-bounded by estimated_size: S<=4, M<=16, L<=48.
+                                 # G4 sums a Story's Subtasks and refuses >48h (story-oversized).
     evidence: <quote-or-line-range from source>
     jira_key: null               # populated downstream if --jira mode
 ```
@@ -120,6 +123,9 @@ subtasks:
 
 
 11. **`audited_sha:` is mandatory.** It MUST be the SHA passed in input 4 verbatim. DRAIN Step D3.0 verifies this SHA's tree against HEAD before allowing the Subtask to run; if you fabricate it the Subtask will be marked `[BLOCKED: plan-stale-missing]` and your work is wasted.
+
+
+12. **`predicted_hours:` is mandatory and sized-bounded (ADR 0012 / AV3-07).** Emit an honest integer wall-clock prediction for each Subtask. It MUST respect its `estimated_size` ceiling — S≤4, M≤16, L≤48 — and the Story's Subtasks MUST sum to ≤48 hours. If a Story would exceed 48, split it into sequential, independently mergeable Stories NOW (each its own Story branch/PR downstream); G4 refuses an oversized Story with `[GENERATE-FAILED: story-oversized: <story-id>]` and a size-inconsistent Subtask with `[GENERATE-FAILED: story-size-inconsistent: <subtask-id>]`, wasting the plan. The Marshal owns actuals; you own the declared prediction.
 
 
 ## COMPLETION

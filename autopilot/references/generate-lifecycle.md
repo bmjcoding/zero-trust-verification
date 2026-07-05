@@ -176,6 +176,13 @@ Validate every `depends_on[]` entry against the union of all planner-emitted Sub
 Topo-sort all Subtasks. Detect cycles → `[GENERATE-FAILED: dependency-cycle]`. Detect ownership overlap (same file in two non-dependent Subtasks) → `[GENERATE-FAILED: ownership-overlap]`.
 
 
+**Story-sizing gate (ADR 0012 / AV3-07).** Render the union of planner output to `plan.json` and run `bash ${SKILL_DIR}/scripts/validate_plan_mapping.sh <plan.json>` (the manifest arg is added by AV3-02's behavior-ID mapping). It enforces, deterministically:
+- every Subtask's `predicted_hours` is an integer within its `estimated_size` ceiling (S≤4, M≤16, L≤48) → `[GENERATE-FAILED: story-size-inconsistent: <subtask-id>]`;
+- every Story's Subtasks sum to ≤48 predicted hours → `[GENERATE-FAILED: story-oversized: <story-id>]`.
+
+The gate is deterministic-over-a-declared-prediction (the Marshal owns actuals, ADR 0012). On `story-oversized`, re-spawn the offending Story's planner with an instruction to split it into sequential, independently mergeable Stories; each becomes its own Story branch/PR downstream (AV3-06). The runbook records the resulting behavior-IDs-per-Story table (G7) so the audit can distinguish intentionally-not-yet-wired work from Memory Rot.
+
+
 ## Step G5 — Already-shipped detection
 
 

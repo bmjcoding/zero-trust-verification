@@ -808,6 +808,66 @@ assert_eq "AV3-06.6" "missing --base is usage error 64" "64" "$rc"
 acs --id B2 --base deadbeefdeadbeef >/dev/null 2>&1; rc=$?
 assert_eq "AV3-06.6" "unknown base ref is usage error 64" "64" "$rc"
 
+echo "== validate_plan_mapping.sh (AV3-07 48h Story sizing) =="
+
+VPM="$HERE/validate_plan_mapping.sh"
+vpm() { bash "$VPM" "$@"; }
+
+cat > "$SANDBOX/plan_valid.json" <<'J'
+{"subtasks":[
+  {"id":"A1","parent_story":"S-foo","kind":"code","estimated_size":"M","predicted_hours":12},
+  {"id":"A2","parent_story":"S-foo","kind":"code","estimated_size":"S","predicted_hours":3},
+  {"id":"B1","parent_story":"S-bar","kind":"code","estimated_size":"L","predicted_hours":48}
+]}
+J
+# AV3-07.1 — a plan whose Stories all predict <=48h with size-consistent hours is valid.
+out=$(vpm "$SANDBOX/plan_valid.json" 2>&1); rc=$?
+assert_eq "AV3-07.1" "size-consistent, <=48h plan is valid" "0" "$rc"
+assert_eq "AV3-07.1" "valid plan prints OK" "OK" "$out"
+
+cat > "$SANDBOX/plan_oversized.json" <<'J'
+{"subtasks":[
+  {"id":"A1","parent_story":"S-big","kind":"code","estimated_size":"M","predicted_hours":16},
+  {"id":"A2","parent_story":"S-big","kind":"code","estimated_size":"M","predicted_hours":16},
+  {"id":"A3","parent_story":"S-big","kind":"code","estimated_size":"M","predicted_hours":16},
+  {"id":"A4","parent_story":"S-big","kind":"code","estimated_size":"S","predicted_hours":4}
+]}
+J
+# AV3-07.2 — a Story whose Subtasks roll up past 48h is oversized and must split.
+out=$(vpm "$SANDBOX/plan_oversized.json" 2>&1); rc=$?
+assert_eq "AV3-07.2" "oversized Story refused" "1" "$rc"
+assert_eq "AV3-07.2" "oversized cites the story-id" "[GENERATE-FAILED: story-oversized: S-big]" "$out"
+
+cat > "$SANDBOX/plan_inconsistent.json" <<'J'
+{"subtasks":[{"id":"A1","parent_story":"S-x","kind":"code","estimated_size":"S","predicted_hours":9}]}
+J
+# AV3-07.3 — an S-labeled Subtask predicting >4h violates the S/M/L sanity mapping.
+out=$(vpm "$SANDBOX/plan_inconsistent.json" 2>&1); rc=$?
+assert_eq "AV3-07.3" "size-inconsistent Subtask refused" "1" "$rc"
+assert_eq "AV3-07.3" "size-inconsistent cites the subtask-id" "[GENERATE-FAILED: story-size-inconsistent: A1]" "$out"
+
+cat > "$SANDBOX/plan_missing_hours.json" <<'J'
+{"subtasks":[{"id":"A1","parent_story":"S-x","kind":"code","estimated_size":"M"}]}
+J
+# AV3-07.4 — a Subtask missing predicted_hours (or non-integer) is schema-inconsistent.
+out=$(vpm "$SANDBOX/plan_missing_hours.json" 2>&1); rc=$?
+assert_eq "AV3-07.4" "missing predicted_hours refused" "1" "$rc"
+assert_contains "AV3-07.4" "missing-hours reason is size-inconsistent" "story-size-inconsistent" "$out"
+
+# AV3-07.5 — boundary: an L-labeled Subtask at exactly 48h, sole Subtask of its
+# Story, is valid (<=48 both per-size and per-Story).
+cat > "$SANDBOX/plan_boundary.json" <<'J'
+{"subtasks":[{"id":"L1","parent_story":"S-edge","kind":"code","estimated_size":"L","predicted_hours":48}]}
+J
+out=$(vpm "$SANDBOX/plan_boundary.json" 2>&1); rc=$?
+assert_eq "AV3-07.5" "48h L-Subtask at the boundary is valid" "0" "$rc"
+
+# AV3-07.6 — usage guardrails.
+vpm >/dev/null 2>&1; rc=$?
+assert_eq "AV3-07.6" "no plan arg is usage error 64" "64" "$rc"
+vpm "$SANDBOX/does-not-exist.json" >/dev/null 2>&1; rc=$?
+assert_eq "AV3-07.6" "absent plan file is usage error 64" "64" "$rc"
+
 echo "== secret_get.sh (T25) =="
 
 # T25 — candidate list matches the documented resolver conventions

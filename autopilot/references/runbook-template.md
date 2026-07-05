@@ -107,6 +107,27 @@ Bullet list of work explicitly out of scope. The planner uses this to reject can
 - Removing deprecated endpoints (separate runbook).
 - Adding telemetry to existing code paths.
 
+### Stories (sizing + coverage ledger)
+
+> Written by G7 from the planner output and the G4 sizing gate — one row per
+> Story (PR-per-Story, AV3-06). The dispatcher reads `predicted_hours` for the
+> 48-hour invariant audit trail; the audit tier reads `Behavior IDs` to
+> distinguish intentionally-not-yet-wired work from Memory Rot.
+
+| Story | Subtasks | predicted_hours (Σ, ≤48) | Behavior IDs | As-built docs |
+|---|---|---|---|---|
+| `S-pricing` | A1, A2, A3 | 28 | `B-pricing-001`, `B-pricing-002` | `docs/journeys/pricing.md` |
+
+- **predicted_hours (Σ)** — sum of the Story's Subtasks' `predicted_hours`; G4
+  refuses any Story summing to more than 48 hours (`story-oversized`) and any
+  Subtask whose hours exceed its `estimated_size` ceiling (`story-size-inconsistent`).
+  ADR 0012 / AV3-07.
+- **Behavior IDs** — the active manifest Behavior IDs the Story's Subtasks own
+  (planner `behavior_ids[]`, mapped at G3, verified at D6). Empty column only for
+  manifest-less drains (v2.4.0 semantics).
+- **As-built docs** — the journey-doc / README deltas the Story must ship inside
+  its own Story PR when the Story's behaviors are journey-bearing per the manifest.
+
 ### Repo constraints (detected)
 
 > This block is written by G1.5 (`scripts/repo_shape_probe.sh`) on the first
