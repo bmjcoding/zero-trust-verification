@@ -1234,6 +1234,39 @@ assert_eq "AV3-09.7" "no files is usage error 64" "64" "$rc"
 bash "$CO" eligibility --pr-state BOGUS >/dev/null 2>&1; rc=$?
 assert_eq "AV3-09.7" "unknown pr-state is usage error 64" "64" "$rc"
 
+echo "== claim_loss_attribution.sh (AV3-10 serialize-and-replan) =="
+
+CLA="$HERE/claim_loss_attribution.sh"
+
+# AV3-10.1 — the rebase's conflicting hunks intersect the claim-overlap set:
+# the divergence IS a claim collision -> route to D3 re-plan (within budget).
+out=$(bash "$CLA" --overlap-files "api/limiter.py,lib/x.py" --conflict-files "api/limiter.py,core/z.py" 2>&1); rc=$?
+assert_eq "AV3-10.1" "attributed divergence -> REPLAN (exit 0)" "0" "$rc"
+assert_contains "AV3-10.1" "REPLAN cites the colliding files" "REPLAN files=api/limiter.py" "$out"
+
+# AV3-10.2 — disjoint file sets: a genuine planning conflict, not a claim loss ->
+# normal impl-block escalation.
+out=$(bash "$CLA" --overlap-files "api/limiter.py" --conflict-files "core/z.py,other.py" 2>&1); rc=$?
+assert_eq "AV3-10.2" "disjoint divergence -> NOT-ATTRIBUTED (exit 1)" "1" "$rc"
+assert_eq "AV3-10.2" "not-attributed token" "NOT-ATTRIBUTED" "$out"
+
+# AV3-10.3 — no recorded claim overlap -> never attributed to a claim loss.
+out=$(bash "$CLA" --overlap-files "" --conflict-files "api/limiter.py" 2>&1); rc=$?
+assert_eq "AV3-10.3" "no overlap set -> NOT-ATTRIBUTED (exit 1)" "1" "$rc"
+
+# AV3-10.4 — re-plan is BOUNDED at 2 per Subtask; past that, normal escalation.
+out=$(bash "$CLA" --overlap-files "api/limiter.py" --conflict-files "api/limiter.py" --replans-so-far 2 2>&1); rc=$?
+assert_eq "AV3-10.4" "attributed but budget spent -> EXHAUSTED (exit 2)" "2" "$rc"
+assert_contains "AV3-10.4" "exhausted token" "REPLAN-BUDGET-EXHAUSTED" "$out"
+
+# AV3-10.5 — one re-plan already spent (1 < 2) still re-plans.
+out=$(bash "$CLA" --overlap-files "api/limiter.py" --conflict-files "api/limiter.py" --replans-so-far 1 2>&1); rc=$?
+assert_eq "AV3-10.5" "within re-plan budget -> REPLAN (exit 0)" "0" "$rc"
+
+# AV3-10.6 — usage guardrail.
+bash "$CLA" --overlap-files "a" >/dev/null 2>&1; rc=$?
+assert_eq "AV3-10.6" "missing --conflict-files is usage error 64" "64" "$rc"
+
 echo "== secret_get.sh (T25) =="
 
 # T25 — candidate list matches the documented resolver conventions
