@@ -1,0 +1,27 @@
+# A well-shaped S7 emission bundle (spec-gen §7.4). emission_check.py asserts the
+# one-branch-one-PR layout, manifest colocation, per-boundary commits (HC5),
+# exchange_ref resolvability, and provisional-ADR filename shape. Content
+# correctness (completeness rules) is the vendored validator's job at S6.
+branch: spec/wire-transfer
+session_slug: wire-transfer
+spec_path: docs/specs/wire-transfer.md
+manifest_path: docs/specs/wire-transfer.manifest.yaml
+adrs:
+  - docs/adr/DRAFT-wire-transfer-duplicate-wire-reject-and-alert.md
+commits:
+  - {boundary: S1, subject: "spec(wire-transfer): S1 hydrate — reserve IDs, resolve profile"}
+  - {boundary: S2, subject: "spec(wire-transfer): S2 domain pass — glossary edits"}
+  - {boundary: S3, subject: "spec(wire-transfer): S3 skeleton — journeys + behaviors proposed"}
+  - {boundary: S4, subject: "spec(wire-transfer): S4 adversarial round — agent-decided ADRs"}
+  - {boundary: S5, subject: "spec(wire-transfer): S5 escalation — human confirmations"}
+  - {boundary: S6, subject: "spec(wire-transfer): S6 finalize gate — validator exit 0 + GWT pass"}
+  - {boundary: S7, subject: "spec(wire-transfer): S7 emit — completeness complete"}
+pr:
+  count: 1
+  body_anchors:
+    - "#dl-002-duplicate-wire-policy"
+    - "#dl-003-daily-limit-appetite"
+interrogation_log:
+  - {id: DL-001, resolved_by: agent, exchange_ref: ""}
+  - {id: DL-002, resolved_by: human, exchange_ref: "#dl-002-duplicate-wire-policy"}
+  - {id: DL-003, resolved_by: human, exchange_ref: "#dl-003-daily-limit-appetite"}
