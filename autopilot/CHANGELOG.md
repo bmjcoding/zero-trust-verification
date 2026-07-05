@@ -22,12 +22,14 @@ finalisation ride AV3-16a; these entries land the foundational adapter first.
   ssh, override, invalid-override, unrecognised-origin, and unknown-subcommand.
   (H50, HD08, HG01)
 - **`scripts/github.sh` — GitHub backend via the `gh` CLI**, implementing the
-  byte-identical contract. `gh` owns credential resolution (token never in
-  argv/context); `isDraft`→`DRAFT` and `CLOSED`→`DECLINED` map GitHub's vocabulary
-  onto the shared one; `build-status` aggregates BOTH the commit-status and
-  check-runs APIs into `SUCCESSFUL|FAILED|INPROGRESS|UNKNOWN`. The T01-class
+  contract. `gh` owns credential resolution (token never in argv/context);
+  `isDraft`→`DRAFT` and `CLOSED`→`DECLINED` map GitHub's vocabulary onto the
+  shared one; `build-status` aggregates BOTH the commit-status API (its
+  authoritative combined `.state`) and the check-runs API into
+  `SUCCESSFUL|FAILED|INPROGRESS|UNKNOWN` — fail-safe on unseen pagination pages
+  (never a false GREEN) and dropping neutral/`stale` conclusions. The T01-class
   contract matrix runs against it through a `gh` argv shim (no network/python).
-  (H-GH matrix HG02–HG12, HG20–HG28)
+  (`H-GH` matrix, HG20–HG30)
 - **Draft-PR surface (AV3-06 dependency).** `pr-open --draft`, `pr-ready`
   (draft→ready flip), and `pr-state` `DRAFT` emission across both backends. The
   Bitbucket DC backend adds `AUTOPILOT_BITBUCKET_DRAFT_MODE`: `native` (the
@@ -45,12 +47,19 @@ finalisation ride AV3-16a; these entries land the foundational adapter first.
   behind `host.sh` (hardened internals intact); lifecycle references (D7.3,
   D7.3a, D1 tracker-PR check), the reference index, README, and validator/
   loop-safety prompts route through `host.sh`. New lint **L16** reds the retired
-  single-host framing and any direct backend invocation in the lifecycle refs.
-  (L16, self-test plants a `source-of-truth host` line and asserts L16 reds it)
+  single-host framing and any direct backend invocation ANYWHERE in the doc set
+  (SKILL + README + all references). (L16; self-test plants a `source-of-truth
+  host` line and asserts L16 reds it)
+- **`pr-merge-strategies` now emits self-consumable operator tokens.** The
+  Bitbucket DC backend previously printed raw DC strategy ids (`rebase-no-ff`,
+  `squash-ff-only`, …) that its OWN `pr-merge --strategy` rejects; it now maps
+  them to the operator vocabulary (`no-ff`/`ff-only`/`squash`/`rebase`) that
+  `pr-merge` accepts, matching the GitHub backend's contract. `pr-merge`'s
+  internal discovery still matches raw DC ids via a private helper. (HD11)
 - **`self_test.sh` mock server is non-fatal.** When the HTTP mock can't start
   (no python3 / locked-down sandbox) the DC-backend HTTP tests SKIP with a note
   rather than aborting; the deterministic, GitHub-backend, and lint assertions
-  always run. Baseline 96 → 160 assertions (95 + 3 skips when the DC server is
+  always run. Baseline 96 → 170 assertions (101 + 3 skips when the DC server is
   unavailable). (skip banner + `H-GH`/`H50` sections)
 
 ### Fixed

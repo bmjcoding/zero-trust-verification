@@ -26,7 +26,10 @@
 #                          closest enabled candidate (v2.4.0, was claimed in v2.1.0);
 #                          retries once on 409 with fresh version GET (v2.3.0)
 #   pr-merge-strategies                                         (v2.3.0)
-#                       -> prints repo-permitted merge strategies (one per line)
+#                       -> prints repo-permitted OPERATOR strategy tokens (one
+#                          per line; each consumable by pr-merge --strategy).
+#                          The set reflects host capability (not byte-identical
+#                          across backends); the tokens are the shared vocabulary.
 #   build-status      --sha <sha>
 #                       -> prints aggregated state: SUCCESSFUL | FAILED | INPROGRESS | UNKNOWN
 #
@@ -569,10 +572,11 @@ cmd_pr_decline() {
   rm -f "$resp_f"
 }
 
-# v2.3.0: pr-merge-strategies. Lists strategies allowed by repo settings.
-# Falls back to the AP-10 default (merge-commit) if the endpoint is not
-# available on this Bitbucket DC version.
-cmd_pr_merge_strategies() {
+# dc_enabled_strategies: RAW Bitbucket DC strategy ids the repo has enabled
+# (e.g. no-ff, squash, rebase-no-ff, squash-ff-only). Internal — cmd_pr_merge
+# matches its DC candidate ids against these. Prints the "merge-commit" sentinel
+# when the settings endpoint is absent (older DC = no restriction info).
+dc_enabled_strategies() {
   require_jq
   local url resp_f
   url=$(build_url "/rest/api/1.0/projects/${PROJECT_KEY}/repos/${REPO_SLUG}/settings/pull-requests")
@@ -600,6 +604,32 @@ cmd_pr_merge_strategies() {
                         else . end) end
   ' < "$resp_f"
   rm -f "$resp_f"
+}
+
+# pr-merge-strategies (public): the OPERATOR-vocabulary tokens the repo permits
+# — exactly the tokens `pr-merge --strategy` accepts, so the output is
+# self-consumable (feeding a token back into pr-merge never errors). Mapped from
+# the raw DC ids. The available SET reflects host capability, so it is NOT
+# byte-identical across backends; each token IS shared and consumable.
+cmd_pr_merge_strategies() {
+  local raw
+  raw=$(dc_enabled_strategies)
+  if [[ -z "$raw" || "$raw" == "merge-commit" ]]; then
+    echo "merge-commit"
+    return 0
+  fi
+  # DC id -> operator token; dedup preserving first-seen order. Unknown ids pass
+  # through unchanged (never silently drop a capability). BSD-awk safe.
+  printf '%s\n' "$raw" | awk '
+    {
+      id = $0
+      if (id == "no-ff") t = "no-ff"
+      else if (id == "ff" || id == "ff-only") t = "ff-only"
+      else if (id == "squash" || id == "squash-ff-only") t = "squash"
+      else if (id == "rebase-no-ff" || id == "rebase-ff-only") t = "rebase"
+      else t = id
+      if (t != "" && !(t in seen)) { seen[t] = 1; print t }
+    }'
 }
 
 cmd_pr_merge() {
@@ -630,7 +660,7 @@ cmd_pr_merge() {
   # has enabled and pick the first candidate that is enabled. On discovery
   # parse-miss (older DC), fall back to the first candidate.
   local enabled bb_strategy=""
-  enabled=$(cmd_pr_merge_strategies 2>/dev/null || true)
+  enabled=$(dc_enabled_strategies 2>/dev/null || true)
   if [[ -n "$enabled" && "$enabled" != "merge-commit" ]]; then
     local c
     for c in "${candidates[@]}"; do

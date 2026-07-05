@@ -135,6 +135,7 @@ class H(http.server.BaseHTTPRequestHandler):
         if "/settings/pull-requests" in p:
             self._send_json({"mergeConfig": {"strategies": [
                 {"id": "squash", "enabled": True},
+                {"id": "rebase-no-ff", "enabled": True},
                 {"id": "no-ff", "enabled": False},
             ]}}); return
         if "/build-status/1.0/commits/" in p:
@@ -401,6 +402,18 @@ assert_contains HD06 "pr-ready native PUTs draft:false" '"draft": false' "$(curl
 bbdraft title-prefix pr-ready --num 92 >/dev/null 2>&1; rc=$?
 assert_eq HD07 "pr-ready title-prefix exits 0" "0" "$rc"
 assert_contains HD07 "pr-ready title-prefix strips the prefix" '"title": "Prefixed PR"' "$(curl -s "$BASE/debug/last-put")"
+
+# HD11 — pr-merge-strategies emits OPERATOR tokens (self-consumable by pr-merge),
+# NOT raw DC ids. The mock enables `squash` + `rebase-no-ff`; the adapter must
+# map those to `squash` + `rebase` (a caller must be able to feed the output
+# straight back into pr-merge --strategy).
+out=$(bb pr-merge-strategies 2>/dev/null)
+assert_eq HD11 "DC pr-merge-strategies maps DC ids -> operator tokens" "$(printf 'squash\nrebase')" "$out"
+assert_not_contains HD11 "raw DC id rebase-no-ff does not leak" "rebase-no-ff" "$out"
+bb pr-merge --num 42 --strategy squash >/dev/null 2>&1; rc=$?
+assert_eq HD11 "squash token is pr-merge-consumable" "0" "$rc"
+bb pr-merge --num 42 --strategy rebase >/dev/null 2>&1; rc=$?
+assert_eq HD11 "rebase token is pr-merge-consumable" "0" "$rc"
 
 # HD08 — host.sh detects the DC backend from the /scm/ origin shape.
 assert_eq HD08 "host.sh backend -> BITBUCKET_DC" "BITBUCKET_DC" "$(hostbb backend 2>/dev/null)"
@@ -916,15 +929,18 @@ case "$sub" in
       */commits/*/status)
         sha="${path%/status}"; sha="${sha##*/commits/}"
         case "$sha" in
-          aaa*) printf '{"state":"success","statuses":[{"state":"success"}]}\n' ;;
-          bbb*) printf '{"state":"failure","statuses":[{"state":"failure"}]}\n' ;;
-          *)    printf '{"state":"pending","statuses":[]}\n' ;;
+          aaa*) printf '{"state":"success","total_count":1,"statuses":[{"state":"success"}]}\n' ;;
+          bbb*) printf '{"state":"failure","total_count":1,"statuses":[{"state":"failure"}]}\n' ;;
+          fff*) printf '{"state":"success","total_count":1,"statuses":[{"state":"success"}]}\n' ;;
+          *)    printf '{"state":"pending","total_count":0,"statuses":[]}\n' ;;
         esac ;;
       */commits/*/check-runs)
         sha="${path%/check-runs}"; sha="${sha##*/commits/}"
         case "$sha" in
-          ccc*) printf '{"check_runs":[{"status":"in_progress","conclusion":null}]}\n' ;;
-          *)    printf '{"check_runs":[]}\n' ;;
+          ccc*) printf '{"total_count":1,"check_runs":[{"status":"in_progress","conclusion":null}]}\n' ;;
+          fff*) printf '{"total_count":1,"check_runs":[{"status":"completed","conclusion":"stale"}]}\n' ;;
+          ggg*) printf '{"total_count":2,"check_runs":[{"status":"completed","conclusion":"success"}]}\n' ;;
+          *)    printf '{"total_count":0,"check_runs":[]}\n' ;;
         esac ;;
       *) printf '{}\n' ;;
     esac ;;
@@ -979,6 +995,12 @@ assert_eq HG27 "squash intent -> gh --squash" "--squash" "$(cat "$GH_STATE/last_
 ggh pr-merge --num 42 --strategy bogus >/dev/null 2>&1; rc=$?
 assert_eq HG28 "unknown strategy -> exit 1" "1" "$rc"
 
+# HG29 — build-status hardening. A `stale` check-run must NOT poison an
+# otherwise-green build (dropped as neutral), and an unseen check-run page must
+# FAIL SAFE to INPROGRESS rather than a false SUCCESSFUL.
+assert_eq HG29 "stale check-run dropped; status green -> SUCCESSFUL" "SUCCESSFUL" "$(hgh build-status --sha fff555 2>/dev/null)"
+assert_eq HG29 "partial check-run page -> INPROGRESS (never false-green)" "INPROGRESS" "$(hgh build-status --sha ggg666 2>/dev/null)"
+
 # HG30 — ci_check.sh drives the host adapter, so the D7.5 CI poll is
 # host-agnostic: the SAME ci_check run turns GREEN against the GitHub backend.
 out=$( cd "$GH_REPO_DIR" && PATH="$GHSHIM:$PATH" GH_SHIM_STATE="$GH_STATE" \
@@ -995,6 +1017,14 @@ assert_eq H50 "github.com https origin -> GITHUB" "GITHUB" "$(det "$GH_REPO_DIR"
 SSHGH="$SANDBOX/sshgh"; git init -q "$SSHGH"
 git -C "$SSHGH" remote add origin "git@github.com:acme/widget.git"
 assert_eq H50 "git@github.com ssh origin -> GITHUB" "GITHUB" "$(det "$SSHGH")"
+# H50 — a trailing-slash github origin: host.sh routes GITHUB AND github.sh
+# parses it (it strips the trailing slash), so a PR op actually succeeds rather
+# than dying origin-parse.
+TSGH="$SANDBOX/tsgh"; git init -q "$TSGH"
+git -C "$TSGH" remote add origin "https://github.com/acme/widget/"
+assert_eq H50 "trailing-slash github origin -> GITHUB" "GITHUB" "$(det "$TSGH")"
+out=$( cd "$TSGH" && PATH="$GHSHIM:$PATH" GH_SHIM_STATE="$GH_STATE" bash "$HERE/github.sh" pr-state --num 42 2>/dev/null )
+assert_eq H50 "github.sh parses a trailing-slash origin (pr-state succeeds)" "OPEN" "$out"
 # H50 — AUTOPILOT_HOST_BACKEND override wins over the URL heuristic.
 out=$( cd "$API_REPO" && AUTOPILOT_HOST_BACKEND=GITHUB bash "$HERE/host.sh" backend 2>/dev/null )
 assert_eq H50 "override wins over origin heuristic" "GITHUB" "$out"
