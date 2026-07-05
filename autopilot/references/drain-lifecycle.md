@@ -58,6 +58,30 @@ Read every `## Drift Notes` entry in the tracker before any git or Bitbucket act
 This step stops fires re-deriving the same workarounds from scratch every 5 minutes.
 
 
+### D1.0.6 — Manifest-revision drift gate (MS §6 / AV3-04)
+
+
+Runs only on a manifest-backed drain (the tracker recorded a `manifest_revision` at GENERATE). Compare it against the Spec's current manifest:
+
+
+```bash
+bash ${SKILL_DIR}/scripts/manifest_revision_gate.sh drift \
+  .autopilot/runbooks/<slug>.tracker.md <spec>.manifest.yaml
+# exit 0 OK / NO-MANIFEST · exit 3 DRIFT recorded=<a> current=<b>
+```
+
+
+On **exit 3 (DRIFT)** the Spec was amended by a new revision under a live drain. This is an EXTERNAL fault (no counter increment). Handle it gracefully, not abruptly:
+- If a Subtask is mid-cycle, let it **complete its current RED→GREEN commit pair** (never leave a half-written cycle), then stop.
+- Write `STATUS: PAUSED` with `status_reason: manifest-revision-drift` in the tracker frontmatter.
+- It is **NOT `--force`-bypassable** — `--force` overrides refusals, not a spec that moved under you.
+- **Draft Story PRs stay draft** (never auto-readied or merged; they are listed in the end-of-drain dangling-draft disposition).
+- `CronDelete`, release the session lock (D8), exit.
+
+
+Recovery is NOT plain `--resume` (it would re-plan nothing against the new revision) — it is the `--generate --merge` **revision-regen** path (see Resume mode below and AV3-08's Runbook-PR supersession). On **exit 0** continue to D1.1.
+
+
 ### D1.1 — Branch shape check (AP-7)
 
 
@@ -439,9 +463,10 @@ Steps in order:
 
 1. **Validate inputs.** Confirm runbook exists at the given path; derive `<slug>` from the filename; confirm `.autopilot/runbooks/<slug>.tracker.md` exists. Refuse if either is missing.
 2. **Validate STATUS.** Read `STATUS:` from the tracker frontmatter.
-   - `PAUSED` → continue.
+   - `PAUSED` → continue to the drift check below.
    - `ACTIVE` → refuse with `Resume refused: drain already ACTIVE. Either a fire is in flight or the previous session is still draining.`
    - `DRAINED | HUMAN_NEEDED | STOPPED` → refuse with `Resume refused: drain is in terminal state <STATUS>. Use --generate to start a new drain.`
+2a. **Refuse manifest-revision drift (MS §6 / AV3-04).** `bash ${SKILL_DIR}/scripts/manifest_revision_gate.sh resume-check .autopilot/runbooks/<slug>.tracker.md` — on exit 2 (`status_reason: manifest-revision-drift`) plain resume is REFUSED: it would re-plan nothing against the new revision. Print the revision-regen pointer and stop. Recovery is `--generate --merge` **revision-regen mode**: it re-plans the open (`[ ]`) Subtasks against the new `manifest_revision`, **preserves `[x] Done` history** (a Hard Contract 8 carve-out — regen is neither overwrite nor plain merge; §6's ID-stability guarantees the surviving Behavior IDs re-plan without rework), supersedes the old Runbook PR (AV3-08), and closes the orphaned draft Story PRs it lists. On exit 0 continue.
 3. **Validate session lock.** If `session_lock` is set and not expired, refuse with `Resume refused: session lock held by <session>; expires <iso8601>.`
 4. **Flip STATUS.** Change `STATUS: PAUSED` → `STATUS: ACTIVE` and clear `status_reason` (delete the field if present).
 5. **Determine cadence from tracker state.** Inspect `in_progress`:

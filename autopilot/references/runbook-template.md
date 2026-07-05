@@ -180,6 +180,11 @@ consecutive_ci_blocks: 0
 drain_start_sha: <sha>
 drain_started_at: <iso8601>       # seeded by the first fire; budget.max_runtime_minutes anchor
 audited_sha: <sha>                # AP-5: SHA at planner-spawn time
+manifest_revision: <int-or-absent> # AV3-04: frozen at GENERATE from the Spec's manifest;
+                                  #   D1.0.6 compares it against the live manifest each fire.
+                                  #   Absent on manifest-less drains (v2.4.0 semantics).
+status_reason: <string-or-absent> # set alongside STATUS: PAUSED|HUMAN_NEEDED (e.g.
+                                  #   manifest-revision-drift, runtime-budget-expired). Cleared on Resume.
 trunk_branch: <name>              # from G1.5 TRUNK=
 host: bitbucket-dc
 ci:

@@ -1049,6 +1049,88 @@ assert_eq "AV3-03.6" "missing --union is usage error 64" "64" "$rc"
 vmu --union "$SANDBOX/u_a.yaml" >/dev/null 2>&1; rc=$?
 assert_eq "AV3-03.6" "a union of one is usage error 64" "64" "$rc"
 
+echo "== manifest_revision_gate.sh (AV3-04 revision drift) =="
+
+MRG="$HERE/manifest_revision_gate.sh"
+cat > "$SANDBOX/mrg_manifest.yaml" <<'Y'
+schema_version: 1
+manifest_revision: 2
+Y
+cat > "$SANDBOX/mrg_ok.tracker.md" <<'M'
+---
+STATUS: ACTIVE
+manifest_revision: 2
+session_lock: null
+---
+M
+cat > "$SANDBOX/mrg_drift.tracker.md" <<'M'
+---
+STATUS: ACTIVE
+manifest_revision: 1
+---
+M
+cat > "$SANDBOX/mrg_quoted.tracker.md" <<'M'
+---
+STATUS: ACTIVE
+manifest_revision: "2"
+---
+M
+cat > "$SANDBOX/mrg_manifestless.tracker.md" <<'M'
+---
+STATUS: ACTIVE
+consecutive_impl_blocks: 0
+---
+M
+cat > "$SANDBOX/mrg_paused_drift.tracker.md" <<'M'
+---
+STATUS: PAUSED
+status_reason: manifest-revision-drift
+manifest_revision: 1
+---
+M
+cat > "$SANDBOX/mrg_paused_other.tracker.md" <<'M'
+---
+STATUS: PAUSED
+status_reason: runtime-budget-expired
+---
+M
+mrg() { bash "$MRG" "$@"; }
+
+# AV3-04.1 — recorded == current: no drift.
+out=$(mrg drift "$SANDBOX/mrg_ok.tracker.md" "$SANDBOX/mrg_manifest.yaml" 2>&1); rc=$?
+assert_eq "AV3-04.1" "matching revision is clean (exit 0)" "0" "$rc"
+assert_contains "AV3-04.1" "clean prints OK" "OK recorded=2" "$out"
+
+# AV3-04.2 — recorded < current: drift detected (external-fault class -> PAUSE).
+out=$(mrg drift "$SANDBOX/mrg_drift.tracker.md" "$SANDBOX/mrg_manifest.yaml" 2>&1); rc=$?
+assert_eq "AV3-04.2" "revision drift exits 3" "3" "$rc"
+assert_eq "AV3-04.2" "drift cites recorded vs current" "DRIFT recorded=1 current=2" "$out"
+
+# AV3-04.3 — quoted YAML value parses (an LLM/yq writes manifest_revision: "2").
+out=$(mrg drift "$SANDBOX/mrg_quoted.tracker.md" "$SANDBOX/mrg_manifest.yaml" 2>&1); rc=$?
+assert_eq "AV3-04.3" "quoted recorded revision matches (clean)" "0" "$rc"
+
+# AV3-04.4 — a manifest-less tracker has no recorded revision -> check is N/A.
+out=$(mrg drift "$SANDBOX/mrg_manifestless.tracker.md" "$SANDBOX/mrg_manifest.yaml" 2>&1); rc=$?
+assert_eq "AV3-04.4" "manifest-less drain: drift check N/A (exit 0)" "0" "$rc"
+assert_eq "AV3-04.4" "manifest-less prints NO-MANIFEST" "NO-MANIFEST" "$out"
+
+# AV3-04.5 — Resume REFUSES a drift-paused tracker and points at --generate --merge.
+out=$(mrg resume-check "$SANDBOX/mrg_paused_drift.tracker.md" 2>&1); rc=$?
+assert_eq "AV3-04.5" "resume refuses a drift-paused tracker (exit 2)" "2" "$rc"
+assert_contains "AV3-04.5" "resume points at revision-regen" "--generate --merge" "$out"
+
+# AV3-04.6 — a pause for any OTHER reason stays plain-resumable.
+out=$(mrg resume-check "$SANDBOX/mrg_paused_other.tracker.md" 2>&1); rc=$?
+assert_eq "AV3-04.6" "non-drift pause is resumable (exit 0)" "0" "$rc"
+assert_eq "AV3-04.6" "non-drift pause prints RESUMABLE" "RESUMABLE" "$out"
+
+# AV3-04.7 — usage guardrails.
+mrg drift "$SANDBOX/mrg_ok.tracker.md" >/dev/null 2>&1; rc=$?
+assert_eq "AV3-04.7" "drift with one arg is usage error 64" "64" "$rc"
+mrg bogus-sub >/dev/null 2>&1; rc=$?
+assert_eq "AV3-04.7" "unknown subcommand is usage error 64" "64" "$rc"
+
 echo "== secret_get.sh (T25) =="
 
 # T25 — candidate list matches the documented resolver conventions

@@ -263,6 +263,7 @@ consecutive_impl_blocks: 0      # AP-2: split counters
 consecutive_ci_blocks: 0
 drain_start_sha: <sha>
 audited_sha: <sha>              # AP-5: SHA at planner-spawn time
+manifest_revision: <int>        # AV3-04: frozen from the Spec's manifest (omit if manifest-less)
 trunk_branch: <name>            # from G1.5 TRUNK=
 host: bitbucket-dc
 ci:
