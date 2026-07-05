@@ -12,4 +12,4 @@ Autopilot's original shape — one PR per Subtask (Hard Contract 1) — produces
 
 - Hard Contracts 1 and 4 get rewritten; `branching.single_branch_single_pr` (whole-drain collapse) remains as the coarser option; MERGE-ORDER.md and stacked-PR logic (AP-10) simplify — merge order is now across Story PRs only.
 - Non-overlapping file ownership stays per-Subtask within a Story and becomes per-Story across the drain.
-- Human review effort scales with feature count, not task count — the review unit is a coherent, spec-traceable Story with its behavior IDs and docs in one diff.
+- Human review effort scales with feature count, not Subtask count — the review unit is a coherent, spec-traceable Story with its behavior IDs and docs in one diff.
