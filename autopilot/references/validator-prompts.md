@@ -115,10 +115,20 @@ test quality (TESTS VERIFY BEHAVIOR, NOT IMPLEMENTATION).
    **High severity, blocking** — these tests are technical debt the moment they land.
 
 
-4. **Behavior coverage check.** Compare the implementer's TDD sequence summary against `behaviors_to_test[]`. Every behavior listed in the Subtask schema must appear in the TDD sequence. Missing → `severity: high, blocking: true`.
+4. **Anti-flakiness contract (AV3-11).** Test quality is design's remit, so the implementer's anti-flakiness contract is enforced HERE. Flag any test that:
+   - **sleeps for synchronization** — a fixed `time.sleep()` / bounded-less wait used to "let something finish" (races on slow runners);
+   - depends on **unseeded randomness** — asserts on RNG output without a fixed seed;
+   - reads the **real wall clock** — compares against `datetime.now()`/`time.time()` instead of an injected/frozen clock;
+   - uses **real transport** — touches live network/services/external state instead of a fake at the boundary seam;
+   - is **order-dependent** — relies on shared mutable module/global state that couples it to sibling tests' execution order.
+
+   Each is `severity: high, blocking: true` — a flaky test trains the loop to ignore red. (The D6 determinism gate, AV3-12, is the runtime backstop; this is the shift-left catch.)
 
 
-5. **No backwards-compatibility cruft.** Flag: empty exception classes "for future use", `_unused = True` flags, `# noqa` covering avoidable issues, vestigial branches under `if False:`, etc.
+5. **Behavior coverage check.** Compare the implementer's TDD sequence summary against `behaviors_to_test[]`. Every behavior listed in the Subtask schema must appear in the TDD sequence. Missing → `severity: high, blocking: true`.
+
+
+6. **No backwards-compatibility cruft.** Flag: empty exception classes "for future use", `_unused = True` flags, `# noqa` covering avoidable issues, vestigial branches under `if False:`, etc.
 
 
 ### NOT YOUR JOB

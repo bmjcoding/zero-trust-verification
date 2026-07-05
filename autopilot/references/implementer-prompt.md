@@ -121,6 +121,19 @@ them produces `[BLOCKED: tests-coupled-to-impl]`. Comply up front.
 5. **Test names describe behavior in plain English.** `test_rejects_whitespace_only_strings` not `test_validate_calls_strip`. The planner's `test_name_hint` follows this convention — start from it and only deviate when TDD reveals a better name.
 
 
+## ANTI-FLAKINESS CONTRACT (AV3-11)
+
+
+A flaky test is worse than no test — it trains the loop to ignore red. These are HARD rules for every test you write (kind: code, test-only, refactor). Violating one is a **design validator** finding at `severity: high, blocking: true` (test quality is design's remit), so comply up front:
+
+
+1. **No sleeps for synchronization.** Never `time.sleep()` (or any fixed wait) to "let something finish". Poll a condition with a bounded deadline, await an explicit signal, or inject a synchronous fake. A sleep is a race waiting to fire on a slow runner.
+2. **Seeded randomness.** Any randomness a test depends on MUST be seeded to a fixed value (`random.seed(0)`, an injected `Random(seed)`, a fixed factory seed). Never assert on the output of an unseeded RNG.
+3. **Injected clock.** Never read the real wall clock in a test. Inject a frozen/controllable clock (a passed-in `now()` provider, `freezegun`, a fake timer). Tests that compare against `datetime.now()` flake at midnight, month-end, and under clock skew.
+4. **Faked transport.** Never touch real network/services/external state from a test. Fake the transport at the boundary seam (an injected client/stub) — deterministic, offline, instant. (This is the boundary-mock exception to the "don't mock internal collaborators" rule.)
+5. **Order-independent tests.** No shared mutable module/global state that couples one test's outcome to another's execution order. Each test sets up and tears down its own state; the suite must pass under randomized order (the D6 determinism gate, AV3-12, runs one order-randomized round).
+
+
 ## FILE OWNERSHIP RULES
 
 
