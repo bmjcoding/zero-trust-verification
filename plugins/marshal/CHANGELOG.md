@@ -21,10 +21,11 @@ backstop (the fourth Zero-Trust Verification plugin, ADR 0011).
   ops go through the host adapter (ADR 0013); host-agnostic across GitHub +
   Bitbucket DC + the mock.
 - **`scripts/claim_overlap.sh`** — the vendored claim-overlap check (ADR 0009):
-  a pure `(claim-id, file)`-pair set-intersection kernel with a default
-  contended-surface report and a `--for <id>` collision query. Authored here as
-  the **canonical** copy (autopilot has no claim-overlap check on main yet); its
-  future vendor in autopilot G4 must be byte-identical.
+  the pure, git/API-provable foreign-claim classifier (`--inventory` +
+  `--self-namespace` → `BINDING`/`TERMINAL`/`advisory`/`excluded`) plus the D2
+  `eligibility` gate. Adopted **byte-identical** from autopilot's canonical copy
+  (`autopilot/scripts/claim_overlap.sh`) — the Marshal does not fork it; the
+  packaging byte-identity lint enforces parity.
 - **`scripts/branch_age_watcher.sh`** — the 48h staleness / planning-failure
   watcher (ADR 0012/0009): flags branches whose last commit is older than the
   trunk-based ceiling, from `<id>\t<epoch>` pairs or a `--refs` git glob, with a
@@ -37,7 +38,8 @@ backstop (the fourth Zero-Trust Verification plugin, ADR 0011).
 - **`scripts/self_test.sh`** — hermetic self-test driving the loop
   through the mock across FIFO, rebase-refuse (budget + conflict), compose-verify
   (green, red, in-progress), merge-or-evict, hotfix-pin/Force-Audit, and pin-
-  ignored scenarios, plus claim-overlap (both modes) and branch-age fixtures.
+  ignored scenarios, plus claim-overlap (inventory classification + `eligibility`,
+  mirroring autopilot's AV3-09 matrix) and branch-age fixtures.
 - **`commands/marshal-pass.md`**, **`commands/marshal-staleness.md`** — operator
   entry points for a manual pass and the watcher sweep.
 - **`reference/marshal-loop.md`**, **`reference/host-contract.md`** — the loop
@@ -47,10 +49,12 @@ backstop (the fourth Zero-Trust Verification plugin, ADR 0011).
 ### Notes
 
 - The `pr-list-ready` host primitive (queue enumeration with the ready timestamp
-  + approval state) is specified in `reference/host-contract.md` and implemented
-  in the mock. Wiring it into the real `host.sh` / `github.sh` / `bitbucket.sh`
-  adapters (covered by the T01-class mock matrix, for byte-identical backends) is
-  a tracked follow-up in the autopilot host-adapter, kept out of this diff to
-  preserve the AV3-15 adapter's guarantees.
+  + approval state) is specified in `reference/host-contract.md`, implemented in
+  the mock, AND wired into the real `host.sh` / `github.sh` / `bitbucket.sh`
+  adapters — covered by a real-backend contract matrix in
+  `autopilot/scripts/self_test.sh` (gh argv shim + loopback DC mock) and an
+  end-to-end `marshal.sh`-through-`github.sh` run here (section `MG`). Without
+  this, the loop could enumerate a queue only against the mock — inert on a real
+  host (the P0 that PR #18's mock hid).
 - Scripts target bash 3.2 (macOS default) + BSD userland, matching the rest of the
   suite's deterministic substrate.

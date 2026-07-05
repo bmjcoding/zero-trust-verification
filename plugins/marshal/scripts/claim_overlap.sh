@@ -1,116 +1,127 @@
 #!/usr/bin/env bash
 # claim_overlap.sh
 #
-# The claim-overlap check (ADR 0009): open-PR file-surface intersection. Given a
-# set of Claims — each a (claim-id, file) pair — it reports the files claimed by
-# more than one Claim. A Claim is a workstream's visible file surface, derived
-# from an open PR (prediction tier: Runbook PR; in-progress: Story draft PR;
-# terminal: ready-for-review PR). This kernel is deliberately *pure*: it forms no
-# opinion about tiers, actors, or timestamps and it never touches git or a host
-# API — the caller derives (claim-id, file) pairs from open PRs and pipes them
-# in. That is exactly what makes it reusable by both consumers named in ADR 0009:
-#   - autopilot's G4 planner ("does my predicted surface overlap an existing
-#     claim?"  -> --for <my-claim-id>)
-#   - the Marshal's nudge watcher ("which files are contended across open PRs?"
-#     -> default mode)
+# ============================================================================
+# VENDORED PRIMITIVE (ADR 0009 / AV3-09). This file is vendored byte-identical
+# across the tiers that consult claim overlap (autopilot here; the Marshal plugin
+# once built). A repo packaging lint will enforce byte-parity of the copies — do
+# NOT edit one copy without the others.
+# ============================================================================
 #
-# ┌─ VENDORED — BYTE-IDENTICAL COPY (ADR 0001 manifest-schema pattern, ADR 0009) ─┐
-# │ This file is the CANONICAL source. It is authored here first because         │
-# │ autopilot has no claim-overlap check on main yet (only hot_file_audit.sh's   │
-# │ --subtasks mode, which is a different, within-drain concern). When autopilot │
-# │ G4 vendors it, its copy MUST be byte-identical to this one. A packaging lint │
-# │ (future) enforces byte-identity across both consumers; keep them in lockstep.│
-# └──────────────────────────────────────────────────────────────────────────────┘
+# Open-PR file-surface intersection: given the files a Subtask wants to own,
+# classify every OTHER in-flight PR whose declared file surface overlaps them.
+# Two consumers (ADR 0009):
+#   G4 (plan-time): a BINDING/TERMINAL overlap becomes a `blocked_by_pr` edge on
+#                   the Subtask (D2-evaluable).
+#   D2 (fire-time): the `eligibility` subcommand gates a claimed Subtask on its
+#                   blocked_by_pr PR state.
 #
-# Input  (stdin): lines "<claim-id>\t<file>", one file per line. Blank lines and
-#                 lines without a TAB are ignored. Duplicate (claim-id, file)
-#                 pairs are collapsed — a Claim claiming the same file twice is
-#                 still one claimant of that file.
-# Modes:
-#   (default)      Emit "<distinct-claim-count>\t<file>" for every file claimed
-#                  by >= threshold DISTINCT claim-ids, sorted by count desc then
-#                  file asc. This is the "contended surface" report.
-#   --for <id>     Emit "<file>\t<other-claim-id>" for every file where <id>
-#                  collides with a DIFFERENT claim, sorted by file then other-id.
-#                  One line per (file, other-claim) collision. This is the
-#                  "does my surface overlap someone else's claim?" query.
-# Options:
-#   --threshold N  (default 2) minimum distinct claimants for the default report.
-#                  Ignored in --for mode (a collision is always >= 2 by
-#                  definition: <id> plus one other).
+# The open-PR inventory (each PR's branch, state, age, and declared file surface)
+# is gathered in PRODUCTION via the host adapter — `host.sh pr-state` for state +
+# `runbook_pr.sh file-surface` on each open Runbook/Story PR body for the surface.
+# For deterministic use/testing it is INJECTED via `--inventory <file>` so this
+# primitive stays a pure decision function (no host, no clock).
 #
-# Determinism: output is a pure function of the input pair-set (ADR 0011 —
-# file-surface intersection, git/API-provable, no agent judgment). Sorting is
-# byte-stable via LC_ALL=C so the byte-identical lint and downstream diffs are
-# reproducible across platforms.
+# Overlap classification (per overlapping foreign PR):
+#   EXCLUDED  branch under this drain's own `--self-namespace` -> never a foreign
+#             claim (closes the re-GENERATE self-deadlock).
+#   ADVISORY  age_bd > 2 (stale beyond two business days) -> non-blocking note.
+#   BINDING   a foreign DRAFT PR -> actively-worked claim; block and wait.
+#   TERMINAL  a foreign ready (non-draft OPEN) PR -> about to merge; hard block.
+# BINDING/TERMINAL each emit a `blocked_by_pr=<ref>` line and make the call exit 2.
 #
-# Exit: 0 always on well-formed input (an empty report is a valid answer — no
-# overlap is not an error). 64 on a usage error.
+# Usage:
+#   claim_overlap.sh --self-namespace <prefix> --inventory <file> <owned-file>...
+#   claim_overlap.sh eligibility --pr-state <MERGED|DECLINED|NONE|OPEN|DRAFT>
 #
-# Portability: bash 3.2 (macOS default) + BSD userland safe. Pure awk/sort; no
-# GNU-only flags, no process substitution, no associative arrays.
+# Inventory line (TAB-separated): <pr-ref>\t<branch>\t<state>\t<age_bd>\t<f1,f2,...>
+#   state: DRAFT | OPEN (ready).  age_bd: integer business days since the PR opened.
+#
+# Exit: 0 no blocking claim (clean or advisory-only) · 2 >=1 BINDING/TERMINAL
+#       claim (or an ineligible eligibility check) · 64 usage.
+#
+# Portability: bash 3.2 + BSD userland safe. No associative arrays.
 
 set -u
-set +x
-
-export LC_ALL=C
 
 usage() {
-  echo "usage: claim_overlap.sh [--threshold N] [--for <claim-id>]  < claims.tsv" >&2
-  echo "  claims.tsv: lines '<claim-id>\\t<file>'" >&2
+  cat >&2 <<EOF
+usage: claim_overlap.sh --self-namespace <prefix> --inventory <file> <owned-file>...
+       claim_overlap.sh eligibility --pr-state <MERGED|DECLINED|NONE|OPEN|DRAFT>
+EOF
   exit 64
 }
 
-THRESHOLD=2
-FOR_ID=""
-FOR_SET=0
-while (( $# > 0 )); do
+# --- D2 eligibility subcommand ------------------------------------------------
+if [[ "${1:-}" == "eligibility" ]]; then
+  shift
+  STATE=""
+  while (( $# )); do
+    case "$1" in --pr-state) STATE="${2:-}"; shift 2 || usage ;; *) usage ;; esac
+  done
+  [[ -n "$STATE" ]] || usage
+  case "$STATE" in
+    MERGED|DECLINED|NONE) echo "ELIGIBLE"; exit 0 ;;   # the claim resolved -> Subtask may run
+    OPEN|DRAFT)           echo "INELIGIBLE $STATE"; exit 2 ;;  # claim still open -> wait
+    *) echo "claim_overlap: unknown pr-state: $STATE" >&2; exit 64 ;;
+  esac
+fi
+
+# --- overlap classification (the primitive) -----------------------------------
+SELF_NS=""
+INVENTORY=""
+FILES=""
+while (( $# )); do
   case "$1" in
-    --threshold) THRESHOLD="${2:-}"; shift 2 || usage ;;
-    --for)       FOR_ID="${2:-}"; FOR_SET=1; shift 2 || usage ;;
-    -h|--help)   usage ;;
-    *) echo "claim_overlap.sh: unknown arg: $1" >&2; usage ;;
+    --self-namespace) SELF_NS="${2:-}"; shift 2 || usage ;;
+    --inventory)      INVENTORY="${2:-}"; shift 2 || usage ;;
+    -*) usage ;;
+    *)  FILES="$FILES $1"; shift ;;
   esac
 done
 
-# An explicit empty --for is a usage error, not a silent switch to default mode.
-if (( FOR_SET )) && [[ -z "$FOR_ID" ]]; then
-  echo "claim_overlap.sh: --for requires a non-empty claim-id" >&2; usage
-fi
+[[ -n "$INVENTORY" ]] || usage
+[[ -f "$INVENTORY" ]] || { echo "claim_overlap: inventory not found: $INVENTORY" >&2; exit 64; }
+[[ -n "${FILES// }" ]] || usage
 
-case "$THRESHOLD" in
-  ''|*[!0-9]*) echo "claim_overlap.sh: --threshold must be a non-negative integer" >&2; usage ;;
-esac
+# Is <needle> among the space-separated owned FILES?
+owns() { case " $FILES " in *" $1 "*) return 0 ;; *) return 1 ;; esac; }
 
-if [[ -n "$FOR_ID" ]]; then
-  # --for mode: report every (file, other-claim) collision involving FOR_ID.
-  # First collapse to distinct (claim,file) pairs, then for each file that
-  # FOR_ID claims, emit the OTHER distinct claim-ids that also claim it.
-  awk -F'\t' -v me="$FOR_ID" '
-    NF >= 2 && $1 != "" && $2 != "" {
-      pair = $1 SUBSEP $2
-      if (!(pair in seen)) { seen[pair] = 1; claims[$2] = claims[$2] SUBSEP $1 }
-      if ($1 == me) { mine[$2] = 1 }
-    }
-    END {
-      for (f in mine) {
-        n = split(claims[f], arr, SUBSEP)
-        for (i = 1; i <= n; i++) {
-          c = arr[i]
-          if (c != "" && c != me) print f "\t" c
-        }
-      }
-    }
-  ' \
-  | sort -t"$(printf '\t')" -k1,1 -k2,2
-else
-  # default mode: distinct-claimant count per file, threshold-filtered.
-  awk -F'\t' -v thr="$THRESHOLD" '
-    NF >= 2 && $1 != "" && $2 != "" {
-      pair = $1 SUBSEP $2
-      if (!(pair in seen)) { seen[pair] = 1; count[$2]++ }
-    }
-    END { for (f in count) if (count[f] >= thr) print count[f] "\t" f }
-  ' \
-  | sort -t"$(printf '\t')" -k1,1nr -k2,2
-fi
+blocking=0
+while IFS="$(printf '\t')" read -r ref branch state age_bd csv; do
+  [[ -z "$ref" ]] && continue
+
+  # Intersection of this PR's declared surface with the Subtask's owned files.
+  overlap=""
+  oldIFS="$IFS"; IFS=','
+  for pf in $csv; do
+    pf="${pf# }"; pf="${pf% }"
+    [[ -z "$pf" ]] && continue
+    if owns "$pf"; then overlap="${overlap:+$overlap,}$pf"; fi
+  done
+  IFS="$oldIFS"
+  [[ -z "$overlap" ]] && continue     # no shared files -> not a claim on us
+
+  # Self-claim exclusion: our own drain's branches are never foreign claims.
+  if [[ -n "$SELF_NS" ]]; then
+    case "$branch" in "$SELF_NS"*) echo "excluded=$ref files=$overlap"; continue ;; esac
+  fi
+
+  # Stale beyond two business days -> advisory only.
+  case "$age_bd" in ''|*[!0-9]*) age_bd=0 ;; esac
+  if (( age_bd > 2 )); then
+    echo "advisory=$ref files=$overlap"
+    continue
+  fi
+
+  # Fresh foreign claim: draft is binding, ready is terminal. Both block.
+  if [[ "$state" == "DRAFT" ]]; then
+    echo "blocked_by_pr=$ref class=BINDING files=$overlap"
+  else
+    echo "blocked_by_pr=$ref class=TERMINAL files=$overlap"
+  fi
+  blocking=1
+done < "$INVENTORY"
+
+(( blocking == 0 )) || exit 2
+exit 0

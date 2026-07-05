@@ -67,7 +67,7 @@ hermetic mock. A new host is a new backend, never a new caller path. See
 | Path | Role |
 |---|---|
 | `scripts/marshal.sh` | the serial backstop loop (ADR 0010/0011) |
-| `scripts/claim_overlap.sh` | the vendored claim-overlap check (ADR 0009) — **byte-identical** with autopilot's copy; canonical source (autopilot has none on main yet) |
+| `scripts/claim_overlap.sh` | the vendored claim-overlap check (ADR 0009) — **byte-identical** with autopilot's canonical copy (`autopilot/scripts/claim_overlap.sh`), adopted verbatim; not forked |
 | `scripts/branch_age_watcher.sh` | the 48h staleness / planning-failure watcher (ADR 0012/0009) |
 | `scripts/mock_host.py` + `mock_host.sh` | the hermetic mock host backend (Python via `uv`, ADR 0015) |
 | `scripts/self_test.sh` | the hermetic self-test |
@@ -93,8 +93,8 @@ MARSHAL_HOTFIX_PIN=1234 bash …/scripts/marshal.sh   # logged to the Force Audi
 The vendored kernels run standalone too:
 
 ```bash
-# contended files across open PRs (feed "<pr-id>\t<file>" pairs)
-bash scripts/claim_overlap.sh < claims.tsv
+# foreign claims overlapping a branch's owned files (inventory-driven, ADR 0009)
+bash scripts/claim_overlap.sh --self-namespace story/ --inventory inventory.tsv <owned-file>...
 # branches past the 48h ceiling
 bash scripts/branch_age_watcher.sh --refs 'refs/heads/story/*' --max-age-hours 48
 ```

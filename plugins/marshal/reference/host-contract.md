@@ -46,34 +46,36 @@ pr-list-ready
   Empty queue -> no output, exit 0.
 ```
 
-### Reference backend mappings (to implement on main)
+### Reference backend mappings
 
-- **GitHub (`github.sh`)** — `gh pr list --state open --draft=false --base <trunk>
-  --json number,headRefName,headRefOid,reviewDecision,...`. `reviewDecision ==
-  "APPROVED"` → `APPROVED`, else `PENDING`. The ready-for-review timestamp is the
-  most recent `ReadyForReviewEvent` (GraphQL `timelineItems`), falling back to
-  `createdAt` for PRs opened non-draft.
-- **Bitbucket DC (`bitbucket.sh`)** — `GET /rest/api/1.0/projects/{k}/repos/{s}/
-  pull-requests?state=OPEN&order=NEWEST&withProperties=false`. Approval is
-  `reviewers[].approved` (all required reviewers approved → `APPROVED`). Honour
-  the same `AUTOPILOT_BITBUCKET_DRAFT_MODE` (native `draft` flag / `[DRAFT] `
-  title prefix) the other subcommands use to exclude drafts. Ready timestamp:
-  the draft→ready transition, falling back to `createdDate`.
+Trunk resolution is shared by both backends: `--base <b>` (explicit) →
+`$AUTOPILOT_TRUNK` → the repo's default branch. The Marshal need not pass a base;
+set `$AUTOPILOT_TRUNK` only when the merge trunk is not the default branch.
 
-## Status of `pr-list-ready` on main (READ THIS)
+- **GitHub (`github.sh`)** — `gh pr list --state open --base <trunk>
+  --json number,headRefName,headRefOid,reviewDecision,createdAt,isDraft`; drafts
+  are excluded client-side on `isDraft` (`gh --draft` filters to drafts-ONLY, not
+  the inverse). `reviewDecision == "APPROVED"` → `APPROVED`, else `PENDING`. The
+  ready-for-review timestamp is the most recent `ReadyForReviewEvent` (GraphQL
+  `timelineItems`, one lookup per PR), falling back to `createdAt` for PRs opened
+  non-draft; ISO→epoch is done in `jq` (`strptime|mktime`, UTC) for BSD/GNU
+  stability.
+- **Bitbucket DC (`bitbucket.sh`)** — paginated `GET /rest/api/1.0/projects/{k}/
+  repos/{s}/pull-requests?state=OPEN&order=NEWEST&withProperties=false`, filtered
+  client-side to `toRef == <trunk>`. Approval is `reviewers[].approved` (≥1
+  reviewer and ALL approved → `APPROVED`, else `PENDING`). Drafts are excluded via
+  `AUTOPILOT_BITBUCKET_DRAFT_MODE` (native `draft` flag / `[DRAFT] ` title prefix).
+  Ready timestamp: `createdDate` (epoch millis ÷ 1000) — DC's REST surface exposes
+  no draft→ready transition timestamp, so `createdDate` is the contract's
+  documented fallback for this backend.
 
-`pr-list-ready` is **not yet on main.** This plugin ships:
+## Status of `pr-list-ready` on main
 
-1. the **canonical spec** (this file), and
-2. a **reference implementation in the hermetic mock** (`scripts/mock_host.py`),
-   which is what the self-test drives.
-
-Adding `pr-list-ready` to `host.sh` + `github.sh` + `bitbucket.sh` — matching
-this contract byte-for-byte in its observable output, and covered by the T01-
-class mock matrix in `autopilot/scripts/self_test.sh` for both backends — is a
-follow-up in the autopilot host-adapter, deliberately kept out of this plugin's
-diff to preserve the AV3-15 adapter's byte-identical backend guarantees. This
-mirrors how ADR 0009's claim-overlap check is authored canonically here and
-vendored into its consumers under a byte-identity lint. Until that lands, the
-Marshal runs end-to-end only against the mock (and any host whose adapter
-implements `pr-list-ready`).
+`pr-list-ready` is **implemented on main** across `host.sh` + `github.sh` +
+`bitbucket.sh`, matching this contract in its observable output and covered by a
+real-backend contract matrix in `autopilot/scripts/self_test.sh` (gh argv shim
+for GitHub, the loopback DC mock server for Bitbucket) plus an end-to-end
+`marshal.sh`-through-`github.sh` run in this plugin's `scripts/self_test.sh`
+(section `MG`). The hermetic mock (`scripts/mock_host.py`) remains the canonical
+reference implementation the Marshal loop's own self-test drives. The Marshal
+therefore runs end-to-end against GitHub, Bitbucket DC, and the mock alike.
