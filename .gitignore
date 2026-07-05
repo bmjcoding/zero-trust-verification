@@ -3,3 +3,6 @@
 .ruff_cache/
 codebase-health/audit/
 codebase-health/test-fixtures/blind/
+.venv/
+__pycache__/
+*.pyc
