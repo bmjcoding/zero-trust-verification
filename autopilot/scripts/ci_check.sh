@@ -43,7 +43,10 @@ set -u
 set +x
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-BITBUCKET="$HERE/bitbucket.sh"
+# Build-status and PR state are read through the host adapter (host.sh), never
+# a named backend, so the D7.5 CI poll is host-agnostic (ADR 0013, Hard
+# Contract 11). host.sh dispatches to the Bitbucket DC or GitHub backend.
+HOST="$HERE/host.sh"
 
 SHA=""
 PR=""
@@ -65,7 +68,7 @@ while (( $# > 0 )); do
 done
 
 [[ -n "$SHA" && -n "$PR" ]] || { echo "LAST_STATE=usage-error" >&2; echo "usage: ci_check.sh --sha <sha> --pr <N> [--once] [--timeout-sec N] [--poll-sec N]" >&2; exit 64; }
-[[ -x "$BITBUCKET" ]] || { echo "LAST_STATE=usage-error" >&2; echo "missing bitbucket.sh next to ci_check.sh" >&2; exit 64; }
+[[ -x "$HOST" ]] || { echo "LAST_STATE=usage-error" >&2; echo "missing host.sh next to ci_check.sh" >&2; exit 64; }
 
 START=$(date -u +%s)
 LAST_STATE="<none>"
@@ -87,13 +90,13 @@ while :; do
   ELAPSED=$(( NOW - START ))
 
   # First, check PR state. If declined, stop polling builds.
-  PR_STATE=$("$BITBUCKET" pr-state --num "$PR" 2>/dev/null || echo UNKNOWN)
+  PR_STATE=$("$HOST" pr-state --num "$PR" 2>/dev/null || echo UNKNOWN)
   case "$PR_STATE" in
     DECLINED) finish PR_DECLINED 4 ;;
     MERGED|OPEN|UNKNOWN) : ;;
   esac
 
-  BUILD_STATE=$("$BITBUCKET" build-status --sha "$SHA" 2>/dev/null || echo UNKNOWN)
+  BUILD_STATE=$("$HOST" build-status --sha "$SHA" 2>/dev/null || echo UNKNOWN)
   LAST_STATE="$BUILD_STATE"
   case "$BUILD_STATE" in
     SUCCESSFUL) finish GREEN 0 ;;

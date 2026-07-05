@@ -343,13 +343,13 @@ Under `branching.no_force_push: false` this step is a no-op — tracker bookkeep
 **Step D7.2 — Push.** `git push -u origin <branch>`. Transient failure → 1 retry. Auth failure → `[BLOCKED: bitbucket-token-missing]` (impl), no retry.
 
 
-**Step D7.3 — PR.** `bash ${SKILL_DIR}/scripts/bitbucket.sh pr-open --title "<commit-subject>" --src <head-branch> --dest <base-branch> --body-file <body-file>` returns the PR number on stdout. Dest = the rebase base from D7.0. Body file = Summary + Test plan + TDD sequence + Checklist sections.
+**Step D7.3 — PR.** `bash ${SKILL_DIR}/scripts/host.sh pr-open --title "<commit-subject>" --src <head-branch> --dest <base-branch> --body-file <body-file>` returns the PR number on stdout (host.sh dispatches to the detected backend — never call a backend directly, Hard Contract 11). Dest = the rebase base from D7.0. Body file = Summary + Test plan + TDD sequence + Checklist sections.
 
 
 Under `branching.no_force_push: true` with a non-empty D7.1a fold, the PR body ALSO includes a `## Tracker deltas folded in` H2 listing each entry's `delta_kind` + `diff_summary` for reviewer visibility.
 
 
-Under `branching.single_branch_single_pr: true`, D7.3 opens the PR only on the FIRST successful Subtask; subsequent Subtasks push additional commits to the same branch and update the existing PR via `bitbucket.sh pr-comment` (append a "Subtask <id> landed" note).
+Under `branching.single_branch_single_pr: true`, D7.3 opens the PR only on the FIRST successful Subtask; subsequent Subtasks push additional commits to the same branch and update the existing PR via `host.sh pr-comment` (append a "Subtask <id> landed" note).
 
 
 **Step D7.4 — Tracker update.** Set `in_progress.pr_number = <num>`, `in_progress.awaiting_ci = true`, `in_progress.pushed_at = <iso8601>`, `in_progress.pushed_sha = <HEAD sha just pushed>` (consumed by D7.5's `ci_check.sh --sha`), `in_progress.ci_check_count = 0`, `last_heartbeat_at = <now>`.
@@ -362,7 +362,7 @@ Under `branching.single_branch_single_pr: true`, D7.3 opens the PR only on the F
 ### D7.3a — Stacked PR merge strategy (AP-10)
 
 
-(Renamed from a second "D7.5" in v2.4.0 — the step id collided with the CI poll below.) When the PR being created stacks on another in-flight Subtask's branch, the PR description MUST request a **merge commit (not squash)**. Bitbucket's PR merge UI defaults to squash; squash on a stacked PR collapses the dependency chain and breaks subsequent rebases. `bitbucket.sh pr-merge` defaults to the merge-commit intent and uses `pr-merge-strategies` discovery to fall back to the closest enabled strategy on repos that don't offer it.
+(Renamed from a second "D7.5" in v2.4.0 — the step id collided with the CI poll below.) When the PR being created stacks on another in-flight Subtask's branch, the PR description MUST request a **merge commit (not squash)**. Bitbucket's PR merge UI defaults to squash; squash on a stacked PR collapses the dependency chain and breaks subsequent rebases. `host.sh pr-merge` defaults to the merge-commit intent and uses `pr-merge-strategies` discovery to fall back to the closest enabled strategy on repos that don't offer it (the Bitbucket DC backend maps to `no-ff`/`squash`/…; the GitHub backend to `--merge`/`--squash`/`--rebase`).
 
 
 ## Step D7.5 — CI poll (cross-fire)
@@ -478,7 +478,7 @@ Every fire under `branching.no_force_push: false` writes its tracker delta throu
 Under `branching.no_force_push: true` this section does not apply — bookkeeping lands via the AP-23 batched-delta queue, and there is no rolling tracker PR to poll.
 
 
-At the top of D1 (after D1.0/D1.1, before D2), when `branching.no_force_push: false`, check the tracker PR state via `bash ${SKILL_DIR}/scripts/bitbucket.sh pr-state --branch autopilot/<slug>/tracker`. The observable states are exactly what the script emits — `OPEN | MERGED | DECLINED | NONE` (mergeability is NOT observable through `pr-state`; a conflicted tracker PR surfaces later as a failed push/merge, not here):
+At the top of D1 (after D1.0/D1.1, before D2), when `branching.no_force_push: false`, check the tracker PR state via `bash ${SKILL_DIR}/scripts/host.sh pr-state --branch autopilot/<slug>/tracker`. The observable states are exactly what the adapter emits — `OPEN | MERGED | DECLINED | NONE` (a draft tracker PR would read `DRAFT`; mergeability is NOT observable through `pr-state` — a conflicted tracker PR surfaces later as a failed push/merge, not here):
 
 
 | Tracker PR state | Action |
