@@ -297,10 +297,17 @@ grep -q 'autopilot:file-surface:begin' "$ROOT/references/runbook-template.md" ||
 grep -q 'autopilot:file-surface:begin' "$ROOT/references/generate-lifecycle.md" || { violation L19 "generate-lifecycle.md G7 missing the file-surface block markers"; l19_bad=1; }
 # (b) the Runbook PR branch is named as the bookkeeping home.
 grep -q 'autopilot/<slug>/runbook' "$ROOT/references/drain-lifecycle.md" || { violation L19 "drain-lifecycle.md does not name the Runbook PR branch autopilot/<slug>/runbook"; l19_bad=1; }
-# (c) no doc reasserts the retired rolling-tracker-PR framing as active — any
+# (c) no doc reasserts the retired rolling-(tracker-)PR framing as active — any
 #     surviving mention must be flagged 'retired' on the same line.
-if hits=$(grep -nE 'rolling tracker PR' "${DOCS[@]}" 2>/dev/null | grep -vi 'retired'); then
-  violation L19 "active 'rolling tracker PR' framing (retired by AV3-08): $(tr '\n' ' ' <<<"$hits")"
+if hits=$(grep -nE 'rolling (tracker )?PR' "${DOCS[@]}" 2>/dev/null | grep -vi 'retired'); then
+  violation L19 "active 'rolling (tracker) PR' framing (retired by AV3-08): $(tr '\n' ' ' <<<"$hits")"
+  l19_bad=1
+fi
+# (d) the D7.1a fold is a SEPARATE commit on the runbook branch, never folded into
+#     a Story's code commit — pin against the retired atomic-fold model reappearing
+#     (the corpus adversarial round caught exactly this half-applied residue).
+if grep -qE 'atomic commit lands: impl edit|fold rides the Subtask' "$ROOT/references/tracker-delta-batching.md" 2>/dev/null; then
+  violation L19 "tracker-delta-batching.md describes the retired atomic-fold-into-Story-commit model (AV3-08: the fold is its own commit on the runbook branch)"
   l19_bad=1
 fi
 (( l19_bad == 0 )) && ok L19

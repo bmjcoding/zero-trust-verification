@@ -75,6 +75,18 @@ CONFIG_RE="^chore: ${IDQ}( |$|—)"
 SUBJECTS="$(git log --reverse --no-merges --pretty=format:'%s' "${BASE}..HEAD" 2>/dev/null)"
 
 # `kind: refactor` — exactly one refactor commit for this id, no test/feat.
+# jira-key presence (only when enforced): EVERY in-range commit must carry
+# [<JIRA-KEY>], regardless of kind (AP-22 covers TDD-cycle, final, refactor, docs,
+# config, and bookkeeping commits). Checked once here so no kind branch can bypass it.
+if [[ -n "$JIRA" ]]; then
+  while IFS= read -r s; do
+    [[ -z "$s" ]] && continue
+    case "$s" in *"[$JIRA]"*) : ;; *) block jira-key-missing "commit missing [$JIRA]: $s" ;; esac
+  done <<EOF
+$SUBJECTS
+EOF
+fi
+
 if [[ "$KIND" == "refactor" ]]; then
   n_ref=0; n_other=0
   while IFS= read -r s; do
@@ -115,11 +127,6 @@ contains() {  # <n> <list>
 
 while IFS= read -r s; do
   [[ -z "$s" ]] && continue
-
-  # jira-key presence (only when enforced): every in-scope commit must carry it.
-  if [[ -n "$JIRA" ]]; then
-    case "$s" in *"[$JIRA]"*) : ;; *) block jira-key-missing "commit missing [$JIRA]: $s" ;; esac
-  fi
 
   if [[ "$s" =~ $RED_RE ]]; then
     n="${BASH_REMATCH[1]}"

@@ -808,6 +808,18 @@ assert_eq "AV3-06.6" "missing --base is usage error 64" "64" "$rc"
 acs --id B2 --base deadbeefdeadbeef >/dev/null 2>&1; rc=$?
 assert_eq "AV3-06.6" "unknown base ref is usage error 64" "64" "$rc"
 
+# AV3-06.7 — adversarial round (executor lens): --jira-key must be enforced on
+# EVERY kind, not just code/test-only (AP-22 covers refactor/docs/config too).
+csc checkout -qb autopilot/demo/story5 "$CS_TRUNK"
+csci "refactor: F6 — unkeyed refactor"
+out=$(acs --id F6 --base "$CS_TRUNK" --kind refactor --jira-key PROJ-7 2>&1); rc=$?
+assert_eq "AV3-06.7" "unkeyed refactor reds under enforce_jira_key" "1" "$rc"
+assert_contains "AV3-06.7" "refactor jira-key-missing" "[BLOCKED: jira-key-missing]" "$out"
+csc checkout -qb autopilot/demo/story6 "$CS_TRUNK"
+csci "docs: G7 — unkeyed docs"
+out=$(acs --id G7 --base "$CS_TRUNK" --kind docs --jira-key PROJ-7 2>&1)
+assert_contains "AV3-06.7" "docs jira-key-missing" "[BLOCKED: jira-key-missing]" "$out"
+
 echo "== validate_plan_mapping.sh (AV3-07 sizing + AV3-02 behavior-mapping) =="
 
 VPM="$HERE/validate_plan_mapping.sh"
@@ -867,6 +879,19 @@ vpm >/dev/null 2>&1; rc=$?
 assert_eq "AV3-07.6" "no plan arg is usage error 64" "64" "$rc"
 vpm "$SANDBOX/does-not-exist.json" >/dev/null 2>&1; rc=$?
 assert_eq "AV3-07.6" "absent plan file is usage error 64" "64" "$rc"
+
+# AV3-07.7 — adversarial round (executor lens): a Subtask missing parent_story must
+# be refused, else two 40h Subtasks of one 80h Story slip under the 48h cap as
+# separate groups.
+cat > "$SANDBOX/plan_orphan.json" <<'J'
+{"subtasks":[
+  {"id":"ST-1.1","parent_story":"ST-1","kind":"code","estimated_size":"L","predicted_hours":40},
+  {"id":"ST-1.2","kind":"code","estimated_size":"L","predicted_hours":40}
+]}
+J
+out=$(vpm "$SANDBOX/plan_orphan.json" 2>&1); rc=$?
+assert_eq "AV3-07.7" "missing parent_story refused (no oversized masking)" "1" "$rc"
+assert_eq "AV3-07.7" "orphan cites the subtask-id" "[GENERATE-FAILED: subtask-missing-parent-story: ST-1.2]" "$out"
 
 # --- AV3-02: Subtask <-> Behavior-ID mapping (validate_plan_mapping.sh + manifest) --
 cat > "$SANDBOX/manifest.yaml" <<'Y'
@@ -1048,6 +1073,57 @@ vmu "$SANDBOX/u_a.yaml" "$SANDBOX/u_b.yaml" >/dev/null 2>&1; rc=$?
 assert_eq "AV3-03.6" "missing --union is usage error 64" "64" "$rc"
 vmu --union "$SANDBOX/u_a.yaml" >/dev/null 2>&1; rc=$?
 assert_eq "AV3-03.6" "a union of one is usage error 64" "64" "$rc"
+
+# AV3-03.7 — adversarial round (executor lens): the union checks must not be
+# fooled by legal YAML variants the canonical emitter doesn't use.
+# (a) block-list `environments:` must NOT extract to empty and pass a real mismatch.
+cat > "$SANDBOX/u_blk_dev.yaml" <<'Y'
+observability:
+  profile: payments
+environments:
+  - dev
+  - prod
+behaviors:
+  - id: B-blkA-001
+    lifecycle: active
+Y
+cat > "$SANDBOX/u_blk_stg.yaml" <<'Y'
+observability:
+  profile: payments
+environments:
+  - staging
+behaviors:
+  - id: B-blkB-001
+    lifecycle: active
+Y
+out=$(vmu --union "$SANDBOX/u_blk_dev.yaml" "$SANDBOX/u_blk_stg.yaml" 2>&1); rc=$?
+assert_eq "AV3-03.7" "block-list environments mismatch is caught (not empty-vs-empty)" "1" "$rc"
+assert_eq "AV3-03.7" "block-list mismatch token" "[GENERATE-FAILED: manifest-union-mismatch: environments]" "$out"
+# block-list, same set different order -> coherent.
+cat > "$SANDBOX/u_blk_rev.yaml" <<'Y'
+observability:
+  profile: payments
+environments:
+  - prod
+  - dev
+behaviors:
+  - id: B-blkC-001
+    lifecycle: active
+Y
+out=$(vmu --union "$SANDBOX/u_blk_dev.yaml" "$SANDBOX/u_blk_rev.yaml" 2>&1); rc=$?
+assert_eq "AV3-03.7" "block-list set-equality (order-insensitive) is coherent" "0" "$rc"
+# (b) a prose *mention* of a foreign ID must NOT register a false collision.
+cat > "$SANDBOX/u_prose.yaml" <<'Y'
+observability:
+  profile: payments
+environments: [dev, prod]
+behaviors:
+  - id: B-ship-002
+    lifecycle: active
+    description: "supersedes B-a-001 from the pricing spec"
+Y
+out=$(vmu --union "$SANDBOX/u_a.yaml" "$SANDBOX/u_prose.yaml" 2>&1); rc=$?
+assert_eq "AV3-03.7" "prose mention of a foreign id is NOT a collision" "0" "$rc"
 
 echo "== manifest_revision_gate.sh (AV3-04 revision drift) =="
 
@@ -1317,6 +1393,18 @@ assert_contains "AV3-05.3" "unproven cites the behavior + test" "[BLOCKED: unpro
 # AV3-05.4 — usage guardrail.
 abb --coverage "$SANDBOX/cov_ok.md" >/dev/null 2>&1; rc=$?
 assert_eq "AV3-05.4" "missing --base is usage error 64" "64" "$rc"
+
+# AV3-05.5 — adversarial round (executor lens): the bound test name must be matched
+# as a WHOLE WORD, not a substring — `test_accepts_valid_lock` must NOT be read as
+# proven when the only RED commit names `test_accepts_valid_lock_v2`.
+BIND_BASE2=$(bindc rev-parse HEAD)
+bindc commit -q --allow-empty -m "test: A2.1 RED — variant" -m "adds tests/test_pricing.py::test_accepts_valid_lock_v2"
+cat > "$SANDBOX/cov_substr.md" <<'M'
+- B-pricing-002: tests/test_pricing.py::test_accepts_valid_lock
+M
+out=$(abb --coverage "$SANDBOX/cov_substr.md" --base "$BIND_BASE2" 2>&1); rc=$?
+assert_eq "AV3-05.5" "substring-only test name is an unproven binding" "1" "$rc"
+assert_contains "AV3-05.5" "whole-word: _v2 does not prove the base name" "unproven-binding" "$out"
 
 echo "== determinism_gate.sh (AV3-12 N=5 flaky gate) =="
 
