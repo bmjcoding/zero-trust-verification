@@ -34,7 +34,7 @@ backstop (the fourth Zero-Trust Verification plugin, ADR 0011).
   Marshal drives, including a real **Composition Break** build model (a symbol
   defined/called check over the composed tree) so the compose-verify path is
   exercised end-to-end, not stubbed.
-- **`scripts/self_test.sh`** — hermetic self-test (62 assertions) driving the loop
+- **`scripts/self_test.sh`** — hermetic self-test driving the loop
   through the mock across FIFO, rebase-refuse (budget + conflict), compose-verify
   (green, red, in-progress), merge-or-evict, hotfix-pin/Force-Audit, and pin-
   ignored scenarios, plus claim-overlap (both modes) and branch-age fixtures.

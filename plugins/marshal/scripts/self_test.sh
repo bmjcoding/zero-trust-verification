@@ -80,6 +80,7 @@ r1="$(bash "$CLAIM" < "$CLAIMS")"; r2="$(bash "$CLAIM" < "$CLAIMS")"
 assert_eq       CO10 "output is deterministic across runs" "$r1" "$r2"
 
 ( bash "$CLAIM" --bogus < "$CLAIMS" >/dev/null 2>&1 ); assert_eq CO11 "unknown flag -> usage exit 64" "64" "$?"
+( bash "$CLAIM" --for "" < "$CLAIMS" >/dev/null 2>&1 ); assert_eq CO12 "empty --for is a usage error (no silent mode switch) -> exit 64" "64" "$?"
 
 # ==============================================================================
 # branch_age_watcher.sh — staleness / 48h planning-failure watcher (ADR 0012/0009)
@@ -115,6 +116,11 @@ assert_contains BA07 "--refs flags the 2020 branch" "story/old" "$out"
 assert_not_contains BA08 "--refs does not flag the just-committed branch" "story/new" "$out"
 
 ( bash "$WATCH" --now notanint < "$AGES" >/dev/null 2>&1 ); assert_eq BA09 "non-integer --now -> usage exit 64" "64" "$?"
+
+# --refs outside a git repo must FAIL (exit 65), not silently succeed — the check
+# has to run in the main shell, not inside the pipeline subshell.
+NOTREPO="$SANDBOX/notrepo"; mkdir -p "$NOTREPO"
+( cd "$NOTREPO" && bash "$WATCH" --refs 'refs/heads/*' >/dev/null 2>&1 ); assert_eq BA10 "--refs outside a git repo -> exit 65" "65" "$?"
 
 # ==============================================================================
 # marshal.sh — the serial backstop loop, via the MOCK host backend
@@ -245,6 +251,58 @@ assert_contains ML05 "kickback reason=rebase-budget" "kickback pr=40 reason=reba
 assert_not_contains ML05 "budget-refused PR is not built" "build pr=40" "$out"
 assert_eq       ML05 "budget-refused PR is not merged" "" "$(state_list merges)"
 
+# ---- ML05b: D7.0 HUNK-budget refuse (1 file, but > 3 hunks) ------------------
+# The overlap is a single file (within the 2-file budget) but the trunk changed
+# it in 4 separated hunks (> 3-hunk budget) -> refuse on the hunk budget, not the
+# file budget. Exercises the hunk gate independently.
+mk_case
+main_init 'foo\n' 'foo\n'
+# a 30-line file on main
+( cd "$WC" && git checkout -q main && seq 1 30 | sed 's/^/l/' > big.txt \
+    && git add -A && git commit -qm addbig && git push -q origin main )
+# branch touches big.txt in ONE spot (line 30) -> big.txt is in the overlap set
+( cd "$WC" && git checkout -q -b story/h main \
+    && seq 1 30 | sed 's/^/l/' | sed -e '30s/$/-BR/' > big.txt \
+    && git add -A && git commit -qm br && git push -q -u origin story/h && git checkout -q main )
+# main changes 4 well-separated regions (>= 8 lines apart => 4 distinct hunks)
+( cd "$WC" && git checkout -q main \
+    && seq 1 30 | sed 's/^/l/' | sed -e '2s/$/-M/' -e '10s/$/-M/' -e '18s/$/-M/' -e '26s/$/-M/' > big.txt \
+    && git add -A && git commit -qm main4 && git push -q origin main )
+cat > "$STATE" <<JSON
+{"trunk":"main","prs":[{"num":45,"branch":"story/h","ready_ts":100,"approval":"APPROVED"}]}
+JSON
+out="$(run_marshal)"
+assert_contains ML05b "refused on the budget (1 file within file budget)" "result=refuse-budget" "$out"
+assert_contains ML05b "overlap is exactly 1 file" "overlap_files=1" "$out"
+assert_contains ML05b "trunk changed it in 4 hunks (> 3)" "overlap_hunks=4" "$out"
+assert_contains ML05b "kickback reason=rebase-budget" "kickback pr=45 reason=rebase-budget" "$out"
+assert_eq       ML05b "hunk-budget-refused PR is not merged" "" "$(state_list merges)"
+
+# ---- ML05c: HUNK budget over a filename WITH A SPACE (locks the array fix) ---
+# Same shape as ML05b but the overlap file name contains a space. If the hunk
+# counter word-split the path, git diff would see two non-existent paths, report
+# 0 hunks, pass the budget, and fall through to a plain conflict — so this test
+# fails (reason=rebase-conflict, overlap_hunks=0) unless paths are passed as a
+# single argument.
+mk_case
+main_init 'foo\n' 'foo\n'
+SP='big file.txt'
+( cd "$WC" && git checkout -q main && seq 1 30 | sed 's/^/l/' > "$SP" \
+    && git add -A && git commit -qm addbig && git push -q origin main )
+( cd "$WC" && git checkout -q -b story/sp main \
+    && seq 1 30 | sed 's/^/l/' | sed -e '30s/$/-BR/' > "$SP" \
+    && git add -A && git commit -qm br && git push -q -u origin story/sp && git checkout -q main )
+( cd "$WC" && git checkout -q main \
+    && seq 1 30 | sed 's/^/l/' | sed -e '2s/$/-M/' -e '10s/$/-M/' -e '18s/$/-M/' -e '26s/$/-M/' > "$SP" \
+    && git add -A && git commit -qm main4 && git push -q origin main )
+cat > "$STATE" <<JSON
+{"trunk":"main","prs":[{"num":46,"branch":"story/sp","ready_ts":100,"approval":"APPROVED"}]}
+JSON
+out="$(run_marshal)"
+assert_contains ML05c "spaced-name overlap counted as 1 file" "overlap_files=1" "$out"
+assert_contains ML05c "4 hunks counted despite the space in the path" "overlap_hunks=4" "$out"
+assert_contains ML05c "refused on the hunk budget, not misread as a conflict" "kickback pr=46 reason=rebase-budget" "$out"
+
 # ---- ML06: rebase CONFLICT refuse (within file budget) ----------------------
 # main and branch edit the SAME single file with conflicting hunks: 1 file is
 # within the 2-file budget, so it passes the budget gate but the rebase itself
@@ -334,6 +392,57 @@ AUDIT2="$CASE/force-audit.log"
 out="$(run_marshal MARSHAL_HOTFIX_PIN=999 MARSHAL_FORCE_AUDIT_LOG="$AUDIT2")"
 assert_contains ML11 "pin of a non-ready PR is logged ignored" "pin pr=999 ignored=not-ready" "$out"
 assert_eq       ML11 "no Force Audit line written for an ignored pin" "0" "$([[ -f "$AUDIT2" ]] && wc -l < "$AUDIT2" | tr -d ' ' || echo 0)"
+
+# ---- ML14: a pinned RED hotfix is evicted, NOT merged (pin never waives build)-
+# The pin overrides ordering + approval but NEVER the composed-state build gate.
+# Pin a red PR ahead of an approved green one: the red pin is kicked back and the
+# next-in-line green PR merges instead.
+mk_case
+main_init 'foo\nbar\n' 'foo\n'
+mk_branch story/hotred 'foo\nbar\n' 'foo\nGHOST\n'   # calls GHOST (undefined) -> red
+mk_branch story/safe   'foo\nbar\n' 'foo\nbar\n'     # green
+cat > "$STATE" <<JSON
+{"trunk":"main","prs":[
+ {"num":100,"branch":"story/hotred","ready_ts":900,"approval":"PENDING"},
+ {"num":101,"branch":"story/safe","ready_ts":100,"approval":"APPROVED"}]}
+JSON
+AUDIT3="$CASE/force-audit.log"
+out="$(run_marshal MARSHAL_HOTFIX_PIN=100 MARSHAL_FORCE_AUDIT_LOG="$AUDIT3")"
+assert_contains ML14 "pinned PR is processed at the head" "candidates n=2 order=100,101" "$out"
+assert_contains ML14 "pinned RED hotfix fails the composed build" "kickback pr=100 reason=build-failed" "$out"
+assert_not_contains ML14 "pin does NOT bypass the build gate — 100 not merged" "merge pr=100" "$out"
+assert_eq       ML14 "only the green next-in-line merged" "101" "$(state_list merges)"
+assert_contains ML14 "the pin was still recorded to the Force Audit" "pr=100" "$(cat "$AUDIT3" 2>/dev/null || true)"
+
+# ---- ML15: build-status with trailing whitespace/CR still reads SUCCESSFUL ---
+# A backend that emits "SUCCESSFUL \r\n" must not strand the queue in a forever-
+# wait. The Marshal trims the status before matching.
+mk_case
+main_init 'foo\n' 'foo\n'
+mk_branch story/noisy 'foo\n' 'foo\n__NOISY_OK__\n'
+cat > "$STATE" <<JSON
+{"trunk":"main","prs":[{"num":110,"branch":"story/noisy","ready_ts":100,"approval":"APPROVED"}]}
+JSON
+out="$(run_marshal)"
+assert_contains ML15 "trailing-whitespace SUCCESSFUL is normalized" "build pr=110 sha=" "$out"
+assert_contains ML15 "and the PR merges (not a permanent wait)" "merge pr=110" "$out"
+assert_eq       ML15 "PR 110 recorded merged" "110" "$(state_list merges)"
+
+# ---- ML13: green build but the merge CALL fails -> not reported merged -------
+# Zero-trust in reverse: a merge that the host refuses must never be logged as a
+# merge. The PR stays at the head for the next fire.
+mk_case
+main_init 'foo\nbar\n' 'foo\n'
+mk_branch story/prot 'foo\nbar\n' 'foo\nbar\n'      # green
+cat > "$STATE" <<JSON
+{"trunk":"main","prs":[{"num":99,"branch":"story/prot","ready_ts":100,"approval":"APPROVED","fail_merge":true}]}
+JSON
+out="$(run_marshal)"
+assert_contains ML13 "composed build was green" "build pr=99 sha=" "$out"
+assert_contains ML13 "a refused merge is reported as failed, not merged" "merge pr=99 result=failed" "$out"
+assert_not_contains ML13 "no success 'merge pr=99 strategy=' line" "merge pr=99 strategy=" "$out"
+assert_eq       ML13 "nothing actually merged" "" "$(state_list merges)"
+assert_contains ML13 "summary shows nothing merged" "done merged=none" "$out"
 
 # ---- ML12: empty queue -> clean no-op ---------------------------------------
 mk_case

@@ -184,6 +184,11 @@ def cmd_build_status(st, repo, flags):
     if "__INPROGRESS__" in call_syms:
         sys.stdout.write("INPROGRESS\n")
         return
+    if "__NOISY_OK__" in call_syms:
+        # Model a well-meaning backend that emits the right token with trailing
+        # whitespace / CRLF. The Marshal must still read it as SUCCESSFUL.
+        sys.stdout.write("SUCCESSFUL \r\n")
+        return
     def_set = set(symbols(defs))
     missing = [s for s in call_syms if s not in def_set]
     sys.stdout.write("FAILED\n" if missing else "SUCCESSFUL\n")
@@ -213,6 +218,10 @@ def cmd_pr_merge(st, repo, flags, state_path):
     pr = next((p for p in st["prs"] if p["num"] == num), None)
     if pr is None:
         die("pr-merge: unknown PR %s" % num, 1)
+    if pr.get("fail_merge"):
+        # Model a host that refuses the merge (branch protection, a race, a
+        # transient error) even though the composed build was green.
+        die("pr-merge: host refused merge of PR %s" % num, 1)
     trunk = st["trunk"]
     branch_ref = "refs/heads/%s" % pr["branch"]
     tip = rev_parse(repo, branch_ref)

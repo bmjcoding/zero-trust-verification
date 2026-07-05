@@ -116,9 +116,11 @@ if [[ -n "$PIN" ]]; then
   fi
 fi
 
-# APPROVED, excluding an already-pinned PR, strict FIFO by ready_ts then num.
+# APPROVED, non-empty PR number (drop malformed rows so they don't inflate the
+# candidate count / phantom the order log), excluding an already-pinned PR,
+# strict FIFO by ready_ts then num.
 awk -F'\t' -v p="$PIN" -v pinned="$PIN_APPLIED" \
-  '$5=="APPROVED" && !(pinned=="1" && $2==p)' "$READY" \
+  '$2!="" && $5=="APPROVED" && !(pinned=="1" && $2==p)' "$READY" \
   | sort -t"$(printf '\t')" -k1,1n -k2,2n >> "$ORDER"
 
 N_ORDER=$(awk 'END{print NR+0}' "$ORDER")
@@ -147,8 +149,11 @@ rebase_cost() {  # <branch>
   ofiles=$(awk 'END{print NR+0}' "$overlap")
   if (( ofiles == 0 )); then echo "0 0"; return; fi
   # Count trunk-side hunks in the overlap files — the surface the branch must
-  # reconcile. `git diff base trunk -- <overlap files>` @@-headers.
-  ohunks=$(git diff "$base" "origin/$TRUNK" -- $(cat "$overlap") 2>/dev/null | grep -c '^@@' || true)
+  # reconcile. Read paths line-by-line into an array so a path with spaces is one
+  # argument, not word-split (which would under-count the budget surface).
+  local -a oflist=()
+  while IFS= read -r f; do [[ -n "$f" ]] && oflist+=("$f"); done < "$overlap"
+  ohunks=$(git diff "$base" "origin/$TRUNK" -- "${oflist[@]}" 2>/dev/null | grep -c '^@@' || true)
   echo "$ofiles $ohunks"
 }
 
@@ -172,6 +177,16 @@ while IFS="$(printf '\t')" read -r ready_ts num branch head_sha approval; do
     # D7.0 budget gate: refuse an oversized rebase before attempting it.
     set -- $(rebase_cost "$branch")
     ofiles="$1"; ohunks="$2"
+    if (( ofiles < 0 )); then
+      # No common ancestor with the trunk (unrelated histories): there is no
+      # rebase to budget. Refuse explicitly rather than let the sentinel slip
+      # past the gate and mis-report as a plain conflict.
+      log "rebase pr=$num result=refuse-no-base"
+      post_comment "$num" "Merge Marshal: $branch has no common ancestor with $TRUNK (unrelated histories) — there is nothing to rebase onto. Re-create this branch from the current trunk."
+      log "kickback pr=$num reason=rebase-no-base"
+      EVICTED=$((EVICTED+1))
+      continue
+    fi
     if (( ofiles > FILE_BUDGET || ohunks > HUNK_BUDGET )); then
       log "rebase pr=$num result=refuse-budget overlap_files=$ofiles overlap_hunks=$ohunks"
       post_comment "$num" "Merge Marshal: rebase onto $TRUNK exceeds the D7.0 budget (overlap ${ofiles} file(s)/${ohunks} hunk(s); budget ${FILE_BUDGET} file(s)/${HUNK_BUDGET} hunk(s)). An oversized rebase is a planning failure — re-plan this Story against the current trunk (ADR 0012), do not blind-rebase."
@@ -216,6 +231,10 @@ while IFS="$(printf '\t')" read -r ready_ts num branch head_sha approval; do
   poll=0
   while :; do
     state="$(host build-status --sha "$new_sha" 2>/dev/null || echo UNKNOWN)"
+    # Strip stray whitespace / CR so a backend that emits "SUCCESSFUL\r" or a
+    # trailing space still matches — a mis-match would fall through to "wait"
+    # forever (fail-safe, but the queue would never drain).
+    state="$(printf '%s' "$state" | tr -d '[:space:]')"
     case "$state" in
       SUCCESSFUL|FAILED) break ;;
     esac
@@ -227,10 +246,20 @@ while IFS="$(printf '\t')" read -r ready_ts num branch head_sha approval; do
 
   case "$state" in
     SUCCESSFUL)
+      merge_rc=0
       if [[ -n "$MERGE_STRATEGY" ]]; then
-        host pr-merge --num "$num" --strategy "$MERGE_STRATEGY" >/dev/null 2>&1
+        host pr-merge --num "$num" --strategy "$MERGE_STRATEGY" >/dev/null 2>&1 || merge_rc=$?
       else
-        host pr-merge --num "$num" >/dev/null 2>&1
+        host pr-merge --num "$num" >/dev/null 2>&1 || merge_rc=$?
+      fi
+      if (( merge_rc != 0 )); then
+        # The composed build was green but the merge call itself failed (branch
+        # protection, a race, transient host error). Do NOT report a merge that
+        # did not happen; leave the PR at the head and stop — the next fire
+        # re-selects and retries it. Still one PR in flight.
+        log "merge pr=$num result=failed rc=$merge_rc"
+        WAITED_PR="$num"
+        break
       fi
       log "merge pr=$num strategy=${MERGE_STRATEGY:-default}"
       MERGED_PR="$num"

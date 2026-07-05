@@ -78,9 +78,16 @@ fi
 
 MAX_AGE_SECONDS=$(( MAX_AGE_HOURS * 3600 ))
 
+# The not-a-repo check runs in the MAIN shell, before the pipeline — an `exit`
+# from inside emit_pairs (the pipeline's left side) would only exit that subshell
+# and the script would still report success with sort's exit 0.
+if [[ -n "$REFS_GLOB" ]]; then
+  git rev-parse --git-dir >/dev/null 2>&1 \
+    || { echo "branch_age_watcher.sh: --refs needs a git repo" >&2; exit 65; }
+fi
+
 emit_pairs() {
   if [[ -n "$REFS_GLOB" ]]; then
-    git rev-parse --git-dir >/dev/null 2>&1 || { echo "branch_age_watcher.sh: --refs needs a git repo" >&2; exit 65; }
     # %(refname:short) TAB last-commit committer epoch. --sort keeps it stable;
     # the awk below re-sorts by age anyway, so ordering here is not load-bearing.
     git for-each-ref --format='%(refname:short)%09%(committerdate:unix)' "$REFS_GLOB" 2>/dev/null
