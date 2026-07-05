@@ -1310,6 +1310,20 @@ assert_eq "AV3-09.7" "no files is usage error 64" "64" "$rc"
 bash "$CO" eligibility --pr-state BOGUS >/dev/null 2>&1; rc=$?
 assert_eq "AV3-09.7" "unknown pr-state is usage error 64" "64" "$rc"
 
+# AV3-09.8 — P2-b: D2 claim-eligibility fail-closed edge. `host.sh pr-state` emits
+# UNKNOWN when a read SUCCEEDS but the PR's state is null / unmappable (github.sh
+# map_state's `*)` arm / the bitbucket.sh equivalent); a genuinely unreadable read
+# instead dies exit 1, leaving an empty state. EITHER shape MUST exit 64 at the
+# eligibility gate (a state outside the observable OPEN|DRAFT|MERGED|DECLINED|NONE
+# vocabulary), NOT 0 (fail-open onto an unresolved claim) and NOT 2 (silently
+# treated as blocked). The exit-64 contract is what drain-lifecycle.md D2 routes to
+# HUMAN_NEEDED — claim-eligibility-usage-error (external fault, loop-safety invariant 3).
+out=$(bash "$CO" eligibility --pr-state UNKNOWN 2>&1); rc=$?
+assert_eq "AV3-09.8" "UNKNOWN pr-state fails closed as usage error 64 (not 0/eligible)" "64" "$rc"
+assert_not_contains "AV3-09.8" "UNKNOWN never reads as ELIGIBLE" "ELIGIBLE" "$out"
+bash "$CO" eligibility --pr-state "" >/dev/null 2>&1; rc=$?
+assert_eq "AV3-09.8" "empty pr-state (host.sh pr-state died on an unreadable read) also fails closed as 64" "64" "$rc"
+
 echo "== claim_loss_attribution.sh (AV3-10 serialize-and-replan) =="
 
 CLA="$HERE/claim_loss_attribution.sh"
@@ -1448,6 +1462,32 @@ bash "$DG" >/dev/null 2>&1; rc=$?
 assert_eq "AV3-12.7" "missing --cmd is usage error 64" "64" "$rc"
 bash "$DG" --cmd 'exit 0' --runs 1 >/dev/null 2>&1; rc=$?
 assert_eq "AV3-12.7" "runs < 2 is usage error 64" "64" "$rc"
+
+# AV3-12.8 — P2-a: a parametrized pytest test that fails a DIFFERENT case index
+# each round (`test_login[0]` then `test_login[1]`) is a common real flaky pattern.
+# The exit code is stable (a failure every round) so this isolates the FINGERPRINT
+# path — like AV3-12.5, but 12.5 uses letter-only names and so is still caught by
+# the old blanket digit-strip; only a preserved param INDEX proves the fix.
+# RED-TESTED against the pre-fix `tr -d '0-9'` logic: it collapsed both rounds to
+# `test_login[]` and false-greened DETERMINISTIC (exit 0). The param index in the
+# `::` node-id token must survive normalization for this to red pre-fix / green now.
+printf '0' > "$SANDBOX/dg_cntp"
+out=$(bash "$DG" --cmd "n=\$(cat $SANDBOX/dg_cntp); echo \$((n+1))>$SANDBOX/dg_cntp; [ \$((n%2)) -eq 0 ] && echo 'FAILED tests/test_auth.py::test_login[0]' || echo 'FAILED tests/test_auth.py::test_login[1]'; exit 1" 2>/dev/null); rc=$?
+assert_eq "AV3-12.8" "param-index-flipping flaky test blocked (exit 1)" "1" "$rc"
+assert_contains "AV3-12.8" "flaky-test token emitted for the param-index flip" "[BLOCKED: flaky-test]" "$out"
+
+# AV3-12.9 — P2-a regression guard (false-RED). A DETERMINISTIC run whose STABLE
+# failing node id is accompanied by a VOLATILE bracketed duration must NOT be
+# flagged flaky. The fix keys on the `::` node-id token, not on brackets anywhere
+# in the line — so `[123 ns]`/`[456 ns]` and `0.5s`/`0.9s` are stripped as volatile
+# while `tests/test_x.py::test_render` stays stable. RED-TESTED against an over-broad
+# "keep every digit inside [...]" fix: that variant preserves the bracketed nanos
+# and false-REDs this (exit 1); the shipped node-id keying — and the pre-P2-a blanket
+# strip — both correctly report DETERMINISTIC (exit 0).
+printf '0' > "$SANDBOX/dg_cntv"
+out=$(bash "$DG" --cmd "n=\$(cat $SANDBOX/dg_cntv); echo \$((n+1))>$SANDBOX/dg_cntv; echo \"FAILED tests/test_x.py::test_render took [\${n}23 ns] in 0.\${n}s\"; exit 1" 2>/dev/null); rc=$?
+assert_eq "AV3-12.9" "stable node id + volatile bracketed duration stays DETERMINISTIC (exit 0)" "0" "$rc"
+assert_contains "AV3-12.9" "deterministic verdict despite bracketed volatile noise" "DETERMINISTIC" "$out"
 
 echo "== secret_get.sh (T25) =="
 

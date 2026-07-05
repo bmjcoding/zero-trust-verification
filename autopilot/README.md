@@ -4,7 +4,7 @@ Autonomous TDD-driven implementation loop for Claude Code. Plans, implements, va
 
 ## Status
 
-v3.0.0 (2026-07-05). Verification-Manifest consumption (mode inference, Behavior-ID mapping, union + revision-drift gates), PR-per-Story granularity, cross-drain claim coordination, and quality shift-left (anti-flakiness contract, N=5 determinism gate) — all on the host-agnostic adapter (`scripts/host.sh`, Bitbucket DC + GitHub). Every behavioral claim is proven by an executed self-test assertion or lint rule (`scripts/self_test.sh` 312 assertions, `scripts/lint_consistency.sh` L1–L23). Registers: `docs/specs/autopilot-v3-register.md`, `docs/GAPS_SPEC.md`. See CHANGELOG.md for history.
+v3.0.1 (2026-07-05). Verification-Manifest consumption (mode inference, Behavior-ID mapping, union + revision-drift gates), PR-per-Story granularity, cross-drain claim coordination, and quality shift-left (anti-flakiness contract, N=5 determinism gate) — all on the host-agnostic adapter (`scripts/host.sh`, Bitbucket DC + GitHub). v3.0.1 hardens two v3-review fail-open edges: the determinism gate now preserves pytest parametrize indices in its failure fingerprint (AV3-12.8) and the D2 claim-eligibility poll fails closed on an unresolvable pr-state (AV3-09.8). Every behavioral claim is proven by an executed self-test assertion or lint rule (`scripts/self_test.sh` 319 assertions, `scripts/lint_consistency.sh` L1–L23). Registers: `docs/specs/autopilot-v3-register.md`, `docs/GAPS_SPEC.md`. See CHANGELOG.md for history.
 
 ## What it does
 
