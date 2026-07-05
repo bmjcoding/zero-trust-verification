@@ -1,4 +1,4 @@
-# Runbook Template (autopilot v2.4.0)
+# Runbook Template (autopilot v3.0.0)
 
 > Loading preamble reminder: the runbook is the operator's contract with
 > autopilot. Read it in full before every drain; do not cache stale

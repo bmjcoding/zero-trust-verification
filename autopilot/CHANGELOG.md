@@ -4,14 +4,38 @@ All notable changes to the autopilot skill. Format follows Keep a Changelog; ver
 
 **Release gate (v2.4.0, GAPS M3/M6).** Every behavioral claim in a release entry MUST cite the `scripts/self_test.sh` assertion id (Txx) or `scripts/lint_consistency.sh` rule id (Lxx) that proves it, or be tagged `[doc-only]`. Both scripts must pass before tagging. Any drain failure attributable to the skill must land a failing self-test assertion before (or with) its fix — a gap found once may not recur silently. (This gate exists because v2.1.0–v2.3.0 shipped multiple claimed-but-unimplemented behaviors; see docs/GAPS_SPEC.md §B.)
 
-## [Unreleased]
+## [3.0.0] - 2026-07-05
 
-Host adapter (autopilot v3 register **AV3-15** + **AV3-16b**; ADR 0013). Autopilot
-becomes git-host agnostic by contract. The `v3.0.0` version cut and CHANGELOG
-finalisation ride AV3-16a; these entries land the foundational adapter first.
+**autopilot v3** — Verification-Manifest consumption, PR-per-Story granularity,
+cross-drain coordination, and quality shift-left, on the host-agnostic adapter
+foundation. Register: `docs/specs/autopilot-v3-register.md`. Per the M3 gate every
+behavioral claim cites its `self_test.sh` assertion id (`AV3-xx.n`, plus the
+inherited `Txx`/`HD`/`HG`/`H50`) or `lint_consistency.sh` rule (`Lxx`); the suite
+grew 170 → 301 assertions and L1–L15 → **L1–L23**, all green.
 
 ### Added
 
+- **Manifest consumption (§A).** `scripts/detect_input_mode.sh` — mode inference
+  (ADR 0008): complete manifest → `STRAIGHT_THROUGH`, bare/incomplete →
+  `GENERATE_PAUSE`, manifest-less `--yolo` → `GENERATE_YOLO`, schema-invalid/
+  unsupported → refuse-never-degrade (AV3-01.1–.7). `scripts/validate_plan_mapping.sh`
+  — 48h Story sizing (AV3-07.1–.6) + Subtask↔Behavior-ID mapping (AV3-02.1–.5).
+  `scripts/validate_manifest.sh --union` — multi-doc ID-collision + profile/
+  environments mismatch (AV3-03.1–.6). `scripts/manifest_revision_gate.sh` — D1.0.6
+  drift detection + Resume refusal → `--generate --merge` revision-regen
+  (AV3-04.1–.7). `scripts/audit_behavior_binding.sh` — D6.3 Behavior→test binding
+  verified from git log (AV3-05.1–.4).
+- **Granularity + coordination (§B/§C).** `scripts/audit_commit_shape.sh` — D6.2
+  Story-range TDD audit (`prev_pushed_sha..HEAD`, no false `tdd-scope-leak`;
+  AV3-06.1–.6). `scripts/runbook_pr.sh` — Runbook PR predicted-file-surface block
+  (AV3-08.1–.3). `scripts/claim_overlap.sh` — vendored claim consultation
+  (BINDING/TERMINAL/ADVISORY/EXCLUDED + D2 eligibility; AV3-09.1–.7).
+  `scripts/claim_loss_attribution.sh` — D7.0 serialize-and-replan routing
+  (AV3-10.1–.6).
+- **Quality shift-left (§D).** `scripts/determinism_gate.sh` — D6.4 N=5 flaky gate,
+  runner-agnostic, digit-stripped fingerprints, loud skip-note (AV3-12.1–.7). The
+  implementer anti-flakiness contract + design-validator routing (L21) and the
+  vendored ADR 0002 escalation rule (L22).
 - **`scripts/host.sh` — the single PR/build surface.** Detects the backend from
   `origin` (`BITBUCKET_DC` via the `/scm/` path shape, `GITHUB` via `github.com`,
   `$AUTOPILOT_HOST_BACKEND` override) and dispatches the full subcommand set
@@ -41,6 +65,30 @@ finalisation ride AV3-16a; these entries land the foundational adapter first.
 
 ### Changed
 
+- **PR-per-Story (AV3-06 / ADR 0007).** Hard Contracts 1 & 4 rewritten: one Story
+  = one branch (`autopilot/<slug>/<story-id>`) = one draft PR; Subtasks are the
+  Story's commit series, not separate PRs. Draft mechanics (`pr-open --draft`,
+  `pr-ready`, `pr-state` `DRAFT` + DC title-prefix fallback) landed with AV3-15
+  (HD01–HD11, HG20–HG25). D6.2 audit range → `prev_pushed_sha..HEAD`; D1.4/D4
+  branch tables, D7.0/D7.3/D7.3a, D2 story-affinity, and the end-of-drain
+  dangling-draft disposition re-keyed to Story branches/PRs. New lint **L17** reds
+  retired PR-per-Subtask framing.
+- **Runbook PR replaces the rolling tracker PR (AV3-08).** G7 opens one long-lived
+  Runbook PR at Pickup (`autopilot/<slug>/runbook`, runbook + tracker) with a
+  grep-able predicted-file-surface block; it is the single bookkeeping home under
+  both `no_force_push` settings and MERGE-ORDER's final entry (operator/Marshal
+  merges; autopilot never merges its own PRs). New lint **L19** (file-surface
+  markers + retired-framing pin).
+- **Mode table + flag registry (AV3-01/04/16a).** Mode detection now infers the
+  GENERATE shape from the manifest (`STRAIGHT_THROUGH` on complete); `--yolo`
+  narrowed to the manifest-less override; `--merge` documents the revision-regen
+  mode. AP-3 projection allow-list gains `behavior_ids` + `predicted_hours` (lint
+  **L18**). Behavior-coverage PR-body format (lint **L20**), as-built docs
+  deliverable (lint **L23**). Reference index adds the ten new AV3 scripts and the
+  L1–L23 lint list.
+- **Mock server on `uv run` (ADR 0015).** `self_test.sh` launches its mock
+  Bitbucket DC server via `uv run --no-project python`, killing the
+  python3-not-on-PATH fragility.
 - **Hard Contract 11 rewritten** (AV3-16b): "Bitbucket Data Center is the
   source-of-truth host / `gh` is NOT a dependency" → "**the host adapter is the
   single PR/build surface**". `bitbucket.sh` is now the Bitbucket DC backend

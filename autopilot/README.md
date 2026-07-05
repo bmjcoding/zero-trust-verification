@@ -4,7 +4,7 @@ Autonomous TDD-driven implementation loop for Claude Code. Plans, implements, va
 
 ## Status
 
-v2.4.0 (2026-07-02). Audit release: every script is now covered by an executed self-test (`scripts/self_test.sh`) and the doc corpus by a consistency lint (`scripts/lint_consistency.sh`); fixes several release-blocking script bugs (the Bitbucket adapter could never succeed; the force-push probe could never detect a denial; the concurrency guard could never detect a concurrent drain) and reconciles all cross-file contract contradictions. Full register: `docs/GAPS_SPEC.md`. See CHANGELOG.md for history.
+v3.0.0 (2026-07-05). Verification-Manifest consumption (mode inference, Behavior-ID mapping, union + revision-drift gates), PR-per-Story granularity, cross-drain claim coordination, and quality shift-left (anti-flakiness contract, N=5 determinism gate) — all on the host-agnostic adapter (`scripts/host.sh`, Bitbucket DC + GitHub). Every behavioral claim is proven by an executed self-test assertion or lint rule (`scripts/self_test.sh` 301 assertions, `scripts/lint_consistency.sh` L1–L23). Registers: `docs/specs/autopilot-v3-register.md`, `docs/GAPS_SPEC.md`. See CHANGELOG.md for history.
 
 ## What it does
 
