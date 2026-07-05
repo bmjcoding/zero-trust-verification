@@ -59,7 +59,7 @@ completeness: complete       # complete | incomplete   (top-level; per-entry sta
                              # `lifecycle:` — deliberately different field names)
 incomplete_fields: []        # non-empty iff incomplete; entry grammar §10
 observability:
-  profile: payments      # Config Profile name (ADR 0006); "default" = vendor-neutral
+  profile: payments           # Config Profile name (ADR 0006); "default" = vendor-neutral
 environments: [dev, test, prod]  # the primitive; env-keyed maps use exactly the reserved
                                  # key `default` plus zero or more keys from this list
 interrogation:               # the spec-time record (see note below on Decision Log)
