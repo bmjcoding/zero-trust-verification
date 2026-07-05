@@ -82,8 +82,10 @@ D1.2 runtime budget check.
 Tokens flow sidecar → keychain → env, are never positional args, never echoed,
 never in curl argv (0600 header file via `-H @file`), never in `set -x`
 traces, and response bodies of auth-failure statuses are never logged.
-*Enforced by:* `secret_get.sh` / `bitbucket.sh` implementation (self-tested);
-sidecar-contract hard rules.
+*Enforced by:* `secret_get.sh` / the host-adapter backends (`bitbucket.sh`,
+and `github.sh` which delegates auth to `gh`) implementation (self-tested);
+sidecar-contract hard rules. Secret handling is a per-backend property behind
+the `host.sh` surface (ADR 0013).
 
 ## 10. The skill's own changes are gated by executed evidence
 

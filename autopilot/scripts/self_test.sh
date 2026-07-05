@@ -979,6 +979,12 @@ assert_eq HG27 "squash intent -> gh --squash" "--squash" "$(cat "$GH_STATE/last_
 ggh pr-merge --num 42 --strategy bogus >/dev/null 2>&1; rc=$?
 assert_eq HG28 "unknown strategy -> exit 1" "1" "$rc"
 
+# HG30 — ci_check.sh drives the host adapter, so the D7.5 CI poll is
+# host-agnostic: the SAME ci_check run turns GREEN against the GitHub backend.
+out=$( cd "$GH_REPO_DIR" && PATH="$GHSHIM:$PATH" GH_SHIM_STATE="$GH_STATE" \
+       bash "$HERE/ci_check.sh" --sha aaa111 --pr 42 --once 2>/dev/null )
+assert_eq HG30 "ci_check GREEN via GitHub backend" "VERDICT=GREEN" "$out"
+
 echo "== host.sh backend detection (H50) =="
 
 det() { ( cd "$1" && bash "$HERE/host.sh" backend 2>/dev/null ); }
@@ -1004,12 +1010,23 @@ assert_contains H50 "unrecognised origin names the override knob" "AUTOPILOT_HOS
 ( cd "$GH_REPO_DIR" && bash "$HERE/host.sh" bogus-sub >/dev/null 2>&1 ); rc=$?
 assert_eq H50 "unknown subcommand -> usage 64" "64" "$rc"
 
-echo "== consistency lint (L1-L15) =="
+echo "== consistency lint (L1-L16) =="
 
 if bash "$HERE/lint_consistency.sh" >/dev/null 2>&1; then
-  pass LINT "lint_consistency.sh passes (15 rules)"
+  pass LINT "lint_consistency.sh passes (16 rules)"
 else
   fail LINT "lint_consistency.sh reports violations (run it directly for detail)"
+fi
+
+# L16 must actually red the retired single-host framing (planted-drift pin):
+# copy the skill into the sandbox, plant the forbidden line, run the copied lint.
+planted_dir="$SANDBOX/planted-lint"
+cp -R "$ROOT" "$planted_dir"
+printf '\nBitbucket Data Center is the source-of-truth host.\n' >> "$planted_dir/references/loop-safety.md"
+if bash "$planted_dir/scripts/lint_consistency.sh" >/dev/null 2>&1; then
+  fail L16 "L16 did NOT red a planted 'source-of-truth host' line"
+else
+  pass L16 "L16 reds planted 'source-of-truth host' framing"
 fi
 
 echo

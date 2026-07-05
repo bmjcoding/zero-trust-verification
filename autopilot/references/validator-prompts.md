@@ -237,7 +237,7 @@ Operational readiness pass.
 3. **Graceful degradation.** New dependencies that, if down, kill the whole flow. Should be optional / cached / fallback'd.
 4. **Idempotency.** Long operations that aren't retry-safe. Especially anything writing to external state stores (cloud parameter/secret stores, infra-state backends, queues).
 5. **Resource cleanup.** New file handles, network sockets, processes — scope-bound cleanup (`with` / `defer` / RAII) or explicit `close()` required.
-6. **Sidecar contract compliance.** Any new script that calls Bitbucket REST MUST go through `scripts/bitbucket.sh` or use the sidecar-aware resolver pattern documented in `references/sidecar-contract.md`. Direct `curl` calls with `Authorization: Bearer ${BITBUCKET_TOKEN}` outside of `secret_get.sh`'s resolver flow → high, blocking.
+6. **Host-adapter / sidecar contract compliance.** Any new PR or build-status operation MUST go through the host adapter (`scripts/host.sh` and its backends `bitbucket.sh` / `github.sh`), never a named host directly (Hard Contract 11, ADR 0013). Any new script that calls Bitbucket REST MUST use the sidecar-aware resolver pattern documented in `references/sidecar-contract.md`. Direct `curl` calls with `Authorization: Bearer ${BITBUCKET_TOKEN}` outside of `secret_get.sh`'s resolver flow → high, blocking.
 
 
 If the environment provides an observability/SRE checklist skill, you may consult it; its absence changes nothing about the checks above.

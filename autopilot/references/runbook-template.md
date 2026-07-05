@@ -52,10 +52,10 @@ gates:                                   # v2.4.0: language-agnostic gate comman
 contract_paths: []                       # optional globs marking wire-shape/contract modules; the
                                          # planner adds the `contract` test gate for Subtasks touching them
 ci:
-  platform: bitbucket-dc                 # AP-13: only legal value
+  platform: bitbucket-dc                 # informational only; host.sh detects the backend (bitbucket-dc | github) from origin at runtime (ADR 0013)
   skip_wait: false                       # AP-23: when true, do not poll for build; treat push as terminal. Auto-flipped true by G1.5 when CI_PRESENT=false.
-  build_states:                          # RESERVED (documentation of Bitbucket DC state names).
-    success: [SUCCESSFUL]                # v0 consumers (bitbucket.sh build-status) hardcode these
+  build_states:                          # RESERVED (documentation of the host adapter's build-status vocabulary).
+    success: [SUCCESSFUL]                # every backend's build-status emits exactly these tokens
     failure: [FAILED]                    # exact names; the field is validated but not yet consumed.
     in_progress: [INPROGRESS]
 branching:
@@ -75,7 +75,7 @@ force_audit: []                          # AP-11: appended to by dispatcher when
 The following frontmatter fields are NOT accepted. Runbooks containing them are read with a warning and the fields ignored:
 
 - `external_scheduler` and any `cron_*` keys (AP-19: external scheduler removed)
-- `gh_cli_path` (AP-13: gh CLI replaced by git + Bitbucket REST)
+- `gh_cli_path` (host binding is never a runbook field; `host.sh` detects the backend from origin — ADR 0013. The GitHub backend uses `gh`, but the caller surface stays host-agnostic.)
 - `consecutive_failures_cap` (AP-2: replaced by split impl/ci caps above)
 - `secrets_inline` and any inline credential field (sidecar/keychain only — no inline secrets ever)
 - `validator_contradiction_resolution: <strategy>` (AP-18: contradictions always escape to HUMAN_NEEDED)
