@@ -63,14 +63,20 @@ usage() {
 
 THRESHOLD=2
 FOR_ID=""
+FOR_SET=0
 while (( $# > 0 )); do
   case "$1" in
     --threshold) THRESHOLD="${2:-}"; shift 2 || usage ;;
-    --for)       FOR_ID="${2:-}"; shift 2 || usage ;;
+    --for)       FOR_ID="${2:-}"; FOR_SET=1; shift 2 || usage ;;
     -h|--help)   usage ;;
     *) echo "claim_overlap.sh: unknown arg: $1" >&2; usage ;;
   esac
 done
+
+# An explicit empty --for is a usage error, not a silent switch to default mode.
+if (( FOR_SET )) && [[ -z "$FOR_ID" ]]; then
+  echo "claim_overlap.sh: --for requires a non-empty claim-id" >&2; usage
+fi
 
 case "$THRESHOLD" in
   ''|*[!0-9]*) echo "claim_overlap.sh: --threshold must be a non-negative integer" >&2; usage ;;

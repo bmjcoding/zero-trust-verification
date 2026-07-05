@@ -8,8 +8,9 @@ spec tier.
 ## Status
 
 v0.1.0 (2026-07-05), beta. The deterministic substrate (`scripts/`) is covered by
-an executed hermetic self-test (`scripts/self_test.sh`, 62 assertions) that drives
-the whole loop through a mock host backend. One host primitive it needs
+an executed hermetic self-test (`scripts/self_test.sh` — its `PASS=` line reports
+the current assertion count) that drives the whole loop through a mock host
+backend. One host primitive it needs
 (`pr-list-ready`) is specified here and implemented in the mock; wiring it into the
 real GitHub / Bitbucket DC adapters is a tracked follow-up — see
 [`reference/host-contract.md`](reference/host-contract.md).
@@ -46,8 +47,9 @@ The full state machine, the cron entry, and every environment knob are in
 
 ## Wiring, not a checker
 
-The Marshal holds **no quality opinion** (ADR 0011). It invokes the PR Gate and
-`build-status` and never forms its own judgment — so there is no fourth checker to
+The Marshal holds **no quality opinion** (ADR 0011). It relies on the PR Gate
+(run upstream — a precondition, not a Marshal subcommand) and calls `build-status`,
+and never forms its own judgment — so there is no fourth checker to
 keep consistent (it is ADR 0003's carved-out exception made concrete). Every
 decision is a **timestamp, a sha, a build state, or a file-surface intersection** —
 all git/API-provable, no agent judgment anywhere in the merge path. Its write

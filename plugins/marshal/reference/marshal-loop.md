@@ -60,8 +60,9 @@ No agent judgment anywhere (ADR 0011): no priority scheduling, no "importance,"
 no quality opinion. Every branch is `candidates … / consider … / rebase … /
 build … / merge|kickback|wait / done …` in the decision log, and every decision
 reduces to a timestamp, a sha, a build state, or a file-surface intersection. The
-Marshal invokes the PR Gate + `build-status`; it *is* those checks' wiring, never
-a fourth checker (ADR 0003's carved-out exception).
+Marshal relies on the PR Gate (already run upstream — its approved+green input is
+the PR Gate's output, not a Marshal subcommand) and calls `build-status`; it *is*
+those checks' wiring, never a fourth checker (ADR 0003's carved-out exception).
 
 ## Running it on cadence (cron)
 
