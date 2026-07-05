@@ -346,7 +346,22 @@ Failure dispatch matches Step D5 (typed BLOCKED, increment `consecutive_impl_blo
 ## Step D7 — Pre-push rebase + commit + PR
 
 
-**Step D7.0 — Pre-push rebase.** `git fetch origin && git rebase origin/<base>`, where `<base>` is the Story's branching base from D4 (`origin/<trunk>`, or the dependency Story's branch tip for a stacked Story). The unit being rebased is the **Story branch** (AV3-06) — the replay carries every prior Subtask's commit series that already lives on it, not just the current Subtask's. If clean, continue. If conflicts, follow the protocol at `references/conflict-resolution.md` (inlined Pocock-style). Budget: 3 hunks across 2 files max — past that, `[BLOCKED: rebase-too-large]` (impl), no retry (planning failure; needs human — but see AV3-10 for the claim-loss re-plan carve-out).
+**Step D7.0 — Pre-push rebase.** `git fetch origin && git rebase origin/<base>`, where `<base>` is the Story's branching base from D4 (`origin/<trunk>`, or the dependency Story's branch tip for a stacked Story). The unit being rebased is the **Story branch** (AV3-06) — the replay carries every prior Subtask's commit series that already lives on it, not just the current Subtask's. If clean, continue. If conflicts, follow the protocol at `references/conflict-resolution.md` (inlined Pocock-style). Budget: 3 hunks across 2 files max.
+
+
+**On budget trip — attribute before escalating (ADR 0009 / AV3-10).** When the budget trips, do NOT reflexively `[BLOCKED: rebase-too-large]`. First run the attribution predicate over the rebase's conflicting-hunk files and this Subtask's recorded claim-overlap files (AV3-09):
+
+
+```bash
+bash ${SKILL_DIR}/scripts/claim_loss_attribution.sh \
+  --overlap-files <claim-overlap-files-csv> --conflict-files <conflicting-hunk-files-csv> \
+  --replans-so-far <n>   # from the Subtask's tracker entry
+# REPLAN (exit 0) · NOT-ATTRIBUTED (exit 1) · REPLAN-BUDGET-EXHAUSTED (exit 2)
+```
+
+
+- **REPLAN (exit 0)** — a foreign claim (a PR we were told overlapped) merged first and rewrote these files. Route to **D3 re-plan against the new trunk** instead of the impl-block path; increment the Subtask's re-plan count and record `replanned-after-claim-loss` on the tracker. Bounded: 2 re-plans per Subtask.
+- **NOT-ATTRIBUTED (exit 1)** or **REPLAN-BUDGET-EXHAUSTED (exit 2)** — genuine planning conflict (or the 2-re-plan bound is spent): `[BLOCKED: rebase-too-large]` (impl), no retry (needs human).
 
 
 During conflict resolution, run `gates.test_scoped` against changed paths only — never the full suite (AP-15).
