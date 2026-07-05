@@ -225,7 +225,13 @@ def run(manifest_path: Path, journeys_path: Path, audited_env: str) -> int:
                     emit(f"ROW emission PASS fpsrc={path}:{symbol}:{SLUG_EMISSION} fp={fp} :: intent={intent_em} grade={grade}")
                 else:
                     sev = emission_severity(derived_crit, vital, grade)
-                    nv = "" if (sev == "MED" and derived_crit == "CORE" and vital in ("money", "auth")) else " needs-verification"
+                    # needs-verification rides on every UNconfirmed absence
+                    # (severity-rubric.md 1.4.0 amendment): a finding on a traced
+                    # CORE money/auth path is confirmed (HIGH if DARK, else a
+                    # confirmed MED) and carries NO mark; anything off that traced
+                    # path is capped MED and IS needs-verification.
+                    traced_core = derived_crit == "CORE" and vital in ("money", "auth")
+                    nv = "" if traced_core else " needs-verification"
                     emit(f"ROW emission FAIL sev={sev} fpsrc={path}:{symbol}:{SLUG_EMISSION} fp={fp} :: intent={intent_em} grade={grade}{nv}")
 
             # row 5: seam
