@@ -26,6 +26,7 @@ budget:
   max_cycles_per_subtask: 8              # hard cap on TDD cycles per subtask (D4)
   max_impl_blocks: 3                     # AP-2: consecutive_impl_blocks cap before HUMAN_NEEDED
   max_ci_blocks: 2                       # AP-2: consecutive_ci_blocks cap before HUMAN_NEEDED
+  max_claim_waits: 16                    # AV3-09: consecutive claim-blocked fires before HUMAN_NEEDED — claim-deadlock
   max_runtime_minutes: 240               # wall-clock cap; dispatcher emits HUMAN_NEEDED at expiry
 validators:                              # validator names run on every D5; catalog = validator-prompts.md
   - integration                          # always
@@ -193,6 +194,7 @@ The dispatcher writes a sibling tracker at `.autopilot/runbooks/<slug>.tracker.m
 STATUS: ACTIVE                    # ACTIVE | DRAINED | PAUSED | HUMAN_NEEDED | STOPPED
 consecutive_impl_blocks: 0        # AP-2: split counters
 consecutive_ci_blocks: 0
+claim_waits: 0                    # AV3-09: consecutive claim-blocked fires; cap budget.max_claim_waits
 drain_start_sha: <sha>
 drain_started_at: <iso8601>       # seeded by the first fire; budget.max_runtime_minutes anchor
 audited_sha: <sha>                # AP-5: SHA at planner-spawn time

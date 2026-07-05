@@ -1182,6 +1182,58 @@ fold_branch=$(git -C "$RB_REPO" branch --contains HEAD --format='%(refname:short
 assert_eq "AV3-08.3" "tracker fold commit is on the runbook branch" "1" "$fold_branch"
 assert_contains "AV3-08.3" "fold commit carries the deltas block" "Tracker deltas folded in:" "$(git -C "$RB_REPO" log -1 --pretty=%b)"
 
+echo "== claim_overlap.sh (AV3-09 claim consultation) =="
+
+CO="$HERE/claim_overlap.sh"
+TAB="$(printf '\t')"
+# Inventory columns: pr-ref <TAB> branch <TAB> state <TAB> age_bd <TAB> comma-files
+{
+  printf 'gh/101\tautopilot/other/story-a\tDRAFT\t1\tapi/limiter.py,lib/x.py\n'
+  printf 'gh/102\tautopilot/other/story-b\tOPEN\t0\tcore/engine.py\n'
+  printf 'gh/103\tautopilot/other/story-c\tDRAFT\t5\tdocs/old.md\n'
+  printf 'gh/104\tautopilot/mine/story-z\tDRAFT\t0\townpath.py\n'
+} > "$SANDBOX/claim_inv.tsv"
+co() { bash "$CO" --self-namespace autopilot/mine/ --inventory "$SANDBOX/claim_inv.tsv" "$@"; }
+
+# AV3-09.1 — a fresh foreign DRAFT PR overlapping our files is a BINDING claim.
+out=$(co api/limiter.py 2>&1); rc=$?
+assert_eq "AV3-09.1" "foreign draft overlap blocks (exit 2)" "2" "$rc"
+assert_contains "AV3-09.1" "binding claim emits blocked_by_pr" "blocked_by_pr=gh/101 class=BINDING" "$out"
+
+# AV3-09.2 — a foreign ready (non-draft OPEN) PR is a TERMINAL claim.
+out=$(co core/engine.py 2>&1); rc=$?
+assert_eq "AV3-09.2" "foreign ready overlap blocks (exit 2)" "2" "$rc"
+assert_contains "AV3-09.2" "terminal claim emits blocked_by_pr" "blocked_by_pr=gh/102 class=TERMINAL" "$out"
+
+# AV3-09.3 — a branch under our OWN drain namespace is never a foreign claim
+# (closes the re-GENERATE self-deadlock): only own overlap -> non-blocking.
+out=$(co ownpath.py 2>&1); rc=$?
+assert_eq "AV3-09.3" "own-namespace overlap does not block (exit 0)" "0" "$rc"
+assert_contains "AV3-09.3" "own-namespace claim is excluded" "excluded=gh/104" "$out"
+
+# AV3-09.4 — a foreign PR stale beyond 2 business days is ADVISORY, not blocking.
+out=$(co docs/old.md 2>&1); rc=$?
+assert_eq "AV3-09.4" "stale (>2bd) overlap is advisory (exit 0)" "0" "$rc"
+assert_contains "AV3-09.4" "stale claim is advisory" "advisory=gh/103" "$out"
+
+# AV3-09.5 — no shared files -> clean, silent.
+out=$(co unrelated/file.py 2>&1); rc=$?
+assert_eq "AV3-09.5" "no overlap is clean (exit 0)" "0" "$rc"
+assert_eq "AV3-09.5" "no overlap prints nothing" "" "$out"
+
+# AV3-09.6 — D2 eligibility: a claimed Subtask waits until its blocked_by_pr
+# resolves (MERGED/DECLINED/NONE eligible; OPEN/DRAFT ineligible).
+assert_eq "AV3-09.6" "blocked_by MERGED -> eligible (exit 0)" "0" "$(bash "$CO" eligibility --pr-state MERGED >/dev/null 2>&1; echo $?)"
+assert_eq "AV3-09.6" "blocked_by DECLINED -> eligible" "0" "$(bash "$CO" eligibility --pr-state DECLINED >/dev/null 2>&1; echo $?)"
+assert_eq "AV3-09.6" "blocked_by OPEN -> ineligible (exit 2)" "2" "$(bash "$CO" eligibility --pr-state OPEN >/dev/null 2>&1; echo $?)"
+assert_eq "AV3-09.6" "blocked_by DRAFT -> ineligible (exit 2)" "2" "$(bash "$CO" eligibility --pr-state DRAFT >/dev/null 2>&1; echo $?)"
+
+# AV3-09.7 — usage guardrails.
+bash "$CO" --inventory "$SANDBOX/claim_inv.tsv" >/dev/null 2>&1; rc=$?
+assert_eq "AV3-09.7" "no files is usage error 64" "64" "$rc"
+bash "$CO" eligibility --pr-state BOGUS >/dev/null 2>&1; rc=$?
+assert_eq "AV3-09.7" "unknown pr-state is usage error 64" "64" "$rc"
+
 echo "== secret_get.sh (T25) =="
 
 # T25 — candidate list matches the documented resolver conventions

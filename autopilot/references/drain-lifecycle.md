@@ -148,6 +148,7 @@ External churn > 100 commits since drain start → write `## Drift Notes` warnin
 Topo-walk the DAG. Pick the lowest-ID Subtask where:
 - Status is `[ ]` (not `[x]`, not `[BLOCKED]`)
 - All `depends_on[]` Subtasks are `[x] Done`
+- **Not claim-blocked (ADR 0009 / AV3-09):** if the Subtask has a `blocked_by_pr: <host>/<pr#>` edge (set at G4 by claim consultation), it is eligible ONLY when that PR has resolved. Poll `bash ${SKILL_DIR}/scripts/host.sh pr-state --num <pr#>` (same cadence as D7.5) and gate on `bash ${SKILL_DIR}/scripts/claim_overlap.sh eligibility --pr-state <STATE>` — exit 0 (`MERGED | DECLINED | NONE`) = eligible; exit 2 (`OPEN | DRAFT`) = still blocked.
 
 
 **Story affinity (AV3-06).** PR-per-Story caps the drain at **one open (draft) Story PR at a time**. If a Story already has an open draft PR — i.e. some of its Subtasks are `[x] Done` and at least one is still `[ ]`, and it is not blocked — restrict selection to that Story's remaining eligible Subtasks: finish (or block out) the open Story before opening another. Only when the open Story has no eligible Subtask left (all its `[ ]` Subtasks are dependency- or claim-blocked) may D2 start a Subtask in a different Story. This keeps the branch/PR count bounded and the Story PR reviewable as a coherent unit. When two Stories are both fully open (none started), the lowest-ID Subtask's Story wins and becomes the open Story.
@@ -155,8 +156,11 @@ Topo-walk the DAG. Pick the lowest-ID Subtask where:
 
 If no eligible Subtask:
 - All `[x]` → write `STATUS: DRAINED`, render `MERGE-ORDER.md`, `CronDelete`, exit fire successfully.
-- All blocked or pending-deps → write `STATUS: HUMAN_NEEDED`, `CronDelete`, exit.
+- **All remaining open Subtasks are claim-blocked (ADR 0009 / AV3-09) → WAIT state, NOT terminal.** A drain re-queues at no one's cost: increment `claim_waits` on the tracker, re-arm the cron at `*/30`, and re-check next fire (the blocking PRs may merge/decline in the interim — the D2 eligibility poll picks that up). Escalate to `STATUS: HUMAN_NEEDED — claim-deadlock` (external fault, no impl/ci counter) ONLY after `claim_waits >= budget.max_claim_waits` (default 16) consecutive claim-blocked fires. NEVER terminal-pause on the first blockage.
+- All blocked (non-claim) or pending-deps → write `STATUS: HUMAN_NEEDED`, `CronDelete`, exit.
 - `consecutive_impl_blocks >= budget.max_impl_blocks` OR `consecutive_ci_blocks >= budget.max_ci_blocks` (runbook-configured; defaults 3 / 2) → write `STATUS: HUMAN_NEEDED` + `## Escalation` block citing which counter tripped and the contributing Subtasks, `CronDelete`, exit. AP-2.
+
+A successful (non-claim-blocked) Subtask selection resets `claim_waits` to 0.
 
 
 Otherwise: write the chosen Subtask's full block to `in_progress` in the tracker, with `started_at`, `last_heartbeat_at`, and a placeholder `pr_number: null`.
