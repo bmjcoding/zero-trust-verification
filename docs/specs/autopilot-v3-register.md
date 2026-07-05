@@ -234,6 +234,7 @@ honestly (agent behavior, not hermetically covered — the v2.4.0 convention).
 | AV3-13 vendored escalation | FIXED | lint L22 (byte-parity diff) |
 | AV3-14 as-built docs | FIXED | lint L23 |
 | AV3-16a SKILL host-half | FIXED | lint L17; reference index + CHANGELOG v3.0.0 |
+| AV3-16b SKILL host-half (host adapter) | FIXED (rode AV3-15) | lint L16; Hard Contract 11 host-adapter wording |
 | AV3-17 growth accounting | FIXED | suite green (301 / L1–L23); this table |
 
 ### Honest Residuals (`[drain]` — measured only in real drains + Drift Notes)
