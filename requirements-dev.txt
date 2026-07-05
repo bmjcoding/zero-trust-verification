@@ -1,0 +1,5 @@
+# Dev dependencies for the Verification Manifest validator (ADR 0014).
+# YAML 1.2 core-schema parsing is mandatory (manifest spec §2 Norway-problem guard);
+# PyYAML is 1.1 and must NOT be used.
+ruamel.yaml>=0.18
+jsonschema>=4.20
