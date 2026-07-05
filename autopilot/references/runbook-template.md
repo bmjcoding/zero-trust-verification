@@ -45,6 +45,10 @@ gates:                                   # v2.4.0: language-agnostic gate comman
                                          # "go test {paths}", "cargo test -p {paths}").
   test_scoped: "pytest -x -q {paths}"
   test_single: "pytest {test} -x"
+  test_random: "pytest -p randomly -q {paths}"   # AV3-12 (OPTIONAL): the order-randomized round of
+                                                 # the D6.4 determinism gate. Omit when the repo has no
+                                                 # randomization plugin — D6.4 skips that round with a
+                                                 # loud [note] (e.g. JS: "vitest run --sequence.shuffle {paths}").
   test_contract: "pytest -m contract -x -q {paths}"
   typecheck: "mypy {paths}"
   lint: "ruff check {paths}"             # scoped to changed files — never repo-wide (brownfield debt

@@ -1318,6 +1318,49 @@ assert_contains "AV3-05.3" "unproven cites the behavior + test" "[BLOCKED: unpro
 abb --coverage "$SANDBOX/cov_ok.md" >/dev/null 2>&1; rc=$?
 assert_eq "AV3-05.4" "missing --base is usage error 64" "64" "$rc"
 
+echo "== determinism_gate.sh (AV3-12 N=5 flaky gate) =="
+
+DG="$HERE/determinism_gate.sh"
+
+# AV3-12.1 — a deterministic command agrees across all 5 rounds.
+out=$(bash "$DG" --cmd 'echo "2 passed"; exit 0' --random-cmd 'echo "2 passed"; exit 0' 2>/dev/null); rc=$?
+assert_eq "AV3-12.1" "deterministic command exits 0" "0" "$rc"
+assert_contains "AV3-12.1" "deterministic verdict" "DETERMINISTIC (5 rounds)" "$out"
+
+# AV3-12.2 — no gates.test_random -> the order-randomized round is SKIPPED with a
+# LOUD [note] (never silently), and the gate still passes.
+err=$(bash "$DG" --cmd 'echo ok; exit 0' 2>&1 >/dev/null); rc=$?
+assert_eq "AV3-12.2" "missing random-cmd still passes (exit 0)" "0" "$rc"
+assert_contains "AV3-12.2" "skipped-randomization note is loud" "order-randomized round SKIPPED" "$err"
+
+# AV3-12.3 — with a random-cmd, no skip note is emitted.
+err=$(bash "$DG" --cmd 'echo ok; exit 0' --random-cmd 'echo ok; exit 0' 2>&1 >/dev/null)
+assert_not_contains "AV3-12.3" "no skip note when randomization is available" "SKIPPED" "$err"
+
+# AV3-12.4 — a planted-flaky test whose EXIT CODE alternates is caught.
+printf '0' > "$SANDBOX/dg_cnt"
+out=$(bash "$DG" --cmd "n=\$(cat $SANDBOX/dg_cnt); echo \$((n+1))>$SANDBOX/dg_cnt; [ \$((n%2)) -eq 0 ] && exit 0 || exit 1" 2>/dev/null); rc=$?
+assert_eq "AV3-12.4" "exit-code-flaky test blocked (exit 1)" "1" "$rc"
+assert_contains "AV3-12.4" "flaky-test token emitted" "[BLOCKED: flaky-test]" "$out"
+
+# AV3-12.5 — same exit code every round but a DIFFERENT failing test name is
+# caught via the failure fingerprint (the "failure sets" comparison).
+printf '0' > "$SANDBOX/dg_cnt2"
+out=$(bash "$DG" --cmd "n=\$(cat $SANDBOX/dg_cnt2); echo \$((n+1))>$SANDBOX/dg_cnt2; [ \$((n%2)) -eq 0 ] && echo FAILED_test_alpha || echo FAILED_test_beta; exit 0" 2>/dev/null); rc=$?
+assert_eq "AV3-12.5" "failure-set-flaky test blocked (exit 1)" "1" "$rc"
+
+# AV3-12.6 — volatile durations/counts (digits) must NOT false-flag a stable
+# result (else the gate is useless on real runners).
+printf '0' > "$SANDBOX/dg_cnt3"
+out=$(bash "$DG" --cmd "n=\$(cat $SANDBOX/dg_cnt3); echo \$((n+1))>$SANDBOX/dg_cnt3; echo \"2 passed in 0.\${n}s\"; exit 0" 2>/dev/null); rc=$?
+assert_eq "AV3-12.6" "volatile durations do not false-flag (exit 0)" "0" "$rc"
+
+# AV3-12.7 — usage guardrails.
+bash "$DG" >/dev/null 2>&1; rc=$?
+assert_eq "AV3-12.7" "missing --cmd is usage error 64" "64" "$rc"
+bash "$DG" --cmd 'exit 0' --runs 1 >/dev/null 2>&1; rc=$?
+assert_eq "AV3-12.7" "runs < 2 is usage error 64" "64" "$rc"
+
 echo "== secret_get.sh (T25) =="
 
 # T25 — candidate list matches the documented resolver conventions
