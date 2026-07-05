@@ -46,41 +46,67 @@ export GIT_AUTHOR_NAME=selftest GIT_AUTHOR_EMAIL=selftest@local \
 export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null
 
 # ==============================================================================
-# claim_overlap.sh — the vendored canonical claim-overlap kernel (ADR 0009)
+# claim_overlap.sh — the VENDORED byte-identical canonical primitive (ADR 0009).
+# The Marshal adopts autopilot's canonical copy (autopilot/scripts/claim_overlap.sh)
+# verbatim; it does NOT ship an independent implementation. These assertions mirror
+# autopilot's AV3-09 matrix so this vendored copy is exercised in-plugin and any
+# drift from the canonical behaviour reds here. (Byte-identity itself is asserted
+# by CO10 below and enforced by the packaging byte-identity lint.)
 # ==============================================================================
 echo "== claim_overlap.sh (CO) =="
 
-CLAIMS="$SANDBOX/claims.tsv"
-# PR1: a,b ; PR2: b,c ; PR3: b,d ; plus a duplicate (PR2,b) that must collapse.
-printf 'PR1\ta.py\nPR1\tb.py\nPR2\tb.py\nPR2\tc.py\nPR3\tb.py\nPR3\td.py\nPR2\tb.py\n' > "$CLAIMS"
+# Inventory columns: pr-ref <TAB> branch <TAB> state <TAB> age_bd <TAB> comma-files.
+# The Marshal's own drain namespace is story/ (its in-flight branches).
+CLAIM_INV="$SANDBOX/claim_inv.tsv"
+{
+  printf 'gh/101\tstory/other-a\tDRAFT\t1\tapi/limiter.py,lib/x.py\n'
+  printf 'gh/102\tstory/other-b\tOPEN\t0\tcore/engine.py\n'
+  printf 'gh/103\tstory/other-c\tDRAFT\t5\tdocs/old.md\n'
+  printf 'gh/104\tstory/mine-z\tDRAFT\t0\townpath.py\n'
+} > "$CLAIM_INV"
+co() { bash "$CLAIM" --self-namespace story/mine- --inventory "$CLAIM_INV" "$@"; }
 
-out="$(bash "$CLAIM" < "$CLAIMS")"
-assert_eq       CO01 "default: b.py contended by 3 distinct claims" "3${TAB}b.py" "$out"
-assert_not_contains CO02 "default: a.py (single claimant) not reported" "a.py" "$out"
+# CO01 — a fresh foreign DRAFT PR overlapping our files is a BINDING claim (exit 2).
+out="$(co api/limiter.py 2>&1)"; rc=$?
+assert_eq       CO01 "foreign draft overlap blocks (exit 2)" "2" "$rc"
+assert_contains CO01 "binding claim emits blocked_by_pr" "blocked_by_pr=gh/101 class=BINDING" "$out"
 
-out="$(bash "$CLAIM" --threshold 4 < "$CLAIMS")"
-assert_eq       CO03 "threshold above max claimants -> empty" "" "$out"
+# CO02 — a foreign ready (non-draft OPEN) PR is a TERMINAL claim (exit 2).
+out="$(co core/engine.py 2>&1)"; rc=$?
+assert_eq       CO02 "foreign ready overlap blocks (exit 2)" "2" "$rc"
+assert_contains CO02 "terminal claim emits blocked_by_pr" "blocked_by_pr=gh/102 class=TERMINAL" "$out"
 
-# Dedup: (PR2,b.py) appears twice but b.py must still count PR2 once (=> 3 total).
-dupout="$(printf 'X\tf\nX\tf\nY\tf\n' | bash "$CLAIM")"
-assert_eq       CO04 "duplicate (claim,file) pair collapses to one claimant" "2${TAB}f" "$dupout"
+# CO03 — a branch under our OWN drain namespace is never a foreign claim.
+out="$(co ownpath.py 2>&1)"; rc=$?
+assert_eq       CO03 "own-namespace overlap does not block (exit 0)" "0" "$rc"
+assert_contains CO03 "own-namespace claim is excluded" "excluded=gh/104" "$out"
 
-out="$(bash "$CLAIM" --for PR1 < "$CLAIMS")"
-assert_contains CO05 "--for PR1: b.py collides with PR2" "b.py${TAB}PR2" "$out"
-assert_contains CO05 "--for PR1: b.py collides with PR3" "b.py${TAB}PR3" "$out"
-assert_not_contains CO06 "--for PR1: does not report a self-only file (a.py)" "a.py" "$out"
-assert_not_contains CO07 "--for PR1: never lists self as the other claim" "${TAB}PR1" "$out"
+# CO04 — a foreign PR stale beyond 2 business days is ADVISORY, not blocking.
+out="$(co docs/old.md 2>&1)"; rc=$?
+assert_eq       CO04 "stale (>2bd) overlap is advisory (exit 0)" "0" "$rc"
+assert_contains CO04 "stale claim is advisory" "advisory=gh/103" "$out"
 
-assert_eq       CO08 "empty input -> empty output" "" "$(printf '' | bash "$CLAIM")"
-( printf '' | bash "$CLAIM" >/dev/null 2>&1 ); assert_eq CO09 "empty input exits 0" "0" "$?"
+# CO05 — no shared files -> clean, silent.
+out="$(co unrelated/file.py 2>&1)"; rc=$?
+assert_eq       CO05 "no overlap is clean (exit 0)" "0" "$rc"
+assert_eq       CO05 "no overlap prints nothing" "" "$out"
 
-# Determinism: identical bytes across two runs (the byte-identical-vendor lint
-# depends on stable, LC_ALL=C-sorted output).
-r1="$(bash "$CLAIM" < "$CLAIMS")"; r2="$(bash "$CLAIM" < "$CLAIMS")"
+# CO06 — D2 eligibility: a claimed Subtask waits until its blocked_by_pr resolves.
+assert_eq       CO06 "blocked_by MERGED -> eligible (exit 0)"  "0" "$(bash "$CLAIM" eligibility --pr-state MERGED   >/dev/null 2>&1; echo $?)"
+assert_eq       CO06 "blocked_by DECLINED -> eligible"         "0" "$(bash "$CLAIM" eligibility --pr-state DECLINED >/dev/null 2>&1; echo $?)"
+assert_eq       CO06 "blocked_by OPEN -> ineligible (exit 2)"  "2" "$(bash "$CLAIM" eligibility --pr-state OPEN     >/dev/null 2>&1; echo $?)"
+assert_eq       CO06 "blocked_by DRAFT -> ineligible (exit 2)" "2" "$(bash "$CLAIM" eligibility --pr-state DRAFT    >/dev/null 2>&1; echo $?)"
+
+# CO07 — usage guardrails.
+( bash "$CLAIM" --inventory "$CLAIM_INV" >/dev/null 2>&1 ); assert_eq CO07 "no owned files is a usage error -> exit 64" "64" "$?"
+( bash "$CLAIM" eligibility --pr-state BOGUS >/dev/null 2>&1 ); assert_eq CO07 "unknown pr-state is a usage error -> exit 64" "64" "$?"
+
+# CO10 — determinism (the byte-identity lint depends on stable output) AND
+# byte-identity with autopilot's canonical copy (pre-empt the packaging lint).
+r1="$(co api/limiter.py core/engine.py 2>&1)"; r2="$(co api/limiter.py core/engine.py 2>&1)"
 assert_eq       CO10 "output is deterministic across runs" "$r1" "$r2"
-
-( bash "$CLAIM" --bogus < "$CLAIMS" >/dev/null 2>&1 ); assert_eq CO11 "unknown flag -> usage exit 64" "64" "$?"
-( bash "$CLAIM" --for "" < "$CLAIMS" >/dev/null 2>&1 ); assert_eq CO12 "empty --for is a usage error (no silent mode switch) -> exit 64" "64" "$?"
+assert_eq       CO10 "vendored copy is byte-identical to autopilot's canonical" \
+  "" "$(diff "$ROOT/autopilot/scripts/claim_overlap.sh" "$CLAIM" 2>&1)"
 
 # ==============================================================================
 # branch_age_watcher.sh — staleness / 48h planning-failure watcher (ADR 0012/0009)
@@ -455,6 +481,84 @@ assert_contains ML12 "no candidates" "candidates n=0 order=none" "$out"
 assert_contains ML12 "clean no-op summary" "done merged=none evicted=0 waited=none" "$out"
 
 fi  # UV_OK
+
+# ==============================================================================
+# marshal.sh END-TO-END against the REAL github.sh backend (NOT the mock).
+# ==============================================================================
+# This is the production-path assertion that PR #18's Marshal mock hid (its P0):
+# marshal.sh drives host.sh -> github.sh (the gh CLI), whose `pr-list-ready` was
+# unimplemented on every real backend — so the loop could enumerate a queue ONLY
+# against the mock. Here the loop runs unchanged against the real GitHub adapter,
+# with a gh argv shim answering exactly the argv it drives. The origin bare repo
+# lives at a path ENDING in github.com/acme/widget.git, so host.sh detects GITHUB
+# and github.sh parses OWNER/REPO from `git remote get-url origin`, while all git
+# transport stays local + hermetic (no network). If pr-list-ready regresses, the
+# loop sees an empty queue and MG01/MG02 red — the assertion that would have
+# caught the P0. Needs jq (the GitHub backend's dep), not uv.
+GH_OK=1
+if ! command -v jq >/dev/null 2>&1; then
+  GH_OK=0
+  echo "WARN: jq not found — github.sh backend e2e (MG*) SKIPPED (jq is required by the GitHub backend)" >&2
+fi
+
+if (( GH_OK )); then
+echo "== marshal.sh e2e via the REAL github.sh backend (MG) =="
+
+MGROOT="$SANDBOX/mg"
+GBARE="$MGROOT/github.com/acme/widget.git"        # path shape drives GITHUB detection
+mkdir -p "$MGROOT/github.com/acme"
+git init -q --bare "$GBARE"
+GWC="$MGROOT/wc"
+git clone -q "$GBARE" "$GWC" 2>/dev/null
+# main + two branches forked from it (both already-current: no rebase, no push).
+( cd "$GWC" \
+    && git commit -q --allow-empty -m init && git branch -M main && git push -q -u origin main \
+    && git checkout -q -b story/a && git commit -q --allow-empty -m a && git push -q -u origin story/a \
+    && git checkout -q main \
+    && git checkout -q -b story/b && git commit -q --allow-empty -m b && git push -q -u origin story/b \
+    && git checkout -q main )
+
+# gh argv shim: pr-list-ready enumerates story/a (PR 10, later ready_ts) + story/b
+# (PR 11, earlier ready_ts), both APPROVED + non-draft; head shas are the REAL
+# branch tips (read from the bare repo). build-status is SUCCESSFUL for any sha;
+# pr-merge / pr-comment succeed. Quoted heredoc — the bare path arrives via env.
+MGSHIM="$MGROOT/ghshim"; mkdir -p "$MGSHIM"
+cat > "$MGSHIM/gh" <<'SHIMEOF'
+#!/usr/bin/env bash
+set -u
+BARE="${GH_SHIM_REPO:?}"
+tip() { git --git-dir="$BARE" rev-parse "refs/heads/$1" 2>/dev/null; }
+sub="${1:-}"; sub2="${2:-}"
+case "$sub" in
+  pr)
+    case "$sub2" in
+      list)
+        printf '[{"number":10,"headRefName":"story/a","headRefOid":"%s","reviewDecision":"APPROVED","createdAt":"2026-07-05T10:00:00Z","isDraft":false},{"number":11,"headRefName":"story/b","headRefOid":"%s","reviewDecision":"APPROVED","createdAt":"2026-07-05T09:00:00Z","isDraft":false}]\n' "$(tip story/a)" "$(tip story/b)" ;;
+      merge|comment) exit 0 ;;
+      *) echo "mgshim: unhandled pr $sub2" >&2; exit 1 ;;
+    esac ;;
+  api)
+    case "${2:-}" in
+      graphql)                printf '{"data":{"repository":{"pullRequest":{"timelineItems":{"nodes":[]}}}}}\n' ;;
+      repos/acme/widget)      printf '{"default_branch":"main"}\n' ;;
+      */commits/*/status)     printf '{"state":"success","total_count":1,"statuses":[{"state":"success"}]}\n' ;;
+      */commits/*/check-runs) printf '{"total_count":0,"check_runs":[]}\n' ;;
+      *)                      printf '{}\n' ;;
+    esac ;;
+  *) echo "mgshim: unhandled $sub" >&2; exit 1 ;;
+esac
+SHIMEOF
+chmod +x "$MGSHIM/gh"
+
+mg_out="$( cd "$GWC" && PATH="$MGSHIM:$PATH" GH_SHIM_REPO="$GBARE" \
+    MARSHAL_HOST="$ROOT/autopilot/scripts/host.sh" \
+    MARSHAL_BUILD_POLL_MAX=1 MARSHAL_BUILD_POLL_INTERVAL=0 \
+    bash "$MARSHAL" 2>&1 )"
+assert_contains MG01 "real github.sh pr-list-ready enumerates the queue (strict FIFO: 11 before 10)" "candidates n=2 order=11,10" "$mg_out"
+assert_contains MG02 "the lower-ready_ts approved PR merges through the real backend" "merge pr=11" "$mg_out"
+assert_not_contains MG02 "one PR in flight: PR 10 is not merged this pass" "merge pr=10" "$mg_out"
+assert_contains MG03 "pass summary records the single real-backend merge" "done merged=11" "$mg_out"
+fi  # GH_OK
 
 # ==============================================================================
 echo

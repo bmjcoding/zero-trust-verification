@@ -25,17 +25,23 @@ flag. Like the merge loop, both are pure, git/API-provable functions.
    `--max-age-hours` or the ref set with `--refs` as the repo's branch naming
    requires.
 
-2. **Claim overlap (ADR 0009).** Feed the open PRs' file surfaces as
-   `<pr-id>\t<file>` pairs to the vendored check and report contended files:
+2. **Claim overlap (ADR 0009).** Consult the vendored check for the branch's
+   owned file surface against the open-PR inventory
+   (`<pr-ref>\t<branch>\t<state>\t<age_bd>\t<f1,f2,…>` rows) and report any
+   overlapping foreign claim:
 
    ```bash
-   bash "${CLAUDE_PLUGIN_ROOT}/scripts/claim_overlap.sh" < claims.tsv
-   # or, "does PR-123's surface overlap an existing claim?":
-   bash "${CLAUDE_PLUGIN_ROOT}/scripts/claim_overlap.sh" --for PR-123 < claims.tsv
+   bash "${CLAUDE_PLUGIN_ROOT}/scripts/claim_overlap.sh" \
+     --self-namespace story/ --inventory inventory.tsv <owned-file>...
    ```
 
-   This is the SAME kernel autopilot's G4 planner vendors — keep the two copies
-   byte-identical (see the header in `scripts/claim_overlap.sh`).
+   Each `blocked_by_pr=<ref> class=BINDING|TERMINAL` line is a live foreign claim
+   on those files; `advisory=<ref>` is a stale (>2 business-day) overlap to nudge,
+   not block; `excluded=<ref>` is our own drain's branch (never a foreign claim).
+
+   This is the SAME kernel autopilot's G4 planner vendors — the Marshal ships
+   autopilot's canonical copy byte-identical (see the header in
+   `scripts/claim_overlap.sh`); do not fork it.
 
 3. Report the flags plainly. These are nudges (ADR 0009: enforce by nudge, not
    gate) — comment and move on; nothing here blocks or merges.

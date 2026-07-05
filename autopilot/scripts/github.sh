@@ -34,6 +34,19 @@
 #   build-status      --sha <sha>
 #                       -> prints aggregated state: SUCCESSFUL | FAILED | INPROGRESS | UNKNOWN
 #                          (aggregates BOTH the commit-status API and check-runs)
+#   pr-list-ready     [--base <trunk>]
+#                       -> enumerate the merge queue as TSV, one ready PR per line:
+#                            <ready_ts>\t<pr_num>\t<src_branch>\t<head_sha>\t<approval>
+#                          ready_ts is INTEGER EPOCH SECONDS of the ready-for-review
+#                          transition (most-recent ReadyForReviewEvent, else the PR's
+#                          createdAt for PRs opened non-draft). approval is APPROVED
+#                          (reviewDecision == APPROVED) | PENDING. Selection: OPEN,
+#                          non-draft PRs targeting the trunk; drafts/merged/closed
+#                          omitted. Empty queue -> no output, exit 0. Order is
+#                          unspecified (the Marshal sorts). Trunk resolution:
+#                          --base > $AUTOPILOT_TRUNK > the repo's default branch.
+#                          (The Merge Marshal's queue primitive — see
+#                           plugins/marshal/reference/host-contract.md.)
 #
 # Repo coords (OWNER/REPO) are derived from `git remote get-url origin`.
 # Expected origin shapes: https://github.com/<owner>/<repo>(.git)
@@ -64,7 +77,7 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 usage() {
   cat >&2 <<EOF
 usage: github.sh <subcommand> [args]
-subcommands: pr-open pr-ready pr-state pr-comment pr-approve pr-decline pr-merge pr-merge-strategies build-status
+subcommands: pr-open pr-ready pr-state pr-comment pr-approve pr-decline pr-merge pr-merge-strategies build-status pr-list-ready
 EOF
   exit 64
 }
@@ -351,6 +364,99 @@ cmd_build_status() {
   ' 2>/dev/null || { echo "UNKNOWN"; return 0; }
 }
 
+# resolve_trunk: the base branch the merge queue targets. Precedence:
+#   1. --base <b> (explicit)  2. $AUTOPILOT_TRUNK  3. the repo's default branch
+#   4. "main" (last-resort). Symmetric with bitbucket.sh so the adapter is
+#   host-agnostic: the caller (the Marshal) never has to pass the trunk, but MAY
+#   ($AUTOPILOT_TRUNK / --base) when the merge trunk is not the default branch.
+resolve_trunk() {  # <explicit-base-or-empty> -> echoes the trunk branch name
+  local explicit="$1"
+  if [[ -n "$explicit" ]]; then printf '%s' "$explicit"; return 0; fi
+  if [[ -n "${AUTOPILOT_TRUNK:-}" ]]; then printf '%s' "$AUTOPILOT_TRUNK"; return 0; fi
+  # Repo default branch. Mirror cmd_pr_merge_strategies: fetch the repo object,
+  # then filter with jq separately (no reliance on `gh api --jq`).
+  local json db
+  json="$(gh api "repos/${REPO_NWO}" 2>/dev/null || true)"
+  db="$(jq -r '.default_branch // empty' <<<"$json" 2>/dev/null || true)"
+  [[ -n "$db" ]] || db="main"
+  printf '%s' "$db"
+}
+
+# iso_to_epoch: ISO-8601 Zulu (2026-07-05T17:15:00Z) -> integer epoch SECONDS.
+# Done in jq (strptime+mktime are UTC) so there is NO BSD-vs-GNU `date` variance —
+# the FIFO key must be a stable integer across macOS and Linux.
+iso_to_epoch() {  # <iso8601-or-empty> -> epoch seconds (0 on empty/parse-miss)
+  local iso="$1"
+  [[ -n "$iso" && "$iso" != "null" ]] || { printf '0'; return 0; }
+  jq -rn --arg t "$iso" '($t | strptime("%Y-%m-%dT%H:%M:%SZ") | mktime)' 2>/dev/null || printf '0'
+}
+
+# gh_ready_for_review_iso: createdAt of the PR's most-recent ReadyForReviewEvent
+# (the draft->ready transition — the contract's FIFO key). Empty for a PR opened
+# non-draft (no such event) or on any GraphQL failure; the caller then falls back
+# to the PR's createdAt. timelineItems is GraphQL-only (not exposed by `gh pr
+# list --json`), so this is a per-PR query; a merge queue is small.
+gh_ready_for_review_iso() {  # <pr_num> -> ISO-8601 or ""
+  local num="$1" q gj
+  q='query($o:String!,$r:String!,$n:Int!){repository(owner:$o,name:$r){pullRequest(number:$n){timelineItems(last:1,itemTypes:[READY_FOR_REVIEW_EVENT]){nodes{__typename ... on ReadyForReviewEvent{createdAt}}}}}}'
+  gj="$(gh api graphql -f query="$q" -f o="$OWNER" -f r="$REPO" -F n="$num" 2>/dev/null)" || { printf ''; return 0; }
+  jq -r '.data.repository.pullRequest.timelineItems.nodes[-1].createdAt // ""' <<<"$gj" 2>/dev/null || printf ''
+}
+
+# pr-list-ready: enumerate the merge queue as the marshal-consumable 5-column TSV
+#   <ready_ts>\t<pr_num>\t<src_branch>\t<head_sha>\t<approval>
+# See the header block and plugins/marshal/reference/host-contract.md.
+cmd_pr_list_ready() {
+  require_gh; require_jq
+  local base=""
+  while (( $# > 0 )); do
+    case "$1" in
+      --base) base="$2"; shift 2 ;;
+      *) die_state "arg-parse" "pr-list-ready: unknown arg $1" ;;
+    esac
+  done
+  local trunk
+  trunk="$(resolve_trunk "$base")"
+
+  # OPEN PRs targeting the trunk. Draft exclusion is client-side on isDraft (gh's
+  # --draft filters to drafts-ONLY, not the inverse), so it is version-independent.
+  local limit=200 list_json rc=0
+  list_json="$(gh pr list "${GH_REPO[@]}" --state open --base "$trunk" --limit "$limit" \
+      --json number,headRefName,headRefOid,reviewDecision,createdAt,isDraft 2>/dev/null)" || rc=$?
+  (( rc == 0 )) || die_state "pr-list-ready-failed" "gh pr list failed (rc=$rc)"
+  [[ -n "$list_json" ]] || return 0
+
+  # A full page could mean the queue was truncated — never claim completeness
+  # silently (a dropped tail PR would break strict FIFO).
+  local n
+  n="$(jq 'length' <<<"$list_json" 2>/dev/null || echo 0)"
+  (( n >= limit )) && echo "github.sh: pr-list-ready hit the --limit ($limit) page; queue may be truncated" >&2
+
+  # Non-draft rows as: num \t branch \t sha \t approval \t createdEpoch.
+  # approval (APPROVED|PENDING) and the epoch are computed IN jq so no field is
+  # ever empty — a bare `read` with IFS=<tab> collapses consecutive tabs (tab is
+  # IFS-whitespace), so an empty middle field would silently shift columns.
+  # createdEpoch is the fallback FIFO key (createdAt -> epoch, UTC, in jq).
+  local rows
+  rows="$(jq -r '
+    .[] | select(.isDraft == false)
+    | [ .number, .headRefName, .headRefOid,
+        (if .reviewDecision == "APPROVED" then "APPROVED" else "PENDING" end),
+        (.createdAt | strptime("%Y-%m-%dT%H:%M:%SZ") | mktime) ]
+    | @tsv' <<<"$list_json" 2>/dev/null)" || die_state "pr-list-ready-parse" "cannot parse gh pr list output"
+  [[ -n "$rows" ]] || return 0
+
+  # Refine the FIFO key with the ReadyForReviewEvent when the PR was readied from
+  # draft, then emit the marshal-consumable contract row.
+  local num branch sha approval created_epoch ready_iso ready_ts
+  while IFS="$(printf '\t')" read -r num branch sha approval created_epoch; do
+    [[ -n "$num" ]] || continue
+    ready_iso="$(gh_ready_for_review_iso "$num")"
+    if [[ -n "$ready_iso" ]]; then ready_ts="$(iso_to_epoch "$ready_iso")"; else ready_ts="$created_epoch"; fi
+    printf '%s\t%s\t%s\t%s\t%s\n' "$ready_ts" "$num" "$branch" "$sha" "$approval"
+  done <<<"$rows"
+}
+
 # --- Dispatch -----------------------------------------------------------------
 
 (( $# >= 1 )) || usage
@@ -365,5 +471,6 @@ case "$SUB" in
   pr-merge)             cmd_pr_merge "$@" ;;
   pr-merge-strategies)  cmd_pr_merge_strategies "$@" ;;
   build-status)         cmd_build_status "$@" ;;
+  pr-list-ready)        cmd_pr_list_ready "$@" ;;
   *) usage ;;
 esac
