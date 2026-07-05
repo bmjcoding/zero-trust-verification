@@ -5,7 +5,7 @@ status: accepted
 date: 2026-07-04
 ---
 
-Cross-drain / cross-session file-ownership coordination (the gap left by per-tracker `session_lock`, which only prevents two sessions draining the *same* runbook) is solved by **derived claims**: the set of open PRs *is* the claim registry. There is no declared ownership ledger and no external coordination service. The claim event shifts left to **Spec pickup**: picking up an approved, merged intent Spec runs GENERATE, which opens the Runbook PR OBO the picker-upper — publishing the whole Spec's predicted file surface before any implementation exists. From there, claims strengthen through a lattice as prediction converges to actuality:
+Cross-drain / cross-session file-ownership coordination (the gap left by per-tracker `session_lock`, which only prevents two sessions draining the *same* runbook) is solved by **derived claims**: the set of open PRs *is* the claim registry. There is no declared ownership ledger and no external coordination service. The claim event shifts left to **Spec pickup**: picking up an approved, merged Spec runs GENERATE, which opens the Runbook PR OBO the picker-upper — publishing the whole Spec's predicted file surface before any implementation exists. From there, claims strengthen through a lattice as prediction converges to actuality:
 
 | Tier | Artifact | Strength |
 |---|---|---|

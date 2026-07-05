@@ -1,5 +1,6 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
+  "_note": "journeys.json v2 (codebase-health register CH-02): adds manifest_journey_id + step event_name for the §12 join",
   "source_run": { "kind": "audit", "date": "2026-07-04", "git_sha": "deadbeef" },
   "journeys": [
     {
