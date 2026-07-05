@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "_note": "journeys.json v1 (pre-CH-02): none of the v2 optional fields are present. CH-02 acceptance: a v1 file still parses under the degrade rules — a missing field is not a corrupt file.",
+  "source_run": { "kind": "audit", "date": "2026-07-03", "git_sha": "abc1234" },
+  "journeys": [
+    {
+      "name": "Transfers",
+      "source": "README.md:41",
+      "criticality": "CORE",
+      "criticality_reason": "README '## Transfers' quickstart; money-movement verbs",
+      "verdict": "WORKS",
+      "executed": true,
+      "path_complexity": "CLEAN",
+      "steps": [
+        {
+          "path": "src/billing.py",
+          "symbol": "transfer_funds",
+          "line": 12,
+          "vital_class": "money",
+          "emission_grade": "DARK",
+          "alert_seam": null,
+          "duplicate_guard": "absent",
+          "compensation_note": "no compensating action if the ledger post fails mid-sequence",
+          "complexity_flags": []
+        }
+      ]
+    }
+  ]
+}

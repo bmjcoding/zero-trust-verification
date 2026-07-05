@@ -59,6 +59,8 @@ miss() { echo "    [skip] $1 not installed — $2"; }
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=debt_patterns.sh
 . "$SCRIPT_DIR/debt_patterns.sh"
+# shellcheck source=py_run.sh
+. "$SCRIPT_DIR/py_run.sh"   # pyrun: uv-first Python (ADR 0015), python3 fallback
 
 # --- Stack detection: manifests under TARGET first, then cwd (monorepo-safe) ---
 manifest() { # manifest <file> -> true if it exists in TARGET or cwd
@@ -267,13 +269,12 @@ if have jscpd; then
   jscpd "$TARGET" --min-tokens 50 --reporters json --output "$OUT/dup" \
     --ignore "${JSCPD_IGNORE#,}" --silent >/dev/null 2> "$OUT/dup_jscpd.err" || true
   if [ -e "$OUT/dup/jscpd-report.json" ]; then
-    if have python3; then
-      python3 -c 'import json,sys; r=json.load(open(sys.argv[1])); json.dump({"duplicates": r.get("duplicates", [])}, open(sys.argv[2], "w"), indent=1)' \
-        "$OUT/dup/jscpd-report.json" "$OUT/dup_jscpd.json" 2>> "$OUT/dup_jscpd.err" \
-        || cp "$OUT/dup/jscpd-report.json" "$OUT/dup_jscpd.json"
-    else
-      cp "$OUT/dup/jscpd-report.json" "$OUT/dup_jscpd.json"
-    fi
+    # Normalize to the duplicates list only (the raw report's statistics block
+    # can name clean files, poisoning downstream absence checks). uv-first
+    # (ADR 0015); on any Python failure, fall back to copying the raw report.
+    pyrun -c 'import json,sys; r=json.load(open(sys.argv[1])); json.dump({"duplicates": r.get("duplicates", [])}, open(sys.argv[2], "w"), indent=1)' \
+      "$OUT/dup/jscpd-report.json" "$OUT/dup_jscpd.json" 2>> "$OUT/dup_jscpd.err" \
+      || cp "$OUT/dup/jscpd-report.json" "$OUT/dup_jscpd.json"
   fi
 else
   miss jscpd "npm i -g jscpd (optional — agents still hunt near-dups manually)"

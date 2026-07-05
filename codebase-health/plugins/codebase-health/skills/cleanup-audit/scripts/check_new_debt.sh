@@ -36,6 +36,8 @@ set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=debt_patterns.sh
 . "$SCRIPT_DIR/debt_patterns.sh"
+# shellcheck source=py_run.sh
+. "$SCRIPT_DIR/py_run.sh"   # pyrun: uv-first Python (ADR 0015), python3 fallback
 
 STRICT=1   # Decision 1: strict is the DEFAULT on the CLI/CI surface
 HOOK=0
@@ -71,7 +73,9 @@ diff_added() { # added lines only, with file:line prefixes
 }
 
 emit_hook_context() { # $1 = message; JSON-escape newlines/quotes without jq
-  py_escaped=$(printf '%s' "$1" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))' 2>/dev/null) || py_escaped='"[codebase-health] new debt introduced (see check_new_debt.sh)"'
+  # uv-first (ADR 0015); on any Python failure, a valid generic JSON string is
+  # emitted so the warn-only hook still reaches the model (invariant 3).
+  py_escaped=$(printf '%s' "$1" | pyrun -c 'import json,sys; print(json.dumps(sys.stdin.read()))' 2>/dev/null) || py_escaped='"[codebase-health] new debt introduced (see check_new_debt.sh)"'
   printf '{"hookSpecificOutput":{"hookEventName":"PostToolUse","additionalContext":%s}}\n' "$py_escaped"
 }
 
