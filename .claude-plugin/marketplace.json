@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-marketplace.json",
+  "name": "zero-trust-verification",
+  "owner": {
+    "name": "bailey"
+  },
+  "description": "Zero-Trust Verification suite: a three-tier software-quality system — spec generation (shift-left interrogation), autopilot implementation drain, and codebase-health audit — integrated through a shared machine-readable Verification Manifest (ADR 0001, amended by ADR 0011 to four plugins). Tiers run independently; each pins schema_version and degrades gracefully when the manifest is absent.",
+  "plugins": [
+    {
+      "name": "spec-gen",
+      "source": "./plugins/spec-gen",
+      "description": "Spec Generation tier: interrogate raw intent into a product-approvable Spec plus a complete Verification Manifest by walking the manifest schema as a question tree, refusing to finalize while any completeness rule fails. Two-attacker adversarial round before any human sees the skeleton; the only path to a confirmed-CORE entry is a human answer. The second-lowest-trust plugin (markdown/YAML + git branch/PR only) — the adoption on-ramp for teams that want better specs before they want drains.",
+      "version": "0.1.0",
+      "author": {
+        "name": "bailey"
+      },
+      "license": "MIT",
+      "category": "code-quality",
+      "keywords": [
+        "spec",
+        "verification-manifest",
+        "requirements",
+        "interrogation",
+        "given-when-then",
+        "shift-left",
+        "adversarial-review"
+      ]
+    }
+  ]
+}
