@@ -1,0 +1,15 @@
+[project]
+name = "zero-trust-verification"
+version = "0.1.0"
+description = "Zero-Trust Verification suite — deterministic Python substrate (manifest validator; ADR 0015)"
+requires-python = ">=3.10"
+# Runtime deps of the manifest validator (scripts/validate_manifest.py).
+# ruamel.yaml is mandatory for YAML 1.2 core-schema parsing (ADR 0014 Norway guard);
+# PyYAML (1.1) must never be used.
+dependencies = [
+    "ruamel.yaml>=0.18",
+    "jsonschema>=4.20",
+]
+
+[tool.uv]
+package = false

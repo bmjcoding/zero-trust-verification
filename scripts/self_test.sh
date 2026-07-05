@@ -1,27 +1,16 @@
 #!/usr/bin/env bash
 # Hermetic self-test for the Verification Manifest validator.
-# Bootstraps the project venv (ADR 0014 deps), then runs tests/run_cases.py.
-# No network, no external state. Exits non-zero on any failure.
+# Uses uv (ADR 0015) to self-bootstrap deps from pyproject.toml + uv.lock, then
+# runs tests/run_cases.py. No manual venv, no pip.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$HERE/.." && pwd)"
-VENV="$ROOT/.venv"
 
-if [[ ! -x "$VENV/bin/python" ]]; then
-  echo "[setup] creating venv + installing dev deps"
-  python3 -m venv "$VENV"
-  "$VENV/bin/pip" install -q --upgrade pip -r "$ROOT/requirements-dev.txt"
+if ! command -v uv >/dev/null 2>&1; then
+  echo "self_test: uv not found — install uv (https://docs.astral.sh/uv/) per ADR 0015" >&2
+  exit 69
 fi
 
-# Guard: the deps must be the YAML 1.2 stack (ADR 0014), never PyYAML.
-"$VENV/bin/python" - <<'PY'
-import importlib, sys
-for mod in ("ruamel.yaml", "jsonschema"):
-    try:
-        importlib.import_module(mod)
-    except ImportError:
-        sys.exit(f"missing dev dep: {mod} (see requirements-dev.txt)")
-PY
-
-exec "$VENV/bin/python" "$ROOT/tests/run_cases.py"
+# uv run auto-syncs the locked env (ruamel.yaml YAML-1.2 + jsonschema) before running.
+exec uv run --project "$ROOT" python "$ROOT/tests/run_cases.py"
