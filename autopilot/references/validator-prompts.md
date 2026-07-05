@@ -70,6 +70,9 @@ import cycles, file paths match what the Subtask claimed.
 6. **No import cycles.** Load the touched package from a clean shell (Python default: `python -c "import <package>"`); RecursionError / circular-import warnings / cycle-detector output → finding.
 
 
+7. **As-built docs are Story deliverables (AV3-14).** When any of the Story's behaviors is **journey-bearing** — the Behavior maps (directly or via inheritance) to an `active` manifest journey — the Story PR MUST ship the as-built doc edits declared in the Story's `As-built docs` ledger slot (journey docs, README deltas) IN THE SAME Story PR, not a follow-up. On the Story's completing Subtask, verify the accumulated Story diff (`git diff origin/<base>..<story-branch>`) touches each declared as-built doc. Journey-bearing Story with a missing as-built doc → `severity: high, blocking: true`. (Non-journey-bearing Stories and manifest-less drains are exempt.)
+
+
 ### NOT YOUR JOB
 
 
