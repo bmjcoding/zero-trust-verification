@@ -65,7 +65,7 @@ ci:
     in_progress: [INPROGRESS]
 branching:
   no_force_push: false                   # AP-23: when true, tracker deltas queue in-tracker and flush at D7.1a; disables rolling tracker-PR pattern. Auto-flipped true by G1.5 when FORCE_PUSH_ALLOWED=false.
-  single_branch_single_pr: false         # AP-23: when true, tracker branch == Subtask branch; flush commit is part of the Subtask PR itself.
+  single_branch_single_pr: false         # AP-06/23: when true, the whole drain collapses to one feature branch + one PR (the coarser collapse over PR-per-Story); the tracker fold appends to that single branch.
 enforce_jira_key: false                  # AP-22: when true, every commit message must satisfy the JIRA-key regex. Auto-flipped true by G1.5 when JIRA_HOOK_ENFORCED=true.
 pack_subtasks: false                     # AP-21: when true, planner consolidates Subtasks per G3.6 heuristic; equivalent to `--consolidate=auto` at invocation.
 merge:
@@ -217,8 +217,14 @@ branching:
 enforce_jira_key: <bool>          # G1.5 JIRA_HOOK_ENFORCED or --jira auto-set
 pack_subtasks: <bool>             # AP-21 operator-toggle
 in_progress: null                 # or the claimed Subtask block (subtask_id, started_at,
-                                  #   last_heartbeat_at, pr_number, pushed_at, pushed_sha,
-                                  #   awaiting_ci, ci_check_count)
+                                  #   last_heartbeat_at, pr_number [the Story PR], pushed_at, pushed_sha,
+                                  #   prev_pushed_sha [AV3-06: the D6.2 audit base — the Story branch tip
+                                  #   the previous Subtask left; null for the Story's first Subtask],
+                                  #   awaiting_ci, ci_check_count, replans [AV3-10 claim-loss re-plan count])
+stories: {}                       # AV3-06: per-Story entry keyed by <story-id>, each carrying
+                                  #   last_pushed_sha (feeds the next Subtask's prev_pushed_sha) +
+                                  #   pr_number + behavior coverage (D7.4 mirror, AV3-05)
+subtask_blocks: {}                # AV3-09: per-Subtask blocked_by_pr: <host>/<pr#> claim edges (G4-written, D2-evaluable)
 last_heartbeat_at: <iso8601>      # AP-6: updated every step boundary
 session_lock: null                # AP-4: CLAUDE_SESSION_ID of the lock owner
 session_lock_expires_at: null     # AP-4: now+30min, refreshed every fire

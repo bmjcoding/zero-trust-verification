@@ -40,7 +40,7 @@ This list is the SINGLE canonical allow-list — G3.5, D3.2, and the rationale d
   predicted_hours: <int>          # AV3-07: sanity-vs-size and 48h/Story are reviewable structure
 ```
 
-(`branch_pattern` was removed from the planner schema in v2.4.0 — branch names are dictated by AP-7 (`autopilot/<slug>/<subtask-id>`), so the field contradicted the D1.1 shape check and was consumed by nothing.)
+(`branch_pattern` was removed from the planner schema in v2.4.0 — branch names are dictated by AP-7 (the Story branch `autopilot/<slug>/<story-id>` since AV3-06; Subtasks are its commit series), so the field contradicted the D1.1 shape check and was consumed by nothing.)
 
 
 Notably absent from the reviewer's input:

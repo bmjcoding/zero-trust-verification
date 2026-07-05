@@ -264,6 +264,7 @@ Seed the tracker frontmatter with these defaults:
 STATUS: ACTIVE
 consecutive_impl_blocks: 0      # AP-2: split counters
 consecutive_ci_blocks: 0
+claim_waits: 0                  # AV3-09: consecutive claim-blocked fires (cap budget.max_claim_waits)
 drain_start_sha: <sha>
 audited_sha: <sha>              # AP-5: SHA at planner-spawn time
 manifest_revision: <int>        # AV3-04: frozen from the Spec's manifest (omit if manifest-less)

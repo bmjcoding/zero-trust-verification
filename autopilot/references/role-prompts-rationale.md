@@ -125,7 +125,7 @@ This adds a few lines to the dispatcher's finding-aggregation step and removes a
 
 ## Why per-spec dedup of PAUSED entries (AP-17)
 
-The tracker logs PAUSED transitions. If the drain re-hits the same block, v1 would commit a duplicate tracker entry every fire. Over multiple fires the tracker grows without limit and the rolling PR (or batched queue) fills with no-op deltas.
+The tracker logs PAUSED transitions. If the drain re-hits the same block, v1 would commit a duplicate tracker entry every fire. Over multiple fires the tracker grows without limit and the Runbook PR (or batched queue) fills with no-op deltas.
 
 v2 dedupes by reason (the canonical mechanism per drain-lifecycle D8 §AP-17): when the tracker is being written to `STATUS: PAUSED` and the PREVIOUS fire also wrote `STATUS: PAUSED` with the same `status_reason`, the tracker commit is skipped entirely. The tracker stays compact; the first PAUSED entry remains the record. (An earlier draft specified a hash-keyed dedup counter on a `paused:` frontmatter list; it was never the shipped contract and was removed from the template in v2.4.0.)
 

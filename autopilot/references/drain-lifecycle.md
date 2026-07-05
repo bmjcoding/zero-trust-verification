@@ -505,7 +505,7 @@ On terminal STATUS (`DRAINED | PAUSED | HUMAN_NEEDED | STOPPED`), clear `session
 ### PAUSED spec deduplication (AP-17)
 
 
-If the tracker is being written to `STATUS: PAUSED` and the previous fire ALSO wrote `STATUS: PAUSED` with the same `status_reason`, skip the tracker commit entirely (the rolling PR or the batched queue doesn't need yet another no-op delta).
+If the tracker is being written to `STATUS: PAUSED` and the previous fire ALSO wrote `STATUS: PAUSED` with the same `status_reason`, skip the tracker commit entirely (the Runbook PR or the batched queue doesn't need yet another no-op delta).
 
 
 ---
