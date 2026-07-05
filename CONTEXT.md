@@ -41,7 +41,7 @@ Repo-resident memory (glossary, ADRs, as-built docs, journey maps, manifest) tha
 _Avoid_: stale docs, doc drift
 
 **Config Profile**:
-A named observability preset layered over the vendor-neutral defaults, encoding one line of business's vitals taxonomy, event vocabulary, and alert seams (e.g., a Payments profile for a payment-processing workflow). Pure data — adding an LOB means writing a profile, never forking a tier.
+A named observability preset layered over the vendor-neutral defaults, encoding one line of business's vitals taxonomy, event vocabulary, and alert seams (e.g., a payments profile for a payment-processing workflow). Pure data — adding an LOB means writing a profile, never forking a tier.
 _Avoid_: LOB config, template
 
 **Vital**:

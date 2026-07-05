@@ -397,10 +397,10 @@ ToolSearch) instead of halting mid-generate; core modes carry no MCP dependency.
 ## D. Consumer-repo contamination (meta-skill hygiene)
 
 ### D1 — Internal hostname leak [P1]
-`sidecar-contract.md` cites `bitbucket-dc.example.internal` — a real internal corporate
-domain, in a skill intended for general distribution.
-**Status.** FIXED (lint: L14 — no `internal-host`, no other real-internal hostnames;
-placeholder `bitbucket-dc.internal.example.com`).
+`sidecar-contract.md` cited a real internal corporate FQDN (`bitbucketdc.*.<corp>.net`),
+in a skill intended for general distribution.
+**Status.** FIXED (lint: L14 — no real-internal hostnames; any `.internal.` host that is
+not the sanctioned `*.internal.example.com` placeholder fires the rule).
 
 ### D2 — Origin-repo specifics baked into role prompts [P2]
 Planner test-gate rules name `verbs/`, `mcp/server.py`; SRE validator names

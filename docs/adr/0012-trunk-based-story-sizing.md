@@ -13,7 +13,7 @@ Features that span several sequential Story PRs must keep main safe in intermedi
 
 ## Considered Options
 
-- **Atomicity bends now — incomplete Stories merge daily behind flags** (adversarial position): maximal TBD. Rejected *for now*: it breaks ADR 0007's core claim (the review unit stops being one coherent spec-traceable diff), and it drags in flag-retirement discipline — in a regulated Payments codebase, a new class of auditable state — as a side effect of a merge-policy decision rather than a chosen investment.
+- **Atomicity bends now — incomplete Stories merge daily behind flags** (adversarial position): maximal TBD. Rejected *for now*: it breaks ADR 0007's core claim (the review unit stops being one coherent spec-traceable diff), and it drags in flag-retirement discipline — in a regulated payments codebase, a new class of auditable state — as a side effect of a merge-policy decision rather than a chosen investment.
 - **Exempt long Stories from the 48h rule**: rejected — "no exceptions" is the point; exemptions rot into the default.
 
 ## Consequences

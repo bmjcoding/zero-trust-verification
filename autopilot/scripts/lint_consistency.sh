@@ -184,7 +184,7 @@ done < <(grep -h '/autopilot' "${DOCS[@]}" 2>/dev/null | grep -oE -- '--[a-z][a-
 # --- L14: no consumer-repo leakage -----------------------------------------------
 # (the generic install-path mention of the skills root in README is fine;
 # what's banned is depending on specific user-local skills or origin-repo files)
-leak='internal-host|internal_sdk|internal\.yml|mcp/server\.py|owasp-reference|observability-patterns'
+leak='internal_sdk|internal\.yml|mcp/server\.py|owasp-reference|observability-patterns'
 l14_bad=0
 if hits=$(grep_docs "$leak"); then
   violation L14 "consumer-repo leakage in: $(tr '\n' ' ' <<<"$hits")"
@@ -192,6 +192,14 @@ if hits=$(grep_docs "$leak"); then
 fi
 if hits=$(grep -l -E "$leak" "${SCRIPTS[@]}" 2>/dev/null); then
   violation L14 "consumer-repo leakage in script: $(tr '\n' ' ' <<<"$hits")"
+  l14_bad=1
+fi
+# Real internal-corporate FQDNs: any host with an `.internal.` segment that is NOT the
+# sanctioned `*.internal.example.<tld>` placeholder. Catches a hostname leak (e.g. the
+# former origin-repo domain) without naming any company. Portable (no grep -P/-qv).
+if hits=$(grep -En '[a-z0-9-]+\.internal\.[a-z0-9.-]+' "${DOCS[@]}" "${SCRIPTS[@]}" 2>/dev/null \
+          | grep -v 'internal\.example\.'); then
+  violation L14 "internal-corporate hostname leak in: $(tr '\n' ' ' <<<"$hits")"
   l14_bad=1
 fi
 (( l14_bad == 0 )) && ok L14
