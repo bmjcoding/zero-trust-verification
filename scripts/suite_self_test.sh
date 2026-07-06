@@ -1,16 +1,17 @@
 #!/usr/bin/env bash
 # suite_self_test.sh — ONE command that proves the whole Zero-Trust Verification
-# suite (ADR 0001: one product, four independently installable plugins). It runs,
+# suite (ADR 0001/0019: one product, five independently installable plugins). It runs,
 # in order, and reports a single green/red:
 #
 #   1. cross-plugin vendoring lints (scripts/lint_consistency.sh) — GREEN run
 #   2. vendoring-lint RED-tests — plant a drift per byte-identity/integrity rule
 #      (V1 schema, V3 validator + its exemption, V4 claim-overlap, V5 escalation,
-#      V6 marketplace incl. name<->source swap and a rogue plugin) and assert the
-#      lint catches it, plus a few false-POSITIVE guards — so no vendor lint is
-#      vacuous and none reds on a benign reformat/prose mention
+#      V6 marketplace incl. name<->source swap and a rogue plugin, V8 OWM manifest-
+#      parse fork) and assert the lint catches it, plus a few false-POSITIVE guards —
+#      so no vendor lint is vacuous and none reds on a benign reformat/prose mention
 #   3. the root manifest-validator self-test (scripts/self_test.sh)
-#   4. every plugin's own self-test: autopilot, spec-gen, codebase-health, marshal
+#   4. every plugin's own self-test: autopilot, spec-gen, codebase-health, marshal,
+#      org-memory
 #
 # HONESTY: a plugin self-test can `exit 0` while SKIPPING guarded sections when an
 # optional dep is absent (autopilot's mock server, marshal's uv/jq loop backends,
@@ -120,12 +121,23 @@ seed_esc() {
   cp "$ROOT/plugins/codebase-health/skills/cleanup-audit/references/severity-rubric.md" \
      "$d/plugins/codebase-health/skills/cleanup-audit/references/"
 }
-# seed the four plugin.json source dirs into a sandbox
+# seed the five plugin.json source dirs into a sandbox
 seed_plugins() {
   local d="$1" src
-  for src in plugins/spec-gen plugins/autopilot plugins/codebase-health plugins/marshal; do
+  for src in plugins/spec-gen plugins/autopilot plugins/codebase-health plugins/marshal plugins/org-memory; do
     mkdir -p "$d/$src/.claude-plugin"; cp "$ROOT/$src/.claude-plugin/plugin.json" "$d/$src/.claude-plugin/"
   done
+}
+
+# seed what lint V8 (OWM vendoring) needs into a sandbox: the canonical validator +
+# manifest schema, and the whole org-memory plugin (its engine + vendored copies).
+seed_owm() {
+  local d="$1"
+  mkdir -p "$d/scripts" "$d/schema/verification-manifest" "$d/plugins"
+  cp "$ROOT/scripts/validate_manifest.py" "$d/scripts/"
+  cp "$ROOT/scripts/validate_manifest.sh" "$d/scripts/"
+  cp "$ROOT/schema/verification-manifest/v1.schema.json" "$d/schema/verification-manifest/"
+  cp -R "$ROOT/plugins/org-memory" "$d/plugins/org-memory"
 }
 
 # V1 — a vendored manifest schema copy drifts from canonical.
@@ -199,14 +211,14 @@ by['marshal']['source'],by['spec-gen']['source']=by['spec-gen']['source'],by['ma
 json.dump(d,open('$dr/.claude-plugin/marketplace.json','w'),indent=2)"
   expect_fail V6 "$dr" "name<->source swap (spec-gen<->marshal)"
 
-  # V6 — a rogue 5th plugin with a non-existent source.
+  # V6 — a rogue SIXTH plugin with a non-existent source (org-memory is the legit 5th).
   dr="$SANDBOX/v6r"; mkdir -p "$dr/.claude-plugin"; seed_plugins "$dr"
   python3 -c "
 import json
 d=json.load(open('$ROOT/.claude-plugin/marketplace.json'))
 d['plugins'].append({'name':'rogue-plugin','source':'./rogue'})
 json.dump(d,open('$dr/.claude-plugin/marketplace.json','w'),indent=2)"
-  expect_fail V6 "$dr" "rogue 5th plugin registered"
+  expect_fail V6 "$dr" "rogue 6th plugin registered (org-memory is the legit 5th)"
 
   # V6 false-positive guard — a compact (whitespace-stripped) reserialization is fine.
   dr="$SANDBOX/v6c"; mkdir -p "$dr/.claude-plugin"; seed_plugins "$dr"
@@ -215,6 +227,29 @@ json.dump(d,open('$dr/.claude-plugin/marketplace.json','w'),indent=2)"
 else
   echo "  [note] python3 absent — V6 structural red-tests (swap / rogue / compact) skipped"
 fi
+
+# V8 — OWM manifest-parse FORK: a recognizer that parses manifests with its OWN yaml
+# import instead of reusing the canonical validate_manifest is caught RED (ADR 0019 /
+# register OWM-10). The mutation-testing stream owns V7; this is V8 and must not collide.
+dr="$SANDBOX/v8"; seed_owm "$dr"
+cat > "$dr/plugins/org-memory/scripts/owm.py" <<'PYFORK'
+#!/usr/bin/env python3
+# FORKED manifest recognizer (planted drift): parses the Verification Manifest with
+# its OWN yaml import instead of routing through the canonical validate_manifest —
+# exactly the drift V8 exists to catch (a manifest-format change would silently leave
+# this parsing the old shape).
+import yaml
+def extract_manifest(path):
+    return yaml.safe_load(open(path))
+PYFORK
+expect_fail V8 "$dr" "OWM manifest-parse path forks a yaml parser instead of reusing validate_manifest"
+
+# V8 false-positive guard — a BENIGN reference reword of the real engine (a comment
+# change that still routes through validate_manifest) must stay GREEN.
+dr="$SANDBOX/v8p"; seed_owm "$dr"
+printf '\n# benign reword: manifest parsing still routes through the canonical validate_manifest toolchain.\n' \
+  >> "$dr/plugins/org-memory/scripts/owm.py"
+expect_no_fail V8 "$dr" "benign comment reword that still reuses validate_manifest"
 
 if [ "$RED_FAIL" -eq 0 ]; then
   echo "  -> lint-red-tests PASS (every vendor lint caught its planted drift; no false positives)"; record "lint-red-tests" PASS
@@ -234,6 +269,7 @@ run_ok "autopilot"       bash "$ROOT/plugins/autopilot/scripts/self_test.sh"
 run_ok "spec-gen"        bash "$ROOT/plugins/spec-gen/scripts/self_test.sh"
 run_ok "codebase-health" bash "$ROOT/tests/codebase-health/self_test.sh"
 run_ok "marshal"         bash "$ROOT/plugins/marshal/scripts/self_test.sh"
+run_ok "org-memory"      bash "$ROOT/plugins/org-memory/scripts/self_test.sh"
 
 # ==============================================================================
 # Summary
@@ -248,7 +284,7 @@ if [ -n "$FAILED" ]; then
   exit 1
 fi
 if [ -n "$SKIPPED" ]; then
-  echo "== suite_self_test: PASS — all components green (lints + red-tests + validator + all four plugins) =="
+  echo "== suite_self_test: PASS — all components green (lints + red-tests + validator + all five plugins) =="
   echo "   NOTE: optional sections were SKIPPED (missing dev tools) in:$SKIPPED — this run is not zero-skip; see the WARN lines above."
   if [ -n "${SUITE_STRICT:-}" ]; then
     echo "== SUITE_STRICT=1: a skipped section is a failure — exiting non-zero =="
@@ -257,5 +293,5 @@ if [ -n "$SKIPPED" ]; then
   echo "   (set SUITE_STRICT=1 to require a zero-skip proof.)"
   exit 0
 fi
-echo "== suite_self_test: PASS (lints + red-tests + validator + all four plugins, ZERO skips) =="
+echo "== suite_self_test: PASS (lints + red-tests + validator + all five plugins, ZERO skips) =="
 exit 0
