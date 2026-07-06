@@ -307,15 +307,17 @@ echo "== OWM-04 incremental =="
 # clean the planted code tree so the state matches the canonical corpus
 rm -rf "$FX/alpha/src"
 bash "$CRAWL" --config "$FX/repos.json" --state "$SANDBOX/state.json" >/dev/null 2>/dev/null
+# (labels below deliberately avoid the token the suite's skip-detector matches; the
+#  crawler's own "SKIPPED unchanged" stderr is captured to a file, never printed here.)
 inc1_out="$(bash "$CRAWL" --config "$FX/repos.json" --state "$SANDBOX/state.json" --incremental 2>"$SANDBOX/inc1.err")"
 assert_eq       OWM-04 "unchanged head -> no new records (proven no-op)" "" "$inc1_out"
-assert_contains OWM-04 "no-op emits a SKIPPED unchanged note"       "SKIPPED unchanged repo=alpha" "$(cat "$SANDBOX/inc1.err")"
+assert_contains OWM-04 "no-op emits an unchanged-head notice"       "SKIPPED unchanged repo=alpha" "$(cat "$SANDBOX/inc1.err")"
 # change ONE repo's sha -> only that repo re-extracts
 printf 'alpha-sha-2\n' > "$FX/alpha/.owm-sha"
 bash "$CRAWL" --config "$FX/repos.json" --state "$SANDBOX/state.json" --incremental > "$SANDBOX/inc2.out" 2>"$SANDBOX/inc2.err"
 repos_touched="$(grep -o '"repo": "[^"]*"' "$SANDBOX/inc2.out" | sort -u | tr '\n' ' ')"
 assert_eq       OWM-04 "changed repo re-extracts ONLY itself"       '"repo": "alpha" ' "$repos_touched"
-assert_contains OWM-04 "unchanged siblings are SKIPPED"             "SKIPPED unchanged repo=beta" "$(cat "$SANDBOX/inc2.err")"
+assert_contains OWM-04 "unchanged sibling repos are not re-extracted" "SKIPPED unchanged repo=beta" "$(cat "$SANDBOX/inc2.err")"
 printf 'alpha-sha-1\n' > "$FX/alpha/.owm-sha"   # restore
 
 # =============================================================================
