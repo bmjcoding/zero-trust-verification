@@ -44,6 +44,19 @@ Tradeoffs are resolved **agent-vs-agent first** (the S4 adversarial round) and
 only the MUST-escalate residue reaches a human — human confirmation of a
 recommended default is rubber-stamping, not scrutiny (ADR 0002).
 
+### Escalation boundary (ADR 0002 — the one rule, vendored verbatim)
+
+The boundary below is the same MUST-escalate rule autopilot and the audit carry, **byte-identical** (kept in sync by the repo `lint_consistency.sh`). For this tier the S4 adversarial round is where resolvable decisions settle and S5 presents only the residue; the spec-gen decision log is the manifest `interrogation.log`, not a tracker (HC3 — this tier never writes trackers or product code).
+
+<!-- vendored:escalation-criterion:begin (ADR 0002 — byte-identical across all tiers; do NOT edit one copy) -->
+Resolve a decision yourself ONLY when it is BOTH (1) reversible at low cost — undoing it is a normal PR, not a migration or announcement — AND (2) verifiable downstream by the suite's own gates (a test, the D6 audit, or the audit tier). Record each such decision as a one-line decision-log entry (tracker + PR body); promote to an ADR only when it is hard to reverse, surprising without context, AND a real trade-off.
+
+You MUST escalate — never decide unilaterally — any decision requiring:
+1. values / risk appetite (e.g. silent-dedupe vs reject-and-alert on a duplicate);
+2. external facts you cannot observe (alert seams, compliance, org standards, upstream commitments);
+3. irreversible / outward-facing commitments (public API shapes, wire formats).
+<!-- vendored:escalation-criterion:end -->
+
 ## Invocation and modes
 
 | Invocation | Mode | Input class |

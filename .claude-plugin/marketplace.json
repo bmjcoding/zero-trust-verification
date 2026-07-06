@@ -4,7 +4,7 @@
   "owner": {
     "name": "bailey"
   },
-  "description": "Zero-Trust Verification suite: a three-tier software-quality system — spec generation (shift-left interrogation), autopilot implementation drain, and codebase-health audit — integrated through a shared machine-readable Verification Manifest (ADR 0001, amended by ADR 0011 to four plugins). Tiers run independently; each pins schema_version and degrades gracefully when the manifest is absent.",
+  "description": "Zero-Trust Verification suite: a four-plugin software-quality system — spec generation (shift-left interrogation), autopilot implementation drain, codebase-health audit, and the Merge Marshal coordination backstop — integrated through a shared machine-readable Verification Manifest (ADR 0001, amended by ADR 0011 to four plugins). This root marketplace is the product entry point; every plugin is independently installable, pins schema_version, and degrades gracefully when the manifest is absent.",
   "plugins": [
     {
       "name": "spec-gen",
@@ -24,6 +24,72 @@
         "given-when-then",
         "shift-left",
         "adversarial-review"
+      ]
+    },
+    {
+      "name": "autopilot",
+      "source": "./autopilot",
+      "description": "Autopilot implementation drain: turn an ADR / design doc / manifest-bearing Spec into an autonomous TDD task queue and drain it into PRs across self-scheduled fires — plan (disjoint file ownership + test gates) → implement (RED/GREEN commits per Subtask) → parallel multi-validator review → one draft PR per Story. Consumes the Verification Manifest (mode inference, Behavior-ID mapping, union + revision-drift gates), coordinates cross-drain via derived claim overlap, and shifts quality left (anti-flakiness contract, N=5 determinism gate). Host-agnostic through one adapter (Bitbucket Data Center + GitHub).",
+      "version": "3.0.1",
+      "author": {
+        "name": "bailey"
+      },
+      "license": "MIT",
+      "category": "workflow",
+      "keywords": [
+        "autopilot",
+        "tdd",
+        "autonomous",
+        "implementation-drain",
+        "verification-manifest",
+        "pr-per-story",
+        "claim-overlap",
+        "host-agnostic"
+      ]
+    },
+    {
+      "name": "codebase-health",
+      "source": "./codebase-health/plugins/codebase-health",
+      "description": "Closed-loop codebase health: audit any large codebase (dead/unused code, redundancy, doc hygiene, partially-implemented logic, test-suite health (flaky/vacuous tests), logging/observability, transactional integrity, security, performance, architecture shape, AI-navigability, and business-critical user journeys) with seven specialist agents to measured coverage — then verify fixes with evidence via /verify (closing tests rerun 5x before FIXED), fingerprinted findings, a debt ratchet, and a warn-only prevention hook whose CI surface is strict by default. Deterministic tools find evidence; LLM agents make the judgment; nothing counts until verified. Language-agnostic with tool packs for Python, TS, Rust, Go.",
+      "version": "1.4.0",
+      "author": {
+        "name": "bailey"
+      },
+      "license": "MIT",
+      "category": "code-quality",
+      "keywords": [
+        "cleanup",
+        "dead-code",
+        "security",
+        "performance",
+        "audit",
+        "incomplete-logic",
+        "technical-debt",
+        "architecture",
+        "verification",
+        "user-journeys"
+      ]
+    },
+    {
+      "name": "marshal",
+      "source": "./plugins/marshal",
+      "description": "The Merge Marshal: a serial, deterministic composed-state merge backstop for any shared repo. FIFO over ready, approved PRs; rebase onto trunk (or refuse per the D7.0 file/hunk budget); build-status on the POST-REBASE head — the composed-state verification that catches Composition Breaks two clean merges hide; green merges, red is evicted, one PR in flight, no speculation. Wiring, not a checker: every decision is a timestamp, a sha, a build state, or a file-surface intersection — no agent judgment in the merge path. Host-agnostic (GitHub + Bitbucket DC). Ships the vendored claim-overlap check and the 48h branch-age watcher. Installs standalone with zero Bazel, zero autopilot, zero spec tier.",
+      "version": "0.1.0",
+      "author": {
+        "name": "bailey"
+      },
+      "license": "MIT",
+      "category": "workflow",
+      "keywords": [
+        "merge-backstop",
+        "composition-break",
+        "serial-merge",
+        "rebase",
+        "build-status",
+        "deterministic",
+        "claim-overlap",
+        "branch-age",
+        "host-agnostic"
       ]
     }
   ]
