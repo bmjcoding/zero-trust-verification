@@ -35,20 +35,23 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 BASE=""
 MANIFEST=""; JOURNEYS=""; PR_BODY=""; BRANCH_META=""; ENVSEL=""
+MUTATION_REPORT=""; MUTATION_TOOL=""
 while [ $# -gt 0 ]; do
   case "$1" in
-    --manifest)    MANIFEST="${2:-}"; shift 2 ;;
-    --journeys)    JOURNEYS="${2:-}"; shift 2 ;;
-    --pr-body)     PR_BODY="${2:-}"; shift 2 ;;
-    --branch-meta) BRANCH_META="${2:-}"; shift 2 ;;
-    --env)         ENVSEL="${2:-}"; shift 2 ;;
-    -*)            echo "[pr-gate] unknown flag: $1" >&2; shift ;;
-    *)             BASE="$1"; shift ;;
+    --manifest)        MANIFEST="${2:-}"; shift 2 ;;
+    --journeys)        JOURNEYS="${2:-}"; shift 2 ;;
+    --pr-body)         PR_BODY="${2:-}"; shift 2 ;;
+    --branch-meta)     BRANCH_META="${2:-}"; shift 2 ;;
+    --env)             ENVSEL="${2:-}"; shift 2 ;;
+    --mutation-report) MUTATION_REPORT="${2:-}"; shift 2 ;;
+    --mutation-tool)   MUTATION_TOOL="${2:-}"; shift 2 ;;
+    -*)                echo "[pr-gate] unknown flag: $1" >&2; shift ;;
+    *)                 BASE="$1"; shift ;;
   esac
 done
 
 if [ -z "$BASE" ]; then
-  echo "usage: pr_gate.sh <BASE_REF> [--manifest P] [--journeys P] [--pr-body P] [--branch-meta P] [--env NAME]" >&2
+  echo "usage: pr_gate.sh <BASE_REF> [--manifest P] [--journeys P] [--pr-body P] [--branch-meta P] [--env NAME] [--mutation-report P] [--mutation-tool T]" >&2
   exit 64
 fi
 
@@ -107,6 +110,24 @@ if [ -x "$SCRIPT_DIR/check_manifest_history.sh" ]; then
   else
     echo "--> check_manifest_history.sh"
     echo "[not-covered] manifest history checks: no manifest supplied — check skipped"
+  fi
+fi
+
+# ── per-diff: ADR 0016 mutation survivors (ingest-only; comment-only in soak) ─
+if [ -x "$SCRIPT_DIR/check_mutation_survivors.sh" ]; then
+  if [ -n "$MUTATION_REPORT" ]; then
+    mut_args=("$BASE" --report "$MUTATION_REPORT")
+    [ -n "$MUTATION_TOOL" ] && mut_args+=(--tool "$MUTATION_TOOL")
+    [ -n "$JOURNEYS" ] && mut_args+=(--journeys "$JOURNEYS")
+    [ -n "$ENVSEL" ] && mut_args+=(--env "$ENVSEL")
+    # No --promote-core here: the CORE-survivor class ships comment-only during the
+    # ADR-0004 soak (⟨MT-AMEND-A⟩); promotion is a per-repo/async decision. pr_gate
+    # stays warn-only regardless (it aggregates the sibling exit; it never blocks).
+    run_sibling "check_mutation_survivors.sh (ADR 0016 mutation survivors — comment-only in soak)" \
+      bash "$SCRIPT_DIR/check_mutation_survivors.sh" "${mut_args[@]}"
+  else
+    echo "--> check_mutation_survivors.sh"
+    echo "[not-covered] mutation survivors: no ingested report supplied (--mutation-report) — mutation facet in Not-covered, never blocks (ADR 0016 / MT-08)"
   fi
 fi
 
