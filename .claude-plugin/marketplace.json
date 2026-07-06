@@ -28,7 +28,7 @@
     },
     {
       "name": "autopilot",
-      "source": "./autopilot",
+      "source": "./plugins/autopilot",
       "description": "Autopilot implementation drain: turn an ADR / design doc / manifest-bearing Spec into an autonomous TDD task queue and drain it into PRs across self-scheduled fires — plan (disjoint file ownership + test gates) → implement (RED/GREEN commits per Subtask) → parallel multi-validator review → one draft PR per Story. Consumes the Verification Manifest (mode inference, Behavior-ID mapping, union + revision-drift gates), coordinates cross-drain via derived claim overlap, and shifts quality left (anti-flakiness contract, N=5 determinism gate). Host-agnostic through one adapter (Bitbucket Data Center + GitHub).",
       "version": "3.0.1",
       "author": {
@@ -49,7 +49,7 @@
     },
     {
       "name": "codebase-health",
-      "source": "./codebase-health/plugins/codebase-health",
+      "source": "./plugins/codebase-health",
       "description": "Closed-loop codebase health: audit any large codebase (dead/unused code, redundancy, doc hygiene, partially-implemented logic, test-suite health (flaky/vacuous tests), logging/observability, transactional integrity, security, performance, architecture shape, AI-navigability, and business-critical user journeys) with seven specialist agents to measured coverage — then verify fixes with evidence via /verify (closing tests rerun 5x before FIXED), fingerprinted findings, a debt ratchet, and a warn-only prevention hook whose CI surface is strict by default. Deterministic tools find evidence; LLM agents make the judgment; nothing counts until verified. Language-agnostic with tool packs for Python, TS, Rust, Go.",
       "version": "1.4.0",
       "author": {

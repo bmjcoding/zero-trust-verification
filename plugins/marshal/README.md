@@ -67,7 +67,7 @@ hermetic mock. A new host is a new backend, never a new caller path. See
 | Path | Role |
 |---|---|
 | `scripts/marshal.sh` | the serial backstop loop (ADR 0010/0011) |
-| `scripts/claim_overlap.sh` | the vendored claim-overlap check (ADR 0009) — **byte-identical** with autopilot's canonical copy (`autopilot/scripts/claim_overlap.sh`), adopted verbatim; not forked |
+| `scripts/claim_overlap.sh` | the vendored claim-overlap check (ADR 0009) — **byte-identical** with autopilot's canonical copy (`plugins/autopilot/scripts/claim_overlap.sh`), adopted verbatim; not forked |
 | `scripts/branch_age_watcher.sh` | the 48h staleness / planning-failure watcher (ADR 0012/0009) |
 | `scripts/mock_host.py` + `mock_host.sh` | the hermetic mock host backend (Python via `uv`, ADR 0015) |
 | `scripts/self_test.sh` | the hermetic self-test |

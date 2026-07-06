@@ -25,6 +25,35 @@
 > greenfield, and it preserves the 1.4.0 read-only / warn-only adoption posture
 > in full.
 
+## Development / test harness
+
+The codebase-health plugin ships at `plugins/codebase-health/`; its dev/test
+harness lives **out of the installable plugin**, at `tests/codebase-health/`
+(relocated here when the `./codebase-health/` wrapper was flattened into
+`plugins/`):
+
+| Path | What it is |
+|---|---|
+| `tests/codebase-health/self_test.sh` | The deterministic ground-truth harness (131 assertions + 3 ruff-conditional, plus the CH-01..CH-10 manifest-wiring assertions). Run before and after touching anything. It anchors `HARNESS_DIR` on its own dir and `REPO_ROOT` two levels up, so it binds to the repo-root validator + `tests/fixtures/{join,manifest}/` and its CH sections execute (never silently `[skip]`). |
+| `tests/codebase-health/make_blind_corpus.sh` | Regenerates the author-blind eval copy at `tests/codebase-health/test-fixtures/blind/` (gitignored) — never hand-edited. |
+| `tests/codebase-health/test-fixtures/` | The planted-defect corpus (`planted/`), the `EXPECTED_FINDINGS.yaml` answer key (outside the scanned tree by design), and the CH PR-gate fixtures (`pr-gate/`). |
+
+**Dev deps:** `jscpd` is **required** for `self_test.sh` (`npm install -g jscpd`;
+ND1's clone-pair is scored off real jscpd output — a shim-only pass is forbidden);
+`ruff` and `pytest`/`jest`+`node` are optional (their absence turns specific
+assertions into loud `[skip]`s, never a silent pass).
+
+**The two gates** (any change to fixtures or detectors, in order): (1) **red-first**
+— land the fixture + assertion first, run `self_test.sh` twice, confirm the new
+assertions fail identically before writing detector code; (2) **green** — after
+detector work, `self_test.sh` twice, byte-identical, exit 0. Agent-scored fixtures
+are covered ONLY by the manual blind-corpus eval (regenerate `blind/`, run the
+audit agents against it, hand-score vs `EXPECTED_FINDINGS.yaml`); any change to an
+agent prompt, the taxonomy, or a dispatched reference requires re-running that eval
+before release (date + git SHA recorded in `docs/specs/codebase-health-gaps-spec.md`).
+The whole suite (this harness included) runs from the repo root via
+`scripts/suite_self_test.sh`.
+
 ## 0. Position and posture (read first)
 
 The PR Gate is **a diff-scoped mode of this plugin**, not a fourth checker
