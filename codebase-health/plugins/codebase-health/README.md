@@ -82,13 +82,18 @@ evaluated by running `/audit` on the corpus and comparing to the manifest.
 
 ## Install
 
-```bash
-# From a local checkout:
-/plugin marketplace add /path/to/codebase-health-suite
-/plugin install codebase-health@codebase-health-suite
+codebase-health ships as one of the four independently installable plugins in
+the `zero-trust-verification` marketplace (the repo-root `.claude-plugin/marketplace.json`
+is the single product entry point, per ADR 0001/0011):
 
-# Or push codebase-health-suite/ to a git repo and:
-/plugin marketplace add <your-org>/codebase-health-suite
+```bash
+# From a local checkout of the zero-trust-verification suite:
+/plugin marketplace add /path/to/zero-trust-verification
+/plugin install codebase-health@zero-trust-verification
+
+# Or from the git repo:
+/plugin marketplace add <your-org>/zero-trust-verification
+/plugin install codebase-health@zero-trust-verification
 ```
 
 Install the language tools you use (each auto-skips if absent), e.g. Python:
