@@ -149,6 +149,10 @@ cat > "$FX/alpha/docs/decisions/owm-coverage.md" <<'MD'
 <!-- owm:self-emitted -->
 DL-777 this is OWM's own derived coverage output; re-ingesting it forms a citation loop
 MD
+# a LARGE self-emitted artifact whose marker sits PAST the first 2KB (regression guard
+# for the marker-scan bound): ~3KB of filler, THEN the marker, THEN a DL line.
+{ i=0; while [ $i -lt 220 ]; do printf 'filler decision-log padding line %03d xxxxxxxxxxxxxxxx\n' "$i"; i=$((i+1)); done
+  printf '<!-- owm:self-emitted -->\nDL-888 deep-marker OWM output must also be excluded\n'; } > "$FX/alpha/docs/decisions/owm-deep.md"
 
 # --- beta: same kebab ADR name as alpha (cross-repo collision), a schema-invalid
 #     manifest (exit 4 -> unparseable, not dropped), and a DL carrier ---
@@ -225,6 +229,12 @@ assert_eq       OWM-01 "manifest exit-4 -> kind unparseable (not dropped)" "unpa
 assert_eq       OWM-01 "manifest exit-4 -> error_code recorded"    "manifest-schema-invalid" "$(printf '%s' "$out" | jget 'd["error_code"]')"
 assert_contains OWM-01 "manifest exit-4 -> validator error carried" "schema-invalid" "$out"
 
+# manifest: exit-5 unsupported-version -> unparseable carrying the code (0/3/4/5 contract)
+printf 'schema_version: 99\nspec:\n  title: "Future manifest"\n' > "$FX/future-manifest.yaml"
+out="$(bash "$EXTRACT" "$FX/future-manifest.yaml" --repo z --commit s1 --kind manifest)"
+assert_eq       OWM-01 "manifest exit-5 -> kind unparseable (not dropped)" "unparseable" "$(printf '%s' "$out" | jget 'd["kind"]')"
+assert_eq       OWM-01 "manifest exit-5 -> error_code manifest-unsupported-version" "manifest-unsupported-version" "$(printf '%s' "$out" | jget 'd["error_code"]')"
+
 # manifest: valid -> harvests spec + journeys + interrogation DL entries
 out="$(bash "$EXTRACT" "$FX/alpha/verification-manifest.yaml" --repo alpha --commit s1)"
 assert_contains OWM-01 "manifest valid: spec title harvested"      "Widget engine" "$out"
@@ -245,16 +255,22 @@ schema_bad="$(uv run --project "$ROOT" python3 -c '
 import sys, json
 from jsonschema import Draft202012Validator
 v = Draft202012Validator(json.load(open(sys.argv[1])))
-bad = 0
+bad = 0; ok = 0
 for line in open(sys.argv[2]):
     line = line.strip()
     if not line: continue
     r = json.loads(line)
-    for e in v.iter_errors(r):
-        bad += 1; print("INVALID %s: %s" % (r.get("org_id"), e.message)); break
-print("BAD=%d" % bad)
+    errs = list(v.iter_errors(r))
+    if errs:
+        bad += 1; print("INVALID %s: %s" % (r.get("org_id"), errs[0].message))
+    else:
+        ok += 1
+print("OK=%d BAD=%d" % (ok, bad))
 ' "$OWM_SCHEMA" "$SANDBOX/records.jsonl" 2>&1)"
-assert_contains OWM-02 "every record validates against the reused JSON Schema" "BAD=0" "$schema_bad"
+# non-vacuous: require BOTH zero invalid AND a positive count actually validated.
+assert_contains OWM-02 "every record validates against the reused JSON Schema (0 invalid)" "BAD=0" "$schema_bad"
+val_ok="$(printf '%s' "$schema_bad" | sed -n 's/.*OK=\([0-9][0-9]*\).*/\1/p')"
+assert_eq       OWM-02 "the schema check actually validated records (non-vacuous)" "1" "$([ "${val_ok:-0}" -gt 0 ] && echo 1 || echo 0)"
 
 # cross-repo id collision DISAMBIGUATED by repo (not merged)
 assert_contains OWM-02 "alpha's widget-caching org_id present"     "alpha:adr:widget-caching" "$(cat "$SANDBOX/records.jsonl")"
@@ -298,6 +314,8 @@ assert_contains OWM-03a "oversized surface -> memory-surface-oversized crawl_err
 # self-exclusion (also proven under OWM-11): the owm:self-emitted file is never indexed
 assert_not_contains OWM-03a "self-emitted OWM output excluded from crawl" "docs/decisions/owm-coverage.md" "$(cat "$SANDBOX/records.jsonl")"
 assert_not_contains OWM-03a "self-emitted DL-777 never re-ingested" "DL-777" "$(cat "$SANDBOX/records.jsonl")"
+# the marker sits PAST the first 2KB in owm-deep.md -> still excluded (bound regression)
+assert_not_contains OWM-03a "self-emitted marker past 2KB still excludes the file" "DL-888" "$(cat "$SANDBOX/records.jsonl")"
 
 # =============================================================================
 # OWM-04 — incremental crawl keyed by commit sha
@@ -331,8 +349,11 @@ bash "$INDEX" "$SANDBOX/records.jsonl" "$SANDBOX/idx2.db" >/dev/null 2>&1
 uv run --project "$ROOT" python3 "$HERE/owm.py" dump "$SANDBOX/idx.db"  > "$SANDBOX/dump1.txt" 2>/dev/null
 uv run --project "$ROOT" python3 "$HERE/owm.py" dump "$SANDBOX/idx2.db" > "$SANDBOX/dump2.txt" 2>/dev/null
 assert_eq       OWM-05 "rebuild is byte-comparable on the canonical dump" "" "$(diff "$SANDBOX/dump1.txt" "$SANDBOX/dump2.txt")"
-fts="$(bash "$QUERY" search "async durable queue" --db "$SANDBOX/idx.db")"
-assert_contains OWM-05 "FTS query returns a seeded record"          '"results"' "$fts"
+fts="$(bash "$QUERY" search "durable queue" --db "$SANDBOX/idx.db" --all)"
+fts_count="$(printf '%s' "$fts" | jget 'd["count"]')"
+assert_eq       OWM-05 "FTS query returns >=1 seeded record (non-vacuous)" "1" "$([ "${fts_count:-0}" -ge 1 ] && echo 1 || echo 0)"
+# membership (deterministic), NOT ranking (which is [drain]): the on-topic ADR is present
+assert_contains OWM-05 "FTS returns the on-topic record by MATCH membership" "alpha:adr:widget-caching-async" "$fts"
 assert_contains OWM-05 "FTS result carries a source pointer (path)" '"path"' "$fts"
 
 # =============================================================================
@@ -340,10 +361,10 @@ assert_contains OWM-05 "FTS result carries a source pointer (path)" '"path"' "$f
 # =============================================================================
 echo "== OWM-06 query =="
 
-res="$(bash "$QUERY" resolve gadget --db "$SANDBOX/idx.db")"
+res="$(bash "$QUERY" resolve gadget --db "$SANDBOX/idx.db" --all)"
 assert_eq       OWM-06 "(i) resolve maps _Avoid_ alias -> canonical term" "Widget" "$(printf '%s' "$res" | jget 'd["record"]["title"]')"
 
-dec="$(bash "$QUERY" decisions "widget caching" --db "$SANDBOX/idx.db")"
+dec="$(bash "$QUERY" decisions "widget caching" --db "$SANDBOX/idx.db" --all)"
 super_flag="$(printf '%s' "$dec" | python3 -c 'import sys,json;
 d=json.load(sys.stdin)
 o=[r for r in d["results"] if r["org_id"]=="alpha:adr:widget-caching"][0]
@@ -351,21 +372,27 @@ n=[r for r in d["results"] if r["org_id"]=="alpha:adr:widget-caching-async"][0]
 print("%s|%s" % (o.get("superseded"), n.get("superseded")))')"
 assert_eq       OWM-06 "(ii/v) superseded ADR flagged; superseding one is not" "True|False" "$super_flag"
 
-lk="$(bash "$QUERY" lookup "alpha:glossary:widget" --db "$SANDBOX/idx.db")"
+lk="$(bash "$QUERY" lookup "alpha:glossary:widget" --db "$SANDBOX/idx.db" --all)"
 assert_eq       OWM-06 "(iii) lookup returns exactly the seeded record"  "Widget" "$(printf '%s' "$lk" | jget 'd["record"]["title"]')"
 srcnonempty="$(printf '%s' "$lk" | python3 -c 'import sys,json; r=json.load(sys.stdin)["record"]; print(bool(r["repo"]) and bool(r["commit_sha"]) and bool(r["path"]))')"
 assert_eq       OWM-06 "(iv) every result carries a NON-EMPTY source pointer" "True" "$srcnonempty"
+
+# refuse-by-default is the DEFAULT on the CLI (the retrieval source of truth), not just
+# on the MCP path: with NEITHER --allow NOR --all, no scope is granted -> refused.
+defout="$(bash "$QUERY" lookup "alpha:glossary:widget" --db "$SANDBOX/idx.db" 2>/dev/null)"; defrc=$?
+assert_eq       OWM-06 "CLI default grants NO scope -> refused (refuse-by-default)" "True" "$(printf '%s' "$defout" | jget 'd.get("refused")')"
+assert_eq       OWM-06 "refuse-by-default default exits 3" "3" "$defrc"
 
 # =============================================================================
 # OWM-07 — freshness disclosed, never faked
 # =============================================================================
 echo "== OWM-07 freshness =="
 
-stale="$(bash "$QUERY" lookup "alpha:glossary:widget" --db "$SANDBOX/idx.db" --head "alpha=NEWHEAD")"
+stale="$(bash "$QUERY" lookup "alpha:glossary:widget" --db "$SANDBOX/idx.db" --all --head "alpha=NEWHEAD")"
 assert_eq       OWM-07 "head advanced past indexed sha -> possibly_stale true" "True" "$(printf '%s' "$stale" | jget 'd["record"]["possibly_stale"]')"
-unk="$(bash "$QUERY" lookup "alpha:glossary:widget" --db "$SANDBOX/idx.db")"
+unk="$(bash "$QUERY" lookup "alpha:glossary:widget" --db "$SANDBOX/idx.db" --all)"
 assert_not_contains OWM-07 "head unknown -> possibly_stale ABSENT (no false fresh)" "possibly_stale" "$unk"
-same="$(bash "$QUERY" lookup "alpha:glossary:widget" --db "$SANDBOX/idx.db" --head "alpha=alpha-sha-1")"
+same="$(bash "$QUERY" lookup "alpha:glossary:widget" --db "$SANDBOX/idx.db" --all --head "alpha=alpha-sha-1")"
 assert_eq       OWM-07 "same sha -> possibly_stale false" "False" "$(printf '%s' "$same" | jget 'd["record"]["possibly_stale"]')"
 
 # =============================================================================
@@ -373,17 +400,36 @@ assert_eq       OWM-07 "same sha -> possibly_stale false" "False" "$(printf '%s'
 # =============================================================================
 echo "== OWM-08 coverage =="
 
-cov="$(bash "$COVERAGE" --db "$SANDBOX/idx.db")"
+# a coverage fixture with TWO distinct crawl errors: a schema-invalid manifest (exit 4)
+# AND an unreachable repo — the report must name BOTH with their paths + codes.
+cat > "$FX/errs.json" <<JSON
+{ "repos": [
+    {"slug":"beta","path":"./beta"},
+    {"slug":"ghost","path":"./does-not-exist"} ],
+  "allow": ["beta","ghost"] }
+JSON
+bash "$CRAWL" --config "$FX/errs.json" > "$SANDBOX/errs.jsonl" 2>/dev/null
+bash "$INDEX" "$SANDBOX/errs.jsonl" "$SANDBOX/errs.db" >/dev/null 2>&1
+cov="$(bash "$COVERAGE" --db "$SANDBOX/errs.db" --all)"
+cov_n="$(printf '%s' "$cov" | jget 'd["crawl_error_count"]')"
+assert_eq       OWM-08 "coverage names BOTH crawl errors (non-vacuous count)" "1" "$([ "${cov_n:-0}" -ge 2 ] && echo 1 || echo 0)"
 assert_contains OWM-08 "coverage names the schema-invalid manifest with its code" "manifest-schema-invalid" "$cov"
-assert_contains OWM-08 "coverage carries the source path of the error"  "verification-manifest.yaml" "$cov"
-assert_contains OWM-08 "coverage lists repos crawled"               "gamma" "$cov"
+assert_contains OWM-08 "coverage carries the source path of the manifest error"  "verification-manifest.yaml" "$cov"
+assert_contains OWM-08 "coverage names the unreachable repo with its code" "repo-unreachable" "$cov"
+# refuse-by-default extends to coverage: --allow beta hides ghost's error + repo name
+covscoped="$(bash "$COVERAGE" --db "$SANDBOX/errs.db" --allow beta)"
+assert_contains     OWM-08 "scoped coverage still shows the in-scope (beta) error" "manifest-schema-invalid" "$covscoped"
+assert_not_contains OWM-08 "scoped coverage hides the out-of-scope (ghost) error" "repo-unreachable" "$covscoped"
+assert_not_contains OWM-08 "scoped coverage does not disclose the out-of-scope repo name" "ghost" "$covscoped"
+covall="$(bash "$COVERAGE" --db "$SANDBOX/idx.db" --all)"
+assert_contains OWM-08 "coverage lists repos crawled"               "gamma" "$covall"
 # a fully-clean org reports zero errors
 cat > "$FX/clean.json" <<JSON
 { "repos": [ {"slug":"gamma","path":"./gamma"} ], "allow": ["gamma"] }
 JSON
 bash "$CRAWL" --config "$FX/clean.json" > "$SANDBOX/clean.jsonl" 2>/dev/null
 bash "$INDEX" "$SANDBOX/clean.jsonl" "$SANDBOX/clean.db" >/dev/null 2>&1
-covclean="$(bash "$COVERAGE" --db "$SANDBOX/clean.db")"
+covclean="$(bash "$COVERAGE" --db "$SANDBOX/clean.db" --all)"
 assert_eq       OWM-08 "a fully-clean org reports zero crawl errors" "0" "$(printf '%s' "$covclean" | jget 'd["crawl_error_count"]')"
 
 # =============================================================================

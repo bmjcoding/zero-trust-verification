@@ -73,7 +73,10 @@ def _run_query(cfg, sub, arg):
 
 
 def _run_coverage(cfg):
-    proc = subprocess.run(["bash", cfg["coverage_sh"], "--db", cfg["db"]], capture_output=True, text=True)
+    # refuse-by-default extends to the coverage resource: scope it to the allow-list so
+    # out-of-scope repo names / error paths are never disclosed to the agent.
+    cmd = ["bash", cfg["coverage_sh"], "--db", cfg["db"], "--allow", ",".join(cfg["allow"])]
+    proc = subprocess.run(cmd, capture_output=True, text=True)
     return proc.stdout, proc.returncode
 
 
