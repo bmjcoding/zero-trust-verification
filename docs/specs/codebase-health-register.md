@@ -68,14 +68,18 @@ never as a default the plugin installs for you.
 The manifest schema is vendored, not authored here (ADR 0001; the manifest spec
 `schema/verification-manifest/v1.schema.json` + `scripts/validate_manifest.sh`
 are the one permitted bootstrap, delivered by the spec-gen drain — CH items
-CONSUME them). **Hard external dependency (blocks the `[det]` acceptances):**
-neither `validate_manifest.sh` nor the vendored schema exists in this repo today
-(MS §13.1–2 list them as spec-gen deliverables, not yet drained). Every
-manifest-reading item (CH-01, CH-03, CH-06, CH-08, CH-09) is **blocked-on those
-two artifacts landing**; their `[det]` acceptances become self-test-assertable
-only once the spec-gen drain vendors the validator + schema + the MS §13.2/§13.4
-fixture suites this register reuses. CH-02, CH-04, CH-05, CH-07 (git/diff/journeys
-mechanics) do not need the validator and can land first.
+CONSUME them). **This drain has landed.** `scripts/validate_manifest.sh` (with its
+`scripts/validate_manifest.py` core), `schema/verification-manifest/v1.schema.json`,
+and the MS §13.2/§13.4 fixture suites (`tests/fixtures/manifest/`,
+`tests/fixtures/join/`) now exist at the repo root, so `have_validator` is true in
+the monorepo and `self_test.sh` sections 14–22 run green against the real
+validator. Every manifest-reading item (CH-01, CH-03, CH-06, CH-08, CH-09) is
+therefore **no longer blocked** — its `[det]` acceptances are live and
+self-test-assertable today. CH-02, CH-04, CH-05, CH-07 (git/diff/journeys
+mechanics) never needed the validator and are independent of it. (Standalone
+install caveat: a codebase-health install outside this monorepo still vendors its
+own copy of the validator + schema per ADR 0001 — the repo-root artifacts are the
+monorepo's shared bootstrap, not a promise they travel with a standalone plugin.)
 
 **CH-01 → CH-02 → CH-03 → CH-08 → CH-04 → CH-05 → CH-06 → CH-07 → CH-09 → CH-10.**
 
@@ -147,8 +151,9 @@ additive.
   the degrade rules (missing field ≠ corrupt); `self_test.sh` asserts both.
 - `[det]` a hand-authored manifest + `journeys.json` v2 fixture pair (the MS
   §13.4 deliverable, consumed here) asserts the backref points at an existing
-  manifest `journeys[].id` and a vital step carries an `event_name`. **Blocked-on
-  the MS §13.4 fixture deliverable** (the manifest half of the pair).
+  manifest `journeys[].id` and a vital step carries an `event_name`. **Live:** the
+  MS §13.4 fixture pair has landed at `tests/fixtures/join/` (`manifest.yaml` +
+  `journeys.json`).
 - `[audit-run]` `journey-walker` populating both fields by real match/emission
   quality (leaving `null` on fuzzy / DARK) — semantic, agent-scored.
 
@@ -202,8 +207,8 @@ CH-02 — hence CH-02 adds it as the one new discovered field the join needs.)
   row per MS §12 row against the CH-02 fixture pair; every one of the eight rows
   has a passing and a failing fixture case (`self_test.sh`); the OBSERVED/
   LOG-ONLY/DARK satisfaction lattice and the paged←paged seam lattice each get
-  their full truth table asserted. **Blocked-on the MS §13.4 fixture pair +
-  validate_manifest.sh** (both spec-gen deliverables).
+  their full truth table asserted. **Live:** the MS §13.4 fixture pair
+  (`tests/fixtures/join/`) and `validate_manifest.sh` have both landed.
 - `[det]` no-join fixture: absent backref + non-matching `name` → the row emits a
   Not-covered line, not a false drift finding (invariant 6).
 - `[audit-run]` end-to-end drift-finding quality on a real repo (criticality
@@ -444,8 +449,8 @@ git-history-based, all deterministic:
   fixture (reusing a `withdrawn` ID) → blocking. Each has a clean counterpart.
 - `[det]` the byte-hash matches the manifest spec's `git show :<path> | sha256sum`
   definition exactly (shared fixture with the validator's spec_hash test — one
-  definition; a committed git blob is fixture-constructible). **Blocked-on
-  validate_manifest.sh** for the shared spec_hash fixture.
+  definition; a committed git blob is fixture-constructible). **Live:**
+  `validate_manifest.sh` has landed, so the shared spec_hash fixture is available.
 - `[audit-run]` none — all three are deterministic by construction (that is why
   the validator defers them to the PR Gate rather than dropping them).
 
@@ -515,9 +520,10 @@ MODE token (CH-01), `journeys.json` v2 parse (CH-02), the §12 join truth tables
 provenance + main-lineage reservation (CH-07), profile read + cap-holds (CH-08),
 spec_hash / monotonicity / ID-reuse (CH-09), self-test wiring (CH-10). These are
 grep/git-log/fixture-provable and gate on the CI surface only. The
-manifest-reading ones (CH-01/03/06/08/09) are **blocked-on** the spec-gen
-`validate_manifest.sh` + vendored schema + MS §13.4 fixture pair landing (see
-Dependencies) — deterministic once those artifacts exist, not before.
+manifest-reading ones (CH-01/03/06/08/09) **are now live**: the spec-gen
+`validate_manifest.sh` + vendored schema + MS §13.4 fixture pair have landed at
+the repo root (see Dependencies), so these acceptances are self-test-assertable
+today — deterministic, and no longer deferred.
 
 Measured only in real runs + blind eval (`[audit-run]`, never claimed as
 automated coverage): the orchestrator honoring MODE (CH-01), backref/`event_name`
