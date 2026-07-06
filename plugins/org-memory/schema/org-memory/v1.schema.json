@@ -1,0 +1,102 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://zero-trust-verification/schema/org-memory/v1",
+  "title": "Org-Wide Memory index record v1",
+  "description": "OWM-02: the SOLE structural source of truth for one Org-Wide Memory index record (ADR 0019). Every record is a DERIVED VIEW over repo-resident memory bytes, carrying a {repo, commit_sha, path, source_line} back-pointer to the authoritative source — never a second store of truth. Additive-only evolution (mirrors the manifest schema): unknown fields are ignored; a major schema_version bump forces a full index rebuild. The completeness/extraction rules (which fields each kind carries) live in the extractor, not here — this schema enforces only structural shape so a partially-extracted or unparseable record is still schema-valid and never silently dropped.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "schema_version",
+    "kind",
+    "id",
+    "org_id",
+    "repo",
+    "commit_sha",
+    "path",
+    "title",
+    "body_excerpt",
+    "aliases"
+  ],
+  "properties": {
+    "schema_version": { "type": "integer", "const": 1 },
+    "kind": {
+      "description": "The memory-class this record was extracted as (OWM-01), plus the two non-content edge kinds the crawler emits so an unparseable file or an unreachable/oversized repo is recorded, never dropped.",
+      "enum": [
+        "adr",
+        "manifest",
+        "glossary",
+        "decision-log",
+        "journey",
+        "as-built",
+        "unparseable",
+        "crawl_error"
+      ]
+    },
+    "id": {
+      "description": "Stable within-repo identity (kebab name for adr/glossary; DL-### for decision-log; behaviour/journey id for manifest; path-derived otherwise). Reused from the source, never minted.",
+      "type": "string",
+      "minLength": 1
+    },
+    "org_id": {
+      "description": "Stable CROSS-repo identity = <repo-slug>:<kind>:<kebab-name>. Disambiguated by repo so the same kebab name in two repos is two records, not a merge.",
+      "type": "string",
+      "pattern": "^[^:]+:[a-z][a-z_-]*:.+$"
+    },
+    "repo": {
+      "description": "Repo slug this record's bytes live in (the first segment of org_id). The ACL / allow-list enforcement key (OWM-11 refuse-by-default).",
+      "type": "string",
+      "minLength": 1
+    },
+    "commit_sha": {
+      "description": "The pinned ref the crawler read this record's bytes at (OWM-04 cache-key). For crawl_error records that failed before a ref was resolvable this may be the empty string.",
+      "type": "string"
+    },
+    "path": {
+      "description": "Repo-relative path of the source file the bytes came from — the back-pointer target so a human/agent opens the authoritative file.",
+      "type": "string",
+      "minLength": 1
+    },
+    "source_line": {
+      "description": "1-based line the record anchors to in path, when known (glossary term line, DL-### line). Omitted when not line-anchored.",
+      "type": "integer",
+      "minimum": 1
+    },
+    "title": {
+      "description": "Human title/label (ADR H1, glossary term, behaviour title, manifest spec title, DL summary).",
+      "type": "string"
+    },
+    "status": {
+      "description": "adr: status frontmatter (accepted | agent-decided). manifest: completeness. unparseable/crawl_error: the failure category. Omitted when not applicable.",
+      "type": "string"
+    },
+    "date": {
+      "description": "adr frontmatter date (ISO), when present.",
+      "type": "string"
+    },
+    "body_excerpt": {
+      "description": "A bounded prose excerpt for full-text retrieval (FTS5). For crawl_error/unparseable this carries the error message + validator exit code.",
+      "type": "string"
+    },
+    "aliases": {
+      "description": "Rejected synonyms that must resolve to this record (glossary _Avoid_ list). Empty array when none — the 'told twice' killer for OWM-06 resolve.",
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "supersedes": {
+      "description": "org_id / kebab-name this record supersedes (ADR chain), when declared.",
+      "type": "string"
+    },
+    "superseded_by": {
+      "description": "org_id / kebab-name that supersedes this record (ADR superseded-by / amended-by), when declared. A record carrying this is returned FLAGGED, never as live truth (OWM-06).",
+      "type": "string"
+    },
+    "spec_hash": {
+      "description": "manifest spec_hash when the source is a complete Verification Manifest.",
+      "type": "string"
+    },
+    "error_code": {
+      "description": "For unparseable/crawl_error records: the machine code (validator exit 4/5, memory-surface-oversized, repo-unreachable) so coverage (OWM-08) can name WHY the index cannot answer.",
+      "type": "string"
+    }
+  }
+}
