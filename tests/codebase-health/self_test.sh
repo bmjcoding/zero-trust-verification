@@ -466,15 +466,24 @@ assert_grep     "$R" 'transfer_funds' "J3 anchor: transfer_funds named on the do
 assert_grep     "$R" 'submit_order'   "JC1 anchor: submit_order on the documented CORE order journey"
 assert_grep     "$R" 'format_receipt' "JC2 anchor: format_receipt on the same CORE journey"
 assert_not_grep "$R" 'dump_state'     "N10: dump_state appears on NO documented journey"
-# ruff-conditional (3 assertions; loud [skip] when absent — ruff is NOT a
-# mandated dev dependency, per Decision 8 only jscpd is).
+# ruff-conditional (3 assertions). ruff is NOT a mandated dev dependency
+# (Decision 8: only jscpd is), but per ADR 0015 ("everything uv") we source it
+# through uv (`uvx` = uv tool run) when it isn't already on PATH. It still
+# [skip]s loudly if NEITHER PATH nor uv can provide it (offline / cold-cache
+# degrade) — a missing optional linter is never a hard failure here.
+RUFF=""
 if command -v ruff >/dev/null 2>&1; then
-  RUFF_OUT="$(ruff check --isolated --select C901 --config 'lint.mccabe.max-complexity=10' "$WORK/planted/planted_pkg/checkout.py" "$WORK/planted/planted_pkg/debughelpers.py" 2>/dev/null)"
+  RUFF="ruff"
+elif command -v uv >/dev/null 2>&1 && uvx ruff --version >/dev/null 2>&1; then
+  RUFF="uvx ruff"
+fi
+if [ -n "$RUFF" ]; then
+  RUFF_OUT="$($RUFF check --isolated --select C901 --config 'lint.mccabe.max-complexity=10' "$WORK/planted/planted_pkg/checkout.py" "$WORK/planted/planted_pkg/debughelpers.py" 2>/dev/null)"
   echo "$RUFF_OUT" | grep -q 'submit_order'   && ok "JC1 metric half: C901 fires for submit_order" || fail "JC1 metric half: C901 fires for submit_order"
   echo "$RUFF_OUT" | grep -q 'dump_state'     && ok "N10: C901 fires for dump_state (same profile, off-journey)" || fail "N10: C901 fires for dump_state (same profile, off-journey)"
   echo "$RUFF_OUT" | grep -q 'format_receipt' && fail "JC2: format_receipt stays metric-INVISIBLE (no C901)" || ok "JC2: format_receipt stays metric-INVISIBLE (no C901)"
 else
-  echo "  [skip] ruff not installed — 3 C901 journey-fixture integrity checks skipped"
+  echo "  [skip] ruff unavailable (not on PATH and uv could not provide it) — 3 C901 journey-fixture integrity checks skipped"
 fi
 
 echo "== 13. post-1.4.0-eval registration LOCKS (already-green pins only) =="
