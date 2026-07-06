@@ -381,6 +381,32 @@ bash ${SKILL_DIR}/scripts/determinism_gate.sh \
 When the repo has no randomization mechanism (`gates.test_random` unset), the order-randomized round is SKIPPED with a loud `[note]` on stderr — NEVER silently (a silent skip would claim order-independence it never checked; honor the `[det]`/`[drain]` split honestly). Any inconsistency across the 5 rounds → `[BLOCKED: flaky-test]` (impl-block counter); dispatch matches D5. This is the runtime backstop for the AV3-11 anti-flakiness contract.
 
 
+### D6.5 — Anti-vacuous (mutation) gate (ADR 0016)
+
+
+D6.4 catches a test that passes for the wrong reason (nondeterminism); D6.5 catches a test that passes for NO reason (vacuity). After D6.1–D6.4, D6.5 runs the repo's mutation tool over THIS Subtask's changed product FILES, then filters the survivors to the changed LINES of `prev_pushed_sha..HEAD` (the D6.2 range). A survived mutant on a changed line is deterministic proof a test executes that line and constrains nothing. OPTIONAL: runs only when `gates.test_mutation` is set and the language has an adapter (`references/mutation-adapters.md` — the MT-01 map, vendored byte-identical from codebase-health, pinned by root lint V7).
+
+
+```bash
+bash ${SKILL_DIR}/scripts/mutation_gate.sh \
+  --tool <stryker|cargo-mutants|mutmut|go-mutesting> \
+  --run-cmd "<resolved gates.test_mutation for {files}>" \
+  --base <prev_pushed_sha-or-origin/<trunk>> --files "<changed product files>" \
+  [--max-mutants <budget.max_mutants_per_subtask=40>] [--max-seconds <budget.max_mutation_seconds=120>]
+# NON-VACUOUS (…) exit 0 · [BLOCKED: vacuous-test] <file:line…> exit 1 ·
+# skip/partial [note] exit 0 · clean-index refuse / usage exit 64
+```
+
+
+**Isolation is a NEW named mechanism, not free reuse (loop-safety invariant 1).** A mutation tool rewrites source on disk, so D6.5 NEVER runs on the live Story checkout. `mutation_gate.sh` runs the resolved command inside an EXPLICIT `git worktree add <throwaway> HEAD`, torn down by an EXIT/INT/TERM trap (`git worktree remove --force`), gated behind a clean-index precheck (refuses a tree with uncommitted TRACKED changes). The live checkout is never mutated — even on injected mid-run failure (the trap fires on error and on TERM alike).
+
+
+**Dispatch identical to D6.4's flaky-test.** `[BLOCKED: vacuous-test]` → impl-block counter, `consecutive_impl_blocks`, re-arm `*/30`, escalate at `max_impl_blocks=3`. **Self-remediation closure:** the fix MUST be a strengthened assertion re-verified by D6.5 on the SAME changed lines — NOT deleting the product code at the mutation point (that trips D6.2 `tdd-scope-leak`) and NOT editing `gates.test_mutation` to dodge the gate (outside the implementer's `owned_files[]`).
+
+
+**Budget + degrade, honestly (MT-07/MT-08).** Exceeding `--max-mutants` or `--max-seconds` → `[note] mutation-budget-exhausted — partial (N of M)`, exit 0, NEVER a false `[BLOCKED]` (inconclusive ≠ survivor — the D6.4 skipped-randomization honesty). No tool for the language, `gates.test_mutation` omitted, or an unsupported tool → SKIP with a loud stderr `[note] no mutation tool for <lang> — D6.5 anti-vacuous gate skipped (optional)`, exit 0. A file-granular survivor (a tool with no line resolver, e.g. go-mutesting/mutmut without `mutmut show`) cannot be pinned to a changed line, so it is comment-only, never a block (the line filter is post-hoc for file-granular tools). D6.5 adds no new autonomous mutating path beyond the trap-isolated throwaway worktree.
+
+
 ## Step D7 — Pre-push rebase + commit + PR
 
 
