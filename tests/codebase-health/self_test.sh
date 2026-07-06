@@ -1175,6 +1175,86 @@ else
   echo "  [skip] mutation_adapter.sh and/or tests/fixtures/mutation absent — MT-01 resolver checks skipped (standalone install)"
 fi
 
+echo "== 25. MT-04/05/06 PR-Gate mutation sibling — ingest-only, criticality join (ADR 0016) =="
+# git fixture: base + a change adding line 3 to a CORE money file (pay.py) and a
+# non-CORE file (util.py); an ingested cargo report with survivors on both changed
+# lines plus one OFF-diff survivor. The sibling READS the report, NEVER runs a tool.
+SIB="$SKILL_SCRIPTS/check_mutation_survivors.sh"
+if [ -x "$SIB" ]; then
+  MUT="$WORK/mutsib"; mkdir -p "$MUT/app" "$MUT/audit"
+  ( cd "$MUT"
+    git init -q && git config user.email t@t && git config user.name t
+    printf 'def capture(a):\n    return charge(a)\n' > app/pay.py
+    printf 'def fmt(x):\n    return str(x)\n' > app/util.py
+    git add -A && git commit -qm base
+    printf 'def capture(a):\n    return charge(a)\n    log(a)\n' > app/pay.py
+    printf 'def fmt(x):\n    return str(x)\n    trace(x)\n' > app/util.py
+    git add -A && git commit -qm change )
+  MUTBASE="$(cd "$MUT" && git rev-parse HEAD~1)"
+  cat > "$MUT/journeys.json" <<'J'
+{ "schema_version": 2, "journeys": [
+  { "name": "Payment", "criticality": "CORE", "steps": [ {"path": "app/pay.py", "symbol": "capture", "vital_class": "money"} ] },
+  { "name": "Format",  "criticality": "SUPPORTING", "steps": [ {"path": "app/util.py", "symbol": "fmt", "vital_class": "none"} ] }
+] }
+J
+  cat > "$MUT/audit/mutation_cargo_missed.txt" <<'R'
+3 mutants tested, 3 missed
+app/pay.py:3:5: replace log with ()
+app/util.py:3:5: replace trace with ()
+app/pay.py:99:1: replace capture with ()
+R
+
+  # MT-04/⟨MT-AMEND-A⟩ — soak default: CORE survivor is COMMENT-ONLY (never blocks).
+  ( cd "$MUT" && bash "$SIB" "$MUTBASE" --report audit/mutation_cargo_missed.txt --journeys journeys.json ) > "$WORK/mut_soak.out" 2>&1; rc=$?
+  if [ "$rc" -eq 0 ]; then ok "MT-04 soak: CORE survivor never blocks by default (exit 0)"; else fail "MT-04 soak: must not block by default [rc=$rc]"; fi
+  assert_grep     "$WORK/mut_soak.out" 'report-only during the ADR-0004 soak' "MT-04 soak: CORE survivor reported comment-only (⟨MT-AMEND-A⟩ report-only-first)"
+  assert_grep     "$WORK/mut_soak.out" 'mutant-on-core-path'                  "MT-09 consumer token 'mutant-on-core-path' present in the PR-Gate sibling"
+  assert_not_grep "$WORK/mut_soak.out" 'BLOCKED'                              "MT-04 soak: no blocking finding smuggled in (report-only posture)"
+  assert_grep     "$WORK/mut_soak.out" 'app/util.py:3 .*NOT traced CORE'      "MT-05: non-CORE survivor on a changed line is comment-only"
+  assert_not_grep "$WORK/mut_soak.out" 'app/pay.py:99'                        "MT-05 ratchet: off-diff (inherited) survivor is not a finding (ADR 0004)"
+
+  # MT-04 strictness contract — promotion + strict blocks; both escape hatches release.
+  ( cd "$MUT" && bash "$SIB" "$MUTBASE" --report audit/mutation_cargo_missed.txt --journeys journeys.json --promote-core ) > "$WORK/mut_block.out" 2>&1; rc=$?
+  if [ "$rc" -eq 1 ]; then ok "MT-04: promoted CORE survivor blocks under strict (exit 1)"; else fail "MT-04: promoted+strict must block [rc=$rc]"; fi
+  assert_grep "$WORK/mut_block.out" '\[BLOCKED: mutant-on-core-path\]' "MT-04: blocking finding names the mutant-on-core-path class"
+  ( cd "$MUT" && bash "$SIB" "$MUTBASE" --report audit/mutation_cargo_missed.txt --journeys journeys.json --promote-core --no-strict ) >/dev/null 2>&1; rc=$?
+  if [ "$rc" -eq 0 ]; then ok "MT-04 escape hatch: --no-strict → warn-and-exit-0"; else fail "MT-04: --no-strict must exit 0 [rc=$rc]"; fi
+  ( cd "$MUT" && WARN_ONLY=1 bash "$SIB" "$MUTBASE" --report audit/mutation_cargo_missed.txt --journeys journeys.json --promote-core ) >/dev/null 2>&1; rc=$?
+  if [ "$rc" -eq 0 ]; then ok "MT-04 escape hatch: WARN_ONLY=1 → warn-and-exit-0"; else fail "MT-04: WARN_ONLY=1 must exit 0 [rc=$rc]"; fi
+
+  # MT-06 — journeys absent/degraded → CORE class caps at comment-only even PROMOTED.
+  ( cd "$MUT" && bash "$SIB" "$MUTBASE" --report audit/mutation_cargo_missed.txt --promote-core ) > "$WORK/mut_deg.out" 2>&1; rc=$?
+  if [ "$rc" -eq 0 ]; then ok "MT-06: absent journeys → comment-only cap, never blocks (even promoted)"; else fail "MT-06: degraded trace must not block [rc=$rc]"; fi
+  assert_grep     "$WORK/mut_deg.out" 'criticality is unknown; capped comment-only .MT-06' "MT-06: unknown criticality → comment-only (agent opinion without deterministic evidence never blocks)"
+  assert_not_grep "$WORK/mut_deg.out" 'BLOCKED'                                             "MT-06: no block without a deterministic criticality field"
+  # degraded-journeys guard: a malformed journeys.json is degraded, not a crash-block.
+  printf '{ not json' > "$MUT/bad.json"
+  ( cd "$MUT" && bash "$SIB" "$MUTBASE" --report audit/mutation_cargo_missed.txt --journeys bad.json --promote-core ) > "$WORK/mut_bad.out" 2>&1; rc=$?
+  if [ "$rc" -eq 0 ]; then ok "MT-06: malformed journeys.json degrades to comment-only (exit 0, no crash-block)"; else fail "MT-06: malformed journeys must degrade, not block [rc=$rc]"; fi
+
+  # MT-08 — no ingested report → loud [not-covered], never blocks.
+  ( cd "$MUT" && bash "$SIB" "$MUTBASE" --report audit/absent.txt --journeys journeys.json --promote-core ) > "$WORK/mut_none.out" 2>&1; rc=$?
+  if [ "$rc" -eq 0 ]; then ok "MT-08 PR-side: no ingested report → exit 0 (never blocks)"; else fail "MT-08: absent report must not block [rc=$rc]"; fi
+  assert_grep "$WORK/mut_none.out" '\[not-covered\] mutation survivors: no ingested' "MT-08 PR-side: absent report → loud Not-covered (never silent)"
+
+  # MT-05 — file-granular survivor (go-mutesting) cannot be pinned to a changed line.
+  printf 'FAIL "app/pay.go.1" with checksum\ntotal is 1\n' > "$MUT/audit/mutation_go.txt"
+  ( cd "$MUT" && bash "$SIB" "$MUTBASE" --report audit/mutation_go.txt --journeys journeys.json --promote-core ) > "$WORK/mut_fg.out" 2>&1; rc=$?
+  if [ "$rc" -eq 0 ]; then ok "MT-05: file-granular survivor → comment-only, exit 0 (never blocks)"; else fail "MT-05: file-granular must not block [rc=$rc]"; fi
+  assert_grep "$WORK/mut_fg.out" 'file-granular .no line resolver' "MT-05: file-granular survivor is comment-only (line filter is post-hoc)"
+
+  # MT-04 — pr_gate.sh aggregates the sibling and STAYS warn-only (exit 0), even when
+  # the report is supplied; without a report → mutation facet in Not-covered.
+  ( cd "$MUT" && bash "$SKILL_SCRIPTS/pr_gate.sh" "$MUTBASE" --journeys journeys.json \
+      --mutation-report audit/mutation_cargo_missed.txt ) > "$WORK/mut_prg.out" 2>&1; rc=$?
+  if [ "$rc" -eq 0 ]; then ok "MT-04: pr_gate stays warn-only (exit 0) with the mutation sibling composed in"; else fail "MT-04: pr_gate must stay warn-only [rc=$rc]"; fi
+  assert_grep "$WORK/mut_prg.out" 'check_mutation_survivors.sh' "MT-04: pr_gate composes the mutation sibling (run_sibling pattern)"
+  ( cd "$MUT" && bash "$SKILL_SCRIPTS/pr_gate.sh" "$MUTBASE" --journeys journeys.json ) > "$WORK/mut_prg2.out" 2>&1
+  assert_grep "$WORK/mut_prg2.out" '\[not-covered\] mutation survivors: no ingested report supplied' "MT-04: pr_gate with no report → mutation facet in Not-covered (degrade)"
+else
+  echo "  [skip] check_mutation_survivors.sh absent — MT-04/05/06 checks skipped (standalone install)"
+fi
+
 echo
 echo "== self-test: $PASS passed, $FAIL failed =="
 [ "$FAIL" -eq 0 ]
