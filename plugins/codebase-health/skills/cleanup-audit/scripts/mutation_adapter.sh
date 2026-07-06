@@ -23,6 +23,10 @@
 #                             line (sorted, unique). A survivor a tool yields with
 #                             NO line degrades to `<path>:-` (file granularity,
 #                             MT-01/MT-05). Notes go to STDERR; STDOUT is the set.
+#   count <tool>              read raw tool output on STDIN, print the TOTAL mutant
+#                             count (best-effort) — the D6.5 mutant-budget backstop
+#                             (MT-07). A lower-bound count only makes the budget more
+#                             conservative; never a false block (budget = exit 0).
 #   invocation <tool> [file…] print the documented changed-FILES invocation.
 #   tools                     list the supported tools (one per line).
 #
@@ -40,7 +44,7 @@
 set -u
 
 usage() {
-  echo "usage: mutation_adapter.sh {normalize <tool>|invocation <tool> [file…]|tools}" >&2
+  echo "usage: mutation_adapter.sh {normalize <tool>|count <tool>|invocation <tool> [file…]|tools}" >&2
   echo "       tools: stryker cargo-mutants mutmut go-mutesting" >&2
   exit 64
 }
@@ -132,6 +136,39 @@ _norm_go() {
   ' | LC_ALL=C sort -u
 }
 
+# ── total-mutant count (for the D6.5 affordability budget, MT-07) ─────────────
+# Best-effort TOTAL mutants tested (not just survivors), for the mutant-cap
+# backstop. Each has a summary/entry fallback; a count is a lower bound at worst,
+# which only ever makes the budget MORE conservative (never a false block: budget
+# exhaustion is exit-0 report-only).
+_count_stryker() {
+  _mut_py '
+import json, sys
+try:
+    d = json.load(sys.stdin)
+except Exception:
+    print(0); sys.exit(0)
+n = 0
+for entry in (d.get("files") or {}).values():
+    n += len(entry.get("mutants") or [])
+print(n)
+'
+}
+# BSD/macOS awk lacks gawk's 3-arg match(); use grep -oE (portable) for totals.
+_count_cargo() {
+  local raw n; raw="$(cat)"
+  n="$(printf '%s\n' "$raw" | grep -oE '[0-9]+ mutants (tested|generated)' | head -1 | grep -oE '^[0-9]+')"
+  if [ -n "$n" ]; then printf '%s\n' "$n"
+  else printf '%s\n' "$(printf '%s\n' "$raw" | grep -cE '^[^:]+:[0-9]+:[0-9]+:')"; fi
+}
+_count_mutmut() { grep -c '^@@ ' 2>/dev/null | head -1; }
+_count_go() {
+  local raw n; raw="$(cat)"
+  n="$(printf '%s\n' "$raw" | grep -oE 'total is [0-9]+' | head -1 | grep -oE '[0-9]+$')"
+  if [ -n "$n" ]; then printf '%s\n' "$n"
+  else printf '%s\n' "$(printf '%s\n' "$raw" | grep -cE '^(PASS|FAIL)[[:space:]]+"')"; fi
+}
+
 # ── invocation strings (documented; the orchestrator resolves gates.test_mutation)
 
 _inv_stryker()  { echo "npx stryker run --incremental --mutate ${*:-<changed-files>}"; }
@@ -156,6 +193,16 @@ case "$cmd" in
       mutmut)        _norm_mutmut ;;
       go-mutesting)  _norm_go ;;
       *) echo "[note] mutation-adapter: no resolver for tool '$1' (supported: stryker cargo-mutants mutmut go-mutesting)" >&2; exit 64 ;;
+    esac
+    ;;
+  count)
+    [ $# -ge 1 ] || usage
+    case "$1" in
+      stryker)       _count_stryker ;;
+      cargo-mutants) _count_cargo ;;
+      mutmut)        _count_mutmut ;;
+      go-mutesting)  _count_go ;;
+      *) echo "[note] mutation-adapter: no counter for tool '$1'" >&2; exit 64 ;;
     esac
     ;;
   invocation)
