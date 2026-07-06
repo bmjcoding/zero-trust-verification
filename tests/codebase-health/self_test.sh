@@ -1143,6 +1143,38 @@ assert_grep     "$SKILL_SCRIPTS/check_new_debt.sh" 'pyrun '    "CH-10 uv: check_
 assert_not_grep "$SKILL_SCRIPTS/run_audit.sh"      'python3 -c' "CH-10 uv: no bare 'python3 -c' left in run_audit.sh"
 assert_not_grep "$SKILL_SCRIPTS/check_new_debt.sh" 'python3 -c' "CH-10 uv: no bare 'python3 -c' left in check_new_debt.sh"
 
+echo "== 24. MT-01 mutation adapter map — survivor→file:line resolver (ADR 0016) =="
+# Hermetic: canned tool outputs (NO mutation tool is ever run) → normalized
+# `<path>:<line>` survivor set. tests/fixtures/mutation/ is the ONE source; the
+# autopilot vendored copy of mutation_adapter.sh is byte-pinned by root lint V7.
+ADAPTER="$SKILL_SCRIPTS/mutation_adapter.sh"
+MUTFIX="$REPO_ROOT/tests/fixtures/mutation"
+if [ -x "$ADAPTER" ] && [ -d "$MUTFIX" ]; then
+  # normalize each tool's raw output and compare to the expected set, byte-for-byte.
+  mt_case() {  # <tool> <raw-file> <expected-file> <label>
+    local got; got="$(bash "$ADAPTER" normalize "$1" < "$MUTFIX/$2" 2>/dev/null)"
+    if [ "$got" = "$(cat "$MUTFIX/$3")" ]; then ok "$4"; else fail "$4 — got [$got]"; fi
+  }
+  mt_case stryker       stryker.raw.json stryker.expected.txt "MT-01 stryker: Survived mutants → file:line (Killed/NoCoverage excluded, LINE)"
+  mt_case cargo-mutants cargo.raw.txt    cargo.expected.txt   "MT-01 cargo-mutants: missed.txt file:line:col → file:line (LINE)"
+  mt_case mutmut        mutmut.raw.txt   mutmut.expected.txt  "MT-01 mutmut: 'mutmut show' unified diff → file:line (post-hoc)"
+  mt_case go-mutesting  go.raw.txt       go.expected.txt      "MT-01 go-mutesting: FAIL survivor → file:- (no line resolver degrades to FILE granularity)"
+  gogot="$(bash "$ADAPTER" normalize go-mutesting < "$MUTFIX/go.raw.txt" 2>/dev/null)"
+  # the degrade acceptance is explicit: EVERY go-mutesting survivor is file-granular.
+  if printf '%s\n' "$gogot" | grep -q ':-$' && ! printf '%s\n' "$gogot" | grep -qE ':[0-9]+$'; then
+    ok "MT-01 degrade: a tool with no line resolver yields only file-granular '<path>:-' survivors"
+  else fail "MT-01 degrade: go-mutesting must yield only '<path>:-' rows [$gogot]"; fi
+  # PASS (killed) lines are NOT survivors — precision guard (settled.go is PASS-only).
+  if printf '%s\n' "$gogot" | grep -q 'settled\.go'; then
+    fail "MT-01 go-mutesting: a PASS (killed) mutant leaked into the survivor set [$gogot]"
+  else ok "MT-01 go-mutesting: PASS (killed) mutants are excluded from survivors (precision)"; fi
+  # usage contract: unknown tool is a usage error (64), not a silent empty pass.
+  bash "$ADAPTER" normalize no-such-tool </dev/null >/dev/null 2>&1; rc=$?
+  if [ "$rc" -eq 64 ]; then ok "MT-01 usage: unknown tool → exit 64 (never a silent empty survivor set)"; else fail "MT-01 usage: unknown tool must exit 64 [rc=$rc]"; fi
+else
+  echo "  [skip] mutation_adapter.sh and/or tests/fixtures/mutation absent — MT-01 resolver checks skipped (standalone install)"
+fi
+
 echo
 echo "== self-test: $PASS passed, $FAIL failed =="
 [ "$FAIL" -eq 0 ]
