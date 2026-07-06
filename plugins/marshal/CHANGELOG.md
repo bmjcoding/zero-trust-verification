@@ -24,7 +24,7 @@ backstop (the fourth Zero-Trust Verification plugin, ADR 0011).
   the pure, git/API-provable foreign-claim classifier (`--inventory` +
   `--self-namespace` → `BINDING`/`TERMINAL`/`advisory`/`excluded`) plus the D2
   `eligibility` gate. Adopted **byte-identical** from autopilot's canonical copy
-  (`autopilot/scripts/claim_overlap.sh`) — the Marshal does not fork it; the
+  (`plugins/autopilot/scripts/claim_overlap.sh`) — the Marshal does not fork it; the
   packaging byte-identity lint enforces parity.
 - **`scripts/branch_age_watcher.sh`** — the 48h staleness / planning-failure
   watcher (ADR 0012/0009): flags branches whose last commit is older than the
@@ -52,7 +52,7 @@ backstop (the fourth Zero-Trust Verification plugin, ADR 0011).
   + approval state) is specified in `reference/host-contract.md`, implemented in
   the mock, AND wired into the real `host.sh` / `github.sh` / `bitbucket.sh`
   adapters — covered by a real-backend contract matrix in
-  `autopilot/scripts/self_test.sh` (gh argv shim + loopback DC mock) and an
+  `plugins/autopilot/scripts/self_test.sh` (gh argv shim + loopback DC mock) and an
   end-to-end `marshal.sh`-through-`github.sh` run here (section `MG`). Without
   this, the loop could enumerate a queue only against the mock — inert on a real
   host (the P0 that PR #18's mock hid).

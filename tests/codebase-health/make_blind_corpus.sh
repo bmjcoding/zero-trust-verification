@@ -13,9 +13,11 @@
 # vs EXPECTED_FINDINGS.yaml.
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-SRC="$ROOT/test-fixtures/planted"
-DST="$ROOT/test-fixtures/blind"
+# This harness now lives at tests/codebase-health/, so the fixtures are a direct
+# child of the harness dir (HARNESS_DIR), not one level up — anchor on it directly.
+HARNESS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SRC="$HARNESS_DIR/test-fixtures/planted"
+DST="$HARNESS_DIR/test-fixtures/blind"
 
 rm -rf "$DST"
 cp -R "$SRC" "$DST"

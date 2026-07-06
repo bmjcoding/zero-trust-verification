@@ -10,23 +10,30 @@
 # corpus before its fix (see references/audit-state-and-verify.md).
 set -uo pipefail
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-SKILL_SCRIPTS="$ROOT/plugins/codebase-health/skills/cleanup-audit/scripts"
-FIXTURE_SRC="$ROOT/test-fixtures/planted"
+# ── Location anchors. This harness lives at tests/codebase-health/ (the repo's
+# dev/test tree), two levels below the repo root; the plugin it exercises lives
+# at plugins/codebase-health/. Both anchors are derived EXPLICITLY — HARNESS_DIR
+# for the harness-local fixtures, REPO_ROOT for the shared repo-root artifacts —
+# so `$dirname/..` heuristics (which would resolve to tests/, not the repo root)
+# can never mis-derive the root and silently [skip] the CH-01..CH-10 wiring.
+HARNESS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$HARNESS_DIR/../.." && pwd)"
+PLUGIN="$REPO_ROOT/plugins/codebase-health"
+SKILL_SCRIPTS="$PLUGIN/skills/cleanup-audit/scripts"
+FIXTURE_SRC="$HARNESS_DIR/test-fixtures/planted"
 
 # ── PR-Gate / manifest wiring (CH-01..CH-10). The Verification-Manifest
 # validator, its schema, and the §13.4 join fixture pair are repo-root
 # artifacts vendored per ADR 0001 — CH items CONSUME them. In this monorepo
-# they sit one level above codebase-health/; a standalone install would vendor
+# they sit at the repo root ($REPO_ROOT); a standalone install would vendor
 # them (and set $VALIDATE_MANIFEST). Every manifest-reading section below
 # [skip]s loudly when the validator is absent (blocked-on the spec-gen drain),
 # so this self-test stays green outside the monorepo — never a silent pass.
-REPO_ROOT="$(cd "$ROOT/.." && pwd)"
 VALIDATE_MANIFEST="${VALIDATE_MANIFEST:-$REPO_ROOT/scripts/validate_manifest.sh}"
 export VALIDATE_MANIFEST
 JOIN_FIX="$REPO_ROOT/tests/fixtures/join"          # reference PASS pair (manifest.yaml + journeys.json v2)
 MANIFEST_FIX="$REPO_ROOT/tests/fixtures/manifest"  # shared validator fixture suite (no second schema copy)
-CH_FIX="$ROOT/test-fixtures/pr-gate"               # plugin-local CH fail-variant / history / rot fixtures
+CH_FIX="$HARNESS_DIR/test-fixtures/pr-gate"        # plugin-local CH fail-variant / history / rot fixtures
 have_validator() { [ -x "$VALIDATE_MANIFEST" ]; }
 
 # uv-first Python (ADR 0015 "everything uv"): a hermetic interpreter with no
