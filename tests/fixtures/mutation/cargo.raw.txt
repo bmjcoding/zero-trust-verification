@@ -1,0 +1,4 @@
+7 mutants tested, 3 missed
+src/wallet.rs:15:9: replace debit -> Result<()> with Ok(())
+src/wallet.rs:88:5: replace > with >= in check_balance
+src/audit.rs:3:1: replace log_event with ()
