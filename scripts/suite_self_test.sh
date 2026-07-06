@@ -50,7 +50,7 @@ note() { printf '\n========== %s ==========\n' "$1"; }
 record() { RESULTS="${RESULTS}${1}=${2}
 "; return 0; }
 
-# skip signals across the plugins: autopilot/marshal print an uppercase SKIPPED
+# skip signals across the plugins: autopilot and marshal print an uppercase SKIPPED
 # note (+ autopilot an "N skipped" counter); codebase-health prints a line-start
 # "[skip]". A mid-line "[skip]" inside an assertion label is NOT a real skip.
 component_skips() { { grep -nE 'SKIPPED|[1-9][0-9]* skipped' "$1"; grep -nE '^[[:space:]]*\[skip\]' "$1"; } 2>/dev/null; }
@@ -112,18 +112,18 @@ expect_no_fail() {  # <rule> <sandbox-root> <desc> — rule must NOT fire (no fa
 # seed the four pinned escalation prompts (identical blocks) into a sandbox
 seed_esc() {
   local d="$1"
-  mkdir -p "$d/autopilot/references" "$d/plugins/spec-gen/skills/spec" \
-           "$d/codebase-health/plugins/codebase-health/skills/cleanup-audit/references"
-  cp "$ROOT/autopilot/references/planner-prompt.md"     "$d/autopilot/references/"
-  cp "$ROOT/autopilot/references/implementer-prompt.md" "$d/autopilot/references/"
+  mkdir -p "$d/plugins/autopilot/references" "$d/plugins/spec-gen/skills/spec" \
+           "$d/plugins/codebase-health/skills/cleanup-audit/references"
+  cp "$ROOT/plugins/autopilot/references/planner-prompt.md"     "$d/plugins/autopilot/references/"
+  cp "$ROOT/plugins/autopilot/references/implementer-prompt.md" "$d/plugins/autopilot/references/"
   cp "$ROOT/plugins/spec-gen/skills/spec/SKILL.md"      "$d/plugins/spec-gen/skills/spec/"
-  cp "$ROOT/codebase-health/plugins/codebase-health/skills/cleanup-audit/references/severity-rubric.md" \
-     "$d/codebase-health/plugins/codebase-health/skills/cleanup-audit/references/"
+  cp "$ROOT/plugins/codebase-health/skills/cleanup-audit/references/severity-rubric.md" \
+     "$d/plugins/codebase-health/skills/cleanup-audit/references/"
 }
 # seed the four plugin.json source dirs into a sandbox
 seed_plugins() {
   local d="$1" src
-  for src in plugins/spec-gen autopilot codebase-health/plugins/codebase-health plugins/marshal; do
+  for src in plugins/spec-gen plugins/autopilot plugins/codebase-health plugins/marshal; do
     mkdir -p "$d/$src/.claude-plugin"; cp "$ROOT/$src/.claude-plugin/plugin.json" "$d/$src/.claude-plugin/"
   done
 }
@@ -141,22 +141,22 @@ cp "$ROOT/scripts/validate_manifest.py" "$dr/plugins/spec-gen/scripts/"; printf 
 expect_fail V3 "$dr" "drifted vendored validate_manifest.py"
 
 # V3 exemption guard #1 — a non-union tool squatting the exempt path.
-dr="$SANDBOX/v3x"; mkdir -p "$dr/scripts" "$dr/autopilot/scripts"
+dr="$SANDBOX/v3x"; mkdir -p "$dr/scripts" "$dr/plugins/autopilot/scripts"
 cp "$ROOT/scripts/validate_manifest.sh" "$dr/scripts/"; cp "$ROOT/scripts/validate_manifest.py" "$dr/scripts/"
-printf '#!/usr/bin/env bash\necho not-the-union-tool\n' > "$dr/autopilot/scripts/validate_manifest.sh"
+printf '#!/usr/bin/env bash\necho not-the-union-tool\n' > "$dr/plugins/autopilot/scripts/validate_manifest.sh"
 expect_fail V3 "$dr" "non-union tool squatting the exempt validate_manifest.sh path"
 
 # V3 exemption guard #2 — a DRIFTED single-file-validator copy that merely mentions
 # `--union` in a comment must NOT be exempted (it lacks the union-only token).
-dr="$SANDBOX/v3u"; mkdir -p "$dr/scripts" "$dr/autopilot/scripts"
+dr="$SANDBOX/v3u"; mkdir -p "$dr/scripts" "$dr/plugins/autopilot/scripts"
 cp "$ROOT/scripts/validate_manifest.sh" "$dr/scripts/"; cp "$ROOT/scripts/validate_manifest.py" "$dr/scripts/"
-{ cat "$ROOT/scripts/validate_manifest.sh"; printf '\n# a drifted copy that only mentions --union in a comment\necho INJECTED\n'; } > "$dr/autopilot/scripts/validate_manifest.sh"
+{ cat "$ROOT/scripts/validate_manifest.sh"; printf '\n# a drifted copy that only mentions --union in a comment\necho INJECTED\n'; } > "$dr/plugins/autopilot/scripts/validate_manifest.sh"
 expect_fail V3 "$dr" "drifted validator merely mentioning --union is still flagged"
 
 # V4 — the Marshal's claim_overlap copy drifts from autopilot's canonical.
-dr="$SANDBOX/v4"; mkdir -p "$dr/autopilot/scripts" "$dr/plugins/marshal/scripts"
-cp "$ROOT/autopilot/scripts/claim_overlap.sh" "$dr/autopilot/scripts/"
-cp "$ROOT/autopilot/scripts/claim_overlap.sh" "$dr/plugins/marshal/scripts/"; printf '\n# drift\n' >> "$dr/plugins/marshal/scripts/claim_overlap.sh"
+dr="$SANDBOX/v4"; mkdir -p "$dr/plugins/autopilot/scripts" "$dr/plugins/marshal/scripts"
+cp "$ROOT/plugins/autopilot/scripts/claim_overlap.sh" "$dr/plugins/autopilot/scripts/"
+cp "$ROOT/plugins/autopilot/scripts/claim_overlap.sh" "$dr/plugins/marshal/scripts/"; printf '\n# drift\n' >> "$dr/plugins/marshal/scripts/claim_overlap.sh"
 expect_fail V4 "$dr" "drifted vendored claim_overlap.sh"
 
 # V5 — one escalation-block copy is reworded (byte drift).
@@ -167,8 +167,8 @@ expect_fail V5 "$dr" "reworded escalation block in one tier"
 
 # V5 presence — an expected prompt loses its block entirely (removal / wrong-file move).
 dr="$SANDBOX/v5m"; seed_esc "$dr"
-grep -v 'vendored:escalation-criterion' "$dr/codebase-health/plugins/codebase-health/skills/cleanup-audit/references/severity-rubric.md" > "$dr/sr.tmp" \
-  && mv "$dr/sr.tmp" "$dr/codebase-health/plugins/codebase-health/skills/cleanup-audit/references/severity-rubric.md"
+grep -v 'vendored:escalation-criterion' "$dr/plugins/codebase-health/skills/cleanup-audit/references/severity-rubric.md" > "$dr/sr.tmp" \
+  && mv "$dr/sr.tmp" "$dr/plugins/codebase-health/skills/cleanup-audit/references/severity-rubric.md"
 expect_fail V5 "$dr" "escalation block removed from the audit's pinned prompt"
 
 # V5 false-positive guard — a doc that only MENTIONS the begin marker in prose is ignored.
@@ -230,9 +230,9 @@ run_ok "validator-self-test" bash "$ROOT/scripts/self_test.sh"
 # ==============================================================================
 # 4. Every plugin's own self-test
 # ==============================================================================
-run_ok "autopilot"       bash "$ROOT/autopilot/scripts/self_test.sh"
+run_ok "autopilot"       bash "$ROOT/plugins/autopilot/scripts/self_test.sh"
 run_ok "spec-gen"        bash "$ROOT/plugins/spec-gen/scripts/self_test.sh"
-run_ok "codebase-health" bash "$ROOT/codebase-health/scripts/self_test.sh"
+run_ok "codebase-health" bash "$ROOT/tests/codebase-health/self_test.sh"
 run_ok "marshal"         bash "$ROOT/plugins/marshal/scripts/self_test.sh"
 
 # ==============================================================================

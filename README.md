@@ -19,8 +19,8 @@ This suite answers that with a single discipline: **verify against the spec's de
 | Plugin | Role | One-liner |
 |---|---|---|
 | **[spec-gen](./plugins/spec-gen)** | Shift-left | Interrogates raw intent into a Spec + a complete **Verification Manifest**, refusing to finalize while any completeness rule fails. Two adversarial attackers stress the design before you see it; the only path to a confirmed CORE money/auth requirement is a human answer. |
-| **[autopilot](./autopilot)** | Implement | Drains a manifest-bearing Spec into PRs autonomously — plan (disjoint ownership + test gates) → TDD RED/GREEN → parallel multi-validator review → one draft PR per Story. Anti-flakiness contract + N=5 determinism gate. Host-agnostic (GitHub + Bitbucket DC). |
-| **[codebase-health](./codebase-health/plugins/codebase-health)** | Audit + PR Gate | Seven specialist agents audit dead code, redundancy, flaky/vacuous tests, observability, transactional integrity, security, and business-critical journeys — to *measured* coverage. Deterministic tools find evidence; agents judge; **nothing counts until `/verify` reruns the closing test 5×**. |
+| **[autopilot](./plugins/autopilot)** | Implement | Drains a manifest-bearing Spec into PRs autonomously — plan (disjoint ownership + test gates) → TDD RED/GREEN → parallel multi-validator review → one draft PR per Story. Anti-flakiness contract + N=5 determinism gate. Host-agnostic (GitHub + Bitbucket DC). |
+| **[codebase-health](./plugins/codebase-health)** | Audit + PR Gate | Seven specialist agents audit dead code, redundancy, flaky/vacuous tests, observability, transactional integrity, security, and business-critical journeys — to *measured* coverage. Deterministic tools find evidence; agents judge; **nothing counts until `/verify` reruns the closing test 5×**. |
 | **[marshal](./plugins/marshal)** | Merge | A serial, deterministic composed-state merge backstop. Verifies the build on the **post-rebase** head — the check that catches the Composition Breaks two clean merges hide. Zero agent judgment in the merge path. |
 
 Each installs and runs standalone. Together they are the whole lifecycle.
@@ -84,11 +84,12 @@ The design record lives in the open:
 
 ```
 ├── plugins/spec-gen/          # Spec Generation tier
-├── autopilot/                 # Autopilot implementation drain
-├── codebase-health/           # Audit + PR Gate plugin
+├── plugins/autopilot/         # Autopilot implementation drain
+├── plugins/codebase-health/   # Audit + PR Gate plugin
 ├── plugins/marshal/           # Merge Marshal
 ├── schema/                    # Verification Manifest v1 JSON Schema (canonical)
 ├── scripts/                   # manifest validator + suite_self_test.sh + root lints
+├── tests/                     # manifest fixtures + codebase-health dev/test harness (tests/codebase-health/)
 ├── docs/adr/                  # architecture decision records
 ├── docs/specs/                # manifest spec + per-plugin build registers
 ├── CONTEXT.md                 # the shared glossary
