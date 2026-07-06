@@ -4,7 +4,7 @@
 
 Four independently-installable Claude Code plugins that cover the ADLC left to right — *generate a spec → implement it → audit it → merge it* — integrated through a shared, machine-readable **Verification Manifest**. Every claim the system makes about your code is backed by deterministic evidence: a test that runs, a mutant that dies, a git-log entry, a build status. Agent judgment is used everywhere; agent judgment blocks a merge nowhere without that evidence.
 
-> **Status:** `v1.0.0` — feature-complete, self-hosting on GitHub, provably green in one command. Five more capabilities are designed and in build (see [Roadmap](#roadmap)).
+> **Status:** `v1.0.0` — feature-complete, self-hosting on GitHub, provably green in one command. Six more capabilities are designed and in build (see [Roadmap](#roadmap)).
 
 ---
 
@@ -77,7 +77,7 @@ This suite was built *by itself*, spec-first. Every plugin was implemented again
 The design record lives in the open:
 
 - **[CONTEXT.md](./CONTEXT.md)** — the glossary (the ubiquitous language every plugin shares).
-- **[docs/adr/](./docs/adr/)** — 20 architecture decision records, with the dissent from each adversarial round preserved in *Considered Options*.
+- **[docs/adr/](./docs/adr/)** — 22 architecture decision records, with the dissent from each adversarial round preserved in *Considered Options*.
 - **[docs/specs/](./docs/specs/)** — the Verification Manifest schema and every plugin's build register.
 
 ## Repository layout
@@ -105,6 +105,7 @@ Designed and in build (each spec-first, adversarially reviewed):
 3. **Production-telemetry triage** — an incident → the journey/behavior that broke → an incident-Spec into the remediation loop (the fifth plugin). ([ADR 0020](./docs/adr/0020-triage-fifth-plugin.md))
 4. **Suite outcome measurement** — report-only evidence the suite improves production quality, led by journey-instrumentation share.
 5. **Org-wide memory** — a read-only index over the memory every repo already commits (glossaries, ADRs, manifests), respecting repo visibility. ([ADR 0019](./docs/adr/0019-org-wide-memory-index.md))
+6. **System-design coverage** — expand the audit to more system-design principles (rate limiting, circuit breakers, isolation) via *declare-then-verify*: the manifest declares where a control lives; the audit verifies only in-repo (`locus: app`) claims and reports the rest out-of-scope-by-declaration — never a false "missing X." ([ADR 0021](./docs/adr/0021-manifest-control-locus.md), [ADR 0022](./docs/adr/0022-out-of-scope-by-declaration.md))
 
 New capabilities ship **report-only first** and are promoted to blocking/autonomous per-repo after a soak.
 
