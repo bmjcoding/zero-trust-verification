@@ -374,10 +374,13 @@ def _glob_memory_files(repo_dir: Path):
 
 
 def _is_self_emitted(ap: Path):
-    """Self-exclusion (OWM-11b): skip any file OWM itself emitted (marker in the
-    first 2KB) so no citation loop forms."""
+    """Self-exclusion (OWM-11b): skip any file OWM itself emitted (carrying the
+    owm:self-emitted marker) so no citation loop forms. Scans up to 1MB — the marker
+    is a header contract (OWM stamps it as the first line/key of every artifact), but
+    the generous bound also catches a marker anywhere in a realistically-sized memory
+    doc, not just the first 2KB."""
     try:
-        head = ap.read_text(encoding="utf-8", errors="replace")[:2048]
+        head = ap.read_text(encoding="utf-8", errors="replace")[:1_000_000]
     except Exception:
         return False
     return OWM_SELF_MARKER in head
@@ -609,8 +612,21 @@ def _with_freshness(rec, conn, head_map):
 
 
 def _acl_ok(repo, allow):
-    # refuse-by-default: when an allow-list is configured, only its repos pass.
+    # refuse-by-default ACL. allow is None => serve-all (the explicit --all operator
+    # escape); allow is a list => only its repos pass ([] => refuse EVERYTHING, the
+    # safe default when no scope is granted).
     return allow is None or repo in allow
+
+
+def _parse_allow(allow_s, all_flag):
+    """Resolve the ACL from CLI flags. --all => None (serve-all, explicit opt-in);
+    --allow s,s => that list; NEITHER => [] (refuse-by-default: no scope granted, so
+    nothing is served — the safe default on the retrieval source of truth)."""
+    if all_flag:
+        return None
+    if allow_s is not None:
+        return [x.strip() for x in allow_s.split(",") if x.strip()]
+    return []
 
 
 def _refusal(repo, org_id=None):
@@ -698,18 +714,26 @@ def _fts_query(arg):
 # OWM-08 — coverage / crawl-error report ("what do we NOT know")
 # =============================================================================
 
-def coverage(db_path, out=sys.stdout):
+def coverage(db_path, allow=None, out=sys.stdout):
+    """OWM-08. When `allow` is set, the report is SCOPED to the allow-list — repo names,
+    kind counts, and error paths from out-of-scope repos are NOT disclosed (the same
+    refuse-by-default posture the query tools enforce; the MCP resource always passes it)."""
     conn = _connect(db_path)
     by_kind = {}
-    for row in conn.execute("SELECT kind, COUNT(*) c FROM records GROUP BY kind").fetchall():
-        by_kind[row["kind"]] = row["c"]
-    repos = [r["repo"] for r in conn.execute(
-        "SELECT DISTINCT repo FROM records ORDER BY repo").fetchall()]
+    repos = []
     errors = []
+    for row in conn.execute("SELECT DISTINCT repo FROM records ORDER BY repo").fetchall():
+        if _acl_ok(row["repo"], allow):
+            repos.append(row["repo"])
+    for row in conn.execute("SELECT kind, repo, COUNT(*) c FROM records GROUP BY kind, repo").fetchall():
+        if _acl_ok(row["repo"], allow):
+            by_kind[row["kind"]] = by_kind.get(row["kind"], 0) + row["c"]
     for row in conn.execute(
         "SELECT * FROM records WHERE kind IN ('crawl_error','unparseable') "
         "ORDER BY repo, path"
     ).fetchall():
+        if not _acl_ok(row["repo"], allow):
+            continue
         errors.append({
             "repo": row["repo"], "path": row["path"],
             "error_code": row["error_code"] or row["status"],
@@ -719,6 +743,7 @@ def coverage(db_path, out=sys.stdout):
     report = {
         OWM_SELF_MARKER: True,  # self-exclusion: this artifact is never re-ingested
         "schema_version": SCHEMA_VERSION,
+        "scoped_to_allow_list": allow is not None,
         "repos_crawled": repos,
         "records_by_kind": by_kind,
         "crawl_errors": errors,
@@ -819,10 +844,9 @@ def main(argv):
     if cmd == "query":
         pos = positionals()
         if len(pos) < 2:
-            print("usage: owm.py query <lookup|search|resolve|decisions> <arg> --db D [--allow s,s] [--head r=sha]", file=sys.stderr)
+            print("usage: owm.py query <lookup|search|resolve|decisions> <arg> --db D [--allow s,s | --all] [--head r=sha]", file=sys.stderr)
             return 64
-        allow_s = opt("--allow")
-        allow = [x.strip() for x in allow_s.split(",") if x.strip()] if allow_s is not None else None
+        allow = _parse_allow(opt("--allow"), flag("--all"))
         head_map = _parse_kv_list(opt("--head"))
         res = query(pos[0], pos[1], opt("--db"), allow=allow, head_map=head_map)
         print(json.dumps(res, sort_keys=True, ensure_ascii=False, indent=2))
@@ -834,9 +858,10 @@ def main(argv):
     if cmd == "coverage":
         db = opt("--db")
         if not db:
-            print("usage: owm.py coverage --db D", file=sys.stderr)
+            print("usage: owm.py coverage --db D [--allow s,s | --all]", file=sys.stderr)
             return 64
-        return coverage(db)
+        allow = _parse_allow(opt("--allow"), flag("--all"))
+        return coverage(db, allow=allow)
 
     print(f"owm.py: unknown command '{cmd}'", file=sys.stderr)
     return 64

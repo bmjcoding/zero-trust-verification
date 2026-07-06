@@ -32,8 +32,11 @@ Consequences), degraded gracefully in the meantime, and recorded here as
 ## Wiring the query surface
 
 - **CLI (always works):** `scripts/query.sh lookup|search|resolve|decisions <arg>
-  --db <index.db> --allow <slug,slug>`. The `--allow` list is the refuse-by-default
-  ACL; omit it only for local single-tenant use.
+  --db <index.db> --allow <slug,slug>`. ACL is **refuse-by-default even on the CLI**
+  (the retrieval source of truth): with NEITHER `--allow` NOR `--all`, no scope is
+  granted and every lookup is refused. `--allow` serves only the listed repos; `--all`
+  is the explicit operator escape that serves everything (use only for local
+  single-tenant operator work). `coverage.sh` follows the same rule.
 - **MCP (optional):** `mcp/mcp_server.py` is a thin adapter over `query.sh`. Register it
   via `.mcp.json` (see the plugin root). Set `OWM_DB` to the index path and `OWM_ALLOW`
   to the in-scope allow-list. With `OWM_ALLOW` unset the server refuses everything

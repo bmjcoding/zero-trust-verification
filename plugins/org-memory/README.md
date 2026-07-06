@@ -48,10 +48,13 @@ the same kebab name in two repos is two records disambiguated by `repo`, never a
 - **Bounded read surface (OWM-03a).** Only the closed allow-list of memory globs is
   read; a per-repo file-count + byte ceiling yields a loud `memory-surface-oversized`
   crawl_error rather than a silent hang. Never the code tree.
-- **Refuse-by-default (OWM-11a).** The MCP tools serve ONLY repos in the configured
+- **Refuse-by-default (OWM-11a).** The query tools serve ONLY repos in the configured
   allow-list; a query that would surface an out-of-scope repo returns an explicit
-  refusal + reason, never the record. This is the enforcement point for a cross-repo
-  disclosure policy that is a **human call** (escalated).
+  refusal + reason, never the record. This is enforced on BOTH the MCP path and the
+  `query.sh` / `coverage.sh` CLI (the source of truth): with no scope granted (no
+  `--allow`, no `--all`) nothing is served. `--all` is an explicit operator escape.
+  This is the enforcement point for a cross-repo disclosure policy that is a **human
+  call** (escalated).
 - **Self-exclusion (OWM-11b).** OWM never indexes its own emitted output (marked
   `owm:self-emitted`), so no citation loop can form.
 - **Reuse, never fork.** The `manifest` class is parsed by the canonical
