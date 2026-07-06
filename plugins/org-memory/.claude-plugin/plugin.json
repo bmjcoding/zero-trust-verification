@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
+  "name": "org-memory",
+  "version": "0.1.0",
+  "description": "Org-Wide Memory: a read-only, memory-glob-bounded index and crawler over the memory each repo already commits (ADRs, CONTEXT.md glossaries, Verification Manifests, DL-### decision logs, journey/as-built docs), exposed to agents via a refuse-by-default MCP query surface — never a second store of truth (ADR 0019). Every record is a derived view carrying a {repo, commit_sha, path, source_line} back-pointer; rebuild-from-empty is always correct. Config-first repo list (installs standalone; optional host org-enumeration is vendored-under-lint, never a runtime dependency on a sibling plugin). Reuses the canonical validate_manifest toolchain (never a forked parser) and honors its 0/3/4/5 exit contract. lookup / full-text search / alias-resolution / decision-lookup over a single-file SQLite+FTS5 cache; supersession-aware; staleness disclosed, never faked. Read-only: no write-back, no remediation loop, no findings.",
+  "author": {
+    "name": "bailey"
+  },
+  "license": "MIT",
+  "keywords": [
+    "org-memory",
+    "knowledge-index",
+    "crawler",
+    "adr",
+    "glossary",
+    "decision-log",
+    "verification-manifest",
+    "sqlite",
+    "fts5",
+    "mcp",
+    "read-only",
+    "refuse-by-default",
+    "supersession",
+    "derived-view"
+  ]
+}
