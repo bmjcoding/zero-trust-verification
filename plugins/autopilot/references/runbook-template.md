@@ -28,6 +28,8 @@ budget:
   max_ci_blocks: 2                       # AP-2: consecutive_ci_blocks cap before HUMAN_NEEDED
   max_claim_waits: 16                    # AV3-09: consecutive claim-blocked fires before HUMAN_NEEDED — claim-deadlock
   max_runtime_minutes: 240               # wall-clock cap; dispatcher emits HUMAN_NEEDED at expiry
+  max_mutants_per_subtask: 40            # ADR 0016 (MT-07): D6.5 mutant budget; exceeding → partial [note], never a false block
+  max_mutation_seconds: 120              # ADR 0016 (MT-07): D6.5 wall-clock budget; exceeding → partial [note], never a false block
 validators:                              # validator names run on every D5; catalog = validator-prompts.md
   - integration                          # always
   - design                               # always
@@ -49,6 +51,12 @@ gates:                                   # v2.4.0: language-agnostic gate comman
                                                  # the D6.4 determinism gate. Omit when the repo has no
                                                  # randomization plugin — D6.4 skips that round with a
                                                  # loud [note] (e.g. JS: "vitest run --sequence.shuffle {paths}").
+  # test_mutation: "mutmut run --paths-to-mutate {files} ; mutmut show"   # ADR 0016 (OPTIONAL): the
+                                                 # resolved D6.5 anti-vacuous mutation command. Omit → D6.5
+                                                 # SKIPS with a loud [note] (never a false block). Pair with
+                                                 # test_mutation_tool below. Adapters: references/mutation-adapters.md.
+  # test_mutation_tool: mutmut             # ADR 0016: which adapter parses D6.5 survivors
+                                           # (stryker | cargo-mutants | mutmut | go-mutesting).
   test_contract: "pytest -m contract -x -q {paths}"
   typecheck: "mypy {paths}"
   lint: "ruff check {paths}"             # scoped to changed files — never repo-wide (brownfield debt

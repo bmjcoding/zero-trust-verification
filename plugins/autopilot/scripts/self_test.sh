@@ -1570,6 +1570,126 @@ out=$(bash "$DG" --cmd "n=\$(cat $SANDBOX/dg_cntv); echo \$((n+1))>$SANDBOX/dg_c
 assert_eq "AV3-12.9" "stable node id + volatile bracketed duration stays DETERMINISTIC (exit 0)" "0" "$rc"
 assert_contains "AV3-12.9" "deterministic verdict despite bracketed volatile noise" "DETERMINISTIC" "$out"
 
+echo "== mutation_gate.sh (D6.5 anti-vacuous gate — ADR 0016 / MT-02,03,05,07,08) =="
+
+MG="$HERE/mutation_gate.sh"
+MADP="$HERE/mutation_adapter.sh"
+
+# Vendored adapter (byte-pinned to codebase-health by root lint V7) resolves +
+# counts — inline canned tool output, no external fixture dependency (hermetic).
+out=$(printf '3 mutants tested, 1 missed\nsrc/pay.rs:42:9: replace calc with 0\n' | bash "$MADP" normalize cargo-mutants)
+assert_eq "MT-01.a" "vendored adapter normalizes cargo survivor to file:line" "src/pay.rs:42" "$out"
+out=$(printf 'PASS "a.go.0" x\nFAIL "a.go.1" x\ntotal is 2\n' | bash "$MADP" normalize go-mutesting)
+assert_eq "MT-01.b" "vendored adapter degrades go-mutesting survivor to file granularity" "a.go:-" "$out"
+out=$(printf '10 mutants tested, 2 missed\n' | bash "$MADP" count cargo-mutants)
+assert_eq "MT-01.c" "vendored adapter counts total mutants (budget input)" "10" "$out"
+
+# A hermetic git repo whose HEAD adds line 3 (BASE..HEAD changed line = mod.py:3).
+mk_mut_repo() {  # $1 = dir -> prints BASE sha on fd 3? no: echoes BASE
+  local d="$1"
+  mkdir -p "$d"; ( cd "$d"
+    git init -q
+    printf 'def f():\n    return 1\n' > mod.py
+    git add mod.py; git commit -qm base
+    printf 'def f():\n    return 1\n    g(2)\n' > mod.py   # line 3 added
+    git add mod.py; git commit -qm change )
+  ( cd "$d" && git rev-parse HEAD~1 )
+}
+
+# MT-08 — graceful degrade: no tool → loud skip [note] on stderr, exit 0.
+MR="$SANDBOX/mg_skip"; MBASE="$(mk_mut_repo "$MR")"
+err=$( cd "$MR" && bash "$MG" --base "$MBASE" 2>&1 >/dev/null ); rc=$?
+assert_eq "MT-08.1" "no mutation tool → D6.5 skips, exit 0" "0" "$rc"
+assert_contains "MT-08.1" "skip note is loud on stderr (never silent)" "no mutation tool for the configured language — D6.5 anti-vacuous gate skipped (optional)" "$err"
+err=$( cd "$MR" && bash "$MG" --tool no-such --run-cmd 'echo x' --base "$MBASE" 2>&1 >/dev/null ); rc=$?
+assert_eq "MT-08.2" "unsupported tool → D6.5 skips, exit 0" "0" "$rc"
+assert_contains "MT-08.2" "unsupported tool names the skip reason" "has no adapter" "$err"
+
+# MT-02 — clean-index precheck refuses a dirty TRACKED tree (exit 64, not a block).
+MR="$SANDBOX/mg_dirty"; MBASE="$(mk_mut_repo "$MR")"
+( cd "$MR" && printf 'dirty\n' >> mod.py )
+out=$( cd "$MR" && bash "$MG" --tool cargo-mutants --run-cmd 'echo x' --base "$MBASE" 2>&1 ); rc=$?
+assert_eq "MT-02.1" "dirty tracked tree → clean-index precheck refuses (exit 64)" "64" "$rc"
+assert_contains "MT-02.1" "refusal cites the clean-index precheck" "clean-index precheck FAILED" "$out"
+
+# MT-02 — throwaway worktree is created AND torn down on normal exit; the live
+# checkout is NEVER mutated (the run-cmd writes a marker only inside the throwaway).
+MR="$SANDBOX/mg_iso"; MBASE="$(mk_mut_repo "$MR")"
+wt_before=$( cd "$MR" && git worktree list | wc -l | tr -d ' ' )
+( cd "$MR" && bash "$MG" --tool cargo-mutants --base "$MBASE" \
+    --run-cmd 'touch MUTATED_IN_WT; echo "1 mutants tested, 0 missed"' >/dev/null 2>&1 )
+wt_after=$( cd "$MR" && git worktree list | wc -l | tr -d ' ' )
+assert_eq "MT-02.2" "throwaway worktree torn down on normal exit (count returns to baseline)" "$wt_before" "$wt_after"
+if [ -f "$MR/MUTATED_IN_WT" ]; then fail "MT-02.2" "live checkout MUTATED (marker leaked out of the throwaway)"; else pass "MT-02.2" "live checkout unmodified (marker existed only in the throwaway worktree)"; fi
+
+# MT-02 — trap fires even on injected mid-run FAILURE (tool touches a file, exit 3):
+# worktree torn down, live tree unmodified, and NO false block (inconclusive).
+MR="$SANDBOX/mg_crash"; MBASE="$(mk_mut_repo "$MR")"
+wt_before=$( cd "$MR" && git worktree list | wc -l | tr -d ' ' )
+out=$( cd "$MR" && bash "$MG" --tool cargo-mutants --base "$MBASE" --run-cmd 'touch CRASH_LEFTOVER; exit 3' 2>/dev/null ); rc=$?
+wt_after=$( cd "$MR" && git worktree list | wc -l | tr -d ' ' )
+assert_eq "MT-02.3" "worktree torn down after injected mid-run failure (EXIT trap fires on error)" "$wt_before" "$wt_after"
+if [ -f "$MR/CRASH_LEFTOVER" ]; then fail "MT-02.3" "live tree got the crash leftover"; else pass "MT-02.3" "live tree unmodified after tool crash"; fi
+assert_eq "MT-02.3" "tool crash → inconclusive, exit 0 (never a false block)" "0" "$rc"
+
+# MT-02 — INT/TERM trap: TERM the gate mid-run; the throwaway must still be removed.
+MR="$SANDBOX/mg_term"; MBASE="$(mk_mut_repo "$MR")"
+wt_before=$( cd "$MR" && git worktree list | wc -l | tr -d ' ' )
+# `exec` so the backgrounded subshell PID IS mutation_gate's PID — TERM must reach
+# the gate itself for its INT/TERM trap to fire (a plain subshell wrapper would
+# swallow the signal and orphan the gate).
+( cd "$MR" && exec bash "$MG" --tool cargo-mutants --base "$MBASE" --max-seconds 60 \
+    --run-cmd 'touch TERM_LEFTOVER; sleep 20; echo done' >/dev/null 2>&1 ) &
+mg_pid=$!
+for _i in 1 2 3 4 5 6 7 8 9 10; do
+  [ "$( cd "$MR" && git worktree list | wc -l | tr -d ' ' )" -gt "$wt_before" ] && break
+  sleep 1
+done
+kill -TERM "$mg_pid" 2>/dev/null; wait "$mg_pid" 2>/dev/null; sleep 1
+( cd "$MR" && git worktree prune 2>/dev/null )
+wt_after=$( cd "$MR" && git worktree list | wc -l | tr -d ' ' )
+assert_eq "MT-02.4" "throwaway worktree torn down after SIGTERM (INT/TERM trap)" "$wt_before" "$wt_after"
+if [ -f "$MR/TERM_LEFTOVER" ]; then fail "MT-02.4" "live tree got the TERM leftover"; else pass "MT-02.4" "live tree unmodified after SIGTERM"; fi
+
+# MT-03 — a survivor on a CHANGED line (mod.py:3) → [BLOCKED: vacuous-test], exit 1.
+MR="$SANDBOX/mg_block"; MBASE="$(mk_mut_repo "$MR")"
+out=$( cd "$MR" && bash "$MG" --tool cargo-mutants --base "$MBASE" --files mod.py \
+    --run-cmd 'echo "1 mutants tested, 1 missed"; echo "mod.py:3:5: replace g with ()"' 2>/dev/null ); rc=$?
+assert_eq "MT-03.1" "survivor on a changed line → exit non-zero" "1" "$rc"
+assert_contains "MT-03.1" "vacuous-test producer token emitted" "[BLOCKED: vacuous-test]" "$out"
+
+# MT-03 — a genuinely-constraining test (no survivor) → pass.
+out=$( cd "$MR" && bash "$MG" --tool cargo-mutants --base "$MBASE" --files mod.py \
+    --run-cmd 'echo "2 mutants tested, 0 missed"' 2>/dev/null ); rc=$?
+assert_eq "MT-03.2" "no survivor → NON-VACUOUS, exit 0" "0" "$rc"
+assert_contains "MT-03.2" "non-vacuous verdict" "NON-VACUOUS" "$out"
+
+# MT-03 — a survivor OFF the changed lines (mod.py:1, inherited) → pass (ratchet).
+out=$( cd "$MR" && bash "$MG" --tool cargo-mutants --base "$MBASE" --files mod.py \
+    --run-cmd 'echo "1 mutants tested, 1 missed"; echo "mod.py:1:1: replace f with ()"' 2>/dev/null ); rc=$?
+assert_eq "MT-03.3" "inherited (off-diff) survivor never blocks (ADR-0004 ratchet)" "0" "$rc"
+
+# MT-05 — a file-granular survivor (go-mutesting, no line) on a changed FILE cannot
+# be pinned to a changed line → comment-only [note], exit 0 (never a block).
+out=$( cd "$MR" && bash "$MG" --tool go-mutesting --base "$MBASE" --files mod.py \
+    --run-cmd 'echo '\''FAIL "mod.py.1" with checksum'\''; echo "total is 1"' 2>/dev/null ); rc=$?
+assert_eq "MT-05.1" "file-granular survivor → exit 0 (comment-only, not a block)" "0" "$rc"
+assert_contains "MT-05.1" "file-granular survivor is a comment-only note" "file-granular survivor" "$out"
+
+# MT-07 — mutant-cap exceeded → partial [note], exit 0, NO false block even though a
+# changed-line survivor is present (inconclusive != survivor).
+out=$( cd "$MR" && bash "$MG" --tool cargo-mutants --base "$MBASE" --files mod.py --max-mutants 2 \
+    --run-cmd 'echo "10 mutants tested, 1 missed"; echo "mod.py:3:5: replace g with ()"' 2>/dev/null ); rc=$?
+assert_eq "MT-07.1" "mutant-budget exceeded → exit 0 (no false block)" "0" "$rc"
+assert_contains "MT-07.1" "partial budget note (N of M)" "mutation-budget-exhausted — partial (2 of 10)" "$out"
+assert_not_contains "MT-07.1" "budget exhaustion never emits a block" "[BLOCKED: vacuous-test]" "$out"
+
+# MT-07 — wall-clock budget: a run exceeding --max-seconds → partial [note], exit 0.
+out=$( cd "$MR" && bash "$MG" --tool cargo-mutants --base "$MBASE" --files mod.py --max-seconds 1 \
+    --run-cmd 'sleep 5; echo "1 mutants tested, 1 missed"; echo "mod.py:3:5: x"' 2>/dev/null ); rc=$?
+assert_eq "MT-07.2" "wall-clock budget exceeded → exit 0 (no false block)" "0" "$rc"
+assert_contains "MT-07.2" "timed-out partial note" "mutation-budget-exhausted — partial" "$out"
+
 echo "== secret_get.sh (T25) =="
 
 # T25 — candidate list matches the documented resolver conventions

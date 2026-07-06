@@ -34,6 +34,12 @@
 #        and its format-recognizer references name the single-source docs; if the
 #        OWM-09 enumeration path is vendored, its copy is byte-identity-pinned.
 #        (V7 is the parallel mutation-testing stream's rule; V8 does not collide.)
+#   V7 — the mutation adapter map (ADR 0016): the vendored
+#        <!-- vendored:mutation-adapter-map --> doc block AND the executable
+#        resolver mutation_adapter.sh are byte-identical across the autopilot D6.5
+#        producer and the codebase-health PR-Gate consumer (the only two copies —
+#        MT-10 sole source), and the [BLOCKED: vacuous-test] producer / mutant-on-
+#        core-path consumer tokens are pinned so producer and consumer cannot drift.
 #
 # $LINT_ROOT points the lint at a fixture tree so the self-test can plant a drift
 # and prove each byte-identity rule has teeth (scripts/suite_self_test.sh; the
@@ -390,6 +396,83 @@ else
   fi
   [ "$v8_bad" -eq 0 ] && ok V8 "OWM recognizers pinned to the canonical formats (ADR 0019 / register OWM-10)"
 fi
+# ── V7: the mutation adapter map (ADR 0016 / MT-09/MT-10) — the ONE map, pinned
+#        so the autopilot D6.5 PRODUCER and the codebase-health PR-Gate CONSUMER
+#        cannot drift. Four guarantees:
+#   (a) the vendored <!-- vendored:mutation-adapter-map --> DOC block is present in
+#       both the canonical (cross-language-tooling.md) and the autopilot copy
+#       (mutation-adapters.md), byte-identical (the V5 mechanism);
+#   (b) the executable resolver mutation_adapter.sh is byte-identical across the two
+#       plugins AND exists in EXACTLY those two locations — a third copy would be a
+#       second map that drifts (the V3 mechanism; MT-10 "no second runner/source");
+#   (c) the [BLOCKED: vacuous-test] producer token lives in the autopilot D6.5 gate;
+#   (d) the mutant-on-core-path consumer token lives in the PR-Gate sibling.
+v7_begin='vendored:mutation-adapter-map:begin'
+v7_end='vendored:mutation-adapter-map:end'
+v7_extract() { awk -v b="$v7_begin" -v e="$v7_end" '$0 ~ b {f=1; next} $0 ~ e {f=0} f' "$1"; }
+v7_expected="plugins/codebase-health/skills/cleanup-audit/references/cross-language-tooling.md
+plugins/autopilot/references/mutation-adapters.md"
+v7_canon_txt=""; v7_canon_file=""; v7_bad=0
+# (a) doc block present + byte-identical across the pinned files
+while IFS= read -r rel; do
+  [ -n "$rel" ] || continue
+  f="$ROOT/$rel"
+  if [ ! -f "$f" ]; then
+    violation V7 "expected mutation-adapter-map file missing: $rel (ADR 0016)"; v7_bad=1; continue
+  fi
+  nb=$(grep -c "$v7_begin" "$f" 2>/dev/null || true)
+  ne=$(grep -c "$v7_end" "$f" 2>/dev/null || true)
+  if [ "${nb:-0}" -eq 0 ] || [ "${ne:-0}" -eq 0 ]; then
+    violation V7 "expected file lacks the vendored mutation-adapter-map block: $rel (ADR 0016)"; v7_bad=1; continue
+  fi
+  if [ "$nb" != "$ne" ]; then
+    violation V7 "unpaired mutation-adapter-map markers ($nb begin / $ne end): $rel"; v7_bad=1; continue
+  fi
+  blk="$(v7_extract "$f")"
+  if [ -z "$v7_canon_file" ]; then
+    v7_canon_txt="$blk"; v7_canon_file="$rel"
+  elif [ "$blk" != "$v7_canon_txt" ]; then
+    violation V7 "mutation-adapter-map block DRIFTED: $rel differs from $v7_canon_file (ADR 0016 — byte-identical)"; v7_bad=1
+  fi
+done <<V7EXP
+$v7_expected
+V7EXP
+
+# (b) resolver byte-identity + EXACTLY the two expected copies (MT-10 sole source)
+v7_canon_sh="$ROOT/plugins/codebase-health/skills/cleanup-audit/scripts/mutation_adapter.sh"
+v7_copy_sh="$ROOT/plugins/autopilot/scripts/mutation_adapter.sh"
+if [ ! -f "$v7_canon_sh" ]; then
+  violation V7 "canonical mutation_adapter.sh missing: ${v7_canon_sh#$ROOT/} (ADR 0016)"; v7_bad=1
+elif [ ! -f "$v7_copy_sh" ]; then
+  violation V7 "vendored mutation_adapter.sh missing in autopilot: ${v7_copy_sh#$ROOT/} (ADR 0016)"; v7_bad=1
+elif ! cmp -s "$v7_canon_sh" "$v7_copy_sh"; then
+  violation V7 "vendored mutation_adapter.sh DRIFTED from canonical: ${v7_copy_sh#$ROOT/} (ADR 0016 — the one map, byte-identical)"; v7_bad=1
+fi
+v7_adp_seen=0
+while IFS= read -r c; do
+  [ -n "$c" ] || continue
+  v7_adp_seen=$((v7_adp_seen+1))
+  rel="${c#$ROOT/}"
+  case "$rel" in
+    plugins/codebase-health/skills/cleanup-audit/scripts/mutation_adapter.sh|plugins/autopilot/scripts/mutation_adapter.sh) : ;;
+    *) violation V7 "unexpected mutation_adapter.sh copy (a second map that drifts): $rel (ADR 0016 / MT-10 — one map, one source)"; v7_bad=1 ;;
+  esac
+done < <(find "$ROOT" -path "$ROOT/.git" -prune -o -path "$ROOT/.claude" -prune -o -name node_modules -prune -o -name 'mutation_adapter.sh' -print 2>/dev/null)
+
+# (c)+(d) producer + consumer tokens pinned to their scripts (cannot drift apart)
+v7_producer="$ROOT/plugins/autopilot/scripts/mutation_gate.sh"
+v7_consumer="$ROOT/plugins/codebase-health/skills/cleanup-audit/scripts/check_mutation_survivors.sh"
+if [ -f "$v7_producer" ] && grep -qF '[BLOCKED: vacuous-test]' "$v7_producer"; then
+  ok V7 "producer token [BLOCKED: vacuous-test] present in the autopilot D6.5 gate"
+else
+  violation V7 "producer token [BLOCKED: vacuous-test] missing from plugins/autopilot/scripts/mutation_gate.sh (ADR 0016 / MT-09)"; v7_bad=1
+fi
+if [ -f "$v7_consumer" ] && grep -qF 'mutant-on-core-path' "$v7_consumer"; then
+  ok V7 "consumer token mutant-on-core-path present in the PR-Gate sibling"
+else
+  violation V7 "consumer token mutant-on-core-path missing from check_mutation_survivors.sh (ADR 0016 / MT-09)"; v7_bad=1
+fi
+[ "$v7_bad" -eq 0 ] && ok V7 "mutation adapter map + resolver byte-identical, sole-source, producer/consumer tokens pinned (ADR 0016 — cannot drift)"
 
 echo
 if [ "$FAIL" -eq 0 ]; then echo "== lint_consistency: all cross-plugin contract rules pass =="; else echo "== lint_consistency: violations found =="; fi

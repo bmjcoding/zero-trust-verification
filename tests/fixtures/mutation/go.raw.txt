@@ -1,0 +1,5 @@
+PASS "src/settled.go.0" with checksum a1b2c3
+FAIL "src/ledger.go.1" with checksum d4e5f6
+FAIL "src/transfer.go.4" with checksum 778899
+FAIL "/tmp/go-mutesting-99/src/refund.go.2" with checksum aabbcc
+The mutation score is 0.250000 (1 passed, 3 failed, 0 duplicated, 0 skipped, total is 4)
