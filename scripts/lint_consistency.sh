@@ -3,7 +3,7 @@
 #
 # The suite's plugins are consumed by an LLM that treats vendored artifacts as
 # ground truth; two copies of one contract that drift are a coin-flip at runtime.
-# This is the CROSS-PLUGIN host (autopilot/codebase-health each also have a
+# This is the CROSS-PLUGIN host (autopilot and codebase-health each also have a
 # plugin-local self-test/lint; this one pins contracts that span more than one
 # plugin — the ones ADR 0001 says must be vendored from a SINGLE source):
 #
@@ -66,8 +66,8 @@ fi
 # ── V2: the `## Behavior coverage` format has one canonical definition both
 #        the AV3-05 producer and the CH-06 consumer honor ───────────────────────
 FMT_DOC="$ROOT/docs/specs/behavior-coverage-format.md"
-CONSUMER="$ROOT/codebase-health/plugins/codebase-health/skills/cleanup-audit/scripts/check_behavior_coverage.sh"
-PRODUCER_REF="$ROOT/autopilot/references/validator-prompts.md"
+CONSUMER="$ROOT/plugins/codebase-health/skills/cleanup-audit/scripts/check_behavior_coverage.sh"
+PRODUCER_REF="$ROOT/plugins/autopilot/references/validator-prompts.md"
 
 if [ ! -f "$FMT_DOC" ]; then
   violation V2 "canonical behavior-coverage format doc missing: docs/specs/behavior-coverage-format.md"
@@ -102,7 +102,7 @@ fi
 # entrypoint) and validate_manifest.py (the logic, ADR 0014). There is ONE
 # canonical copy of each under scripts/; any copy a plugin vendors for standalone
 # install (spec-gen does) must be byte-identical to it. ONE legitimate collision:
-# autopilot/scripts/validate_manifest.sh is the `--union` multi-doc checker
+# plugins/autopilot/scripts/validate_manifest.sh is the `--union` multi-doc checker
 # (AV3-03), NOT a vendored copy of the single-file validator — it is exempt only
 # while it carries the union tool's own union-only tokens (`--union` AND
 # `manifest-id-collision`, which the single-file validator never contains), so a
@@ -110,7 +110,7 @@ fi
 # is NOT exempted — it is flagged.
 v3_exempt() {  # <relpath> <abs-file> -> 0 iff this is the genuine union tool
   case "$1" in
-    autopilot/scripts/validate_manifest.sh)
+    plugins/autopilot/scripts/validate_manifest.sh)
       grep -q -- '--union' "$2" && grep -q 'manifest-id-collision' "$2" ;;
     *) return 1 ;;
   esac
@@ -142,7 +142,7 @@ done
 # The open-PR file-surface intersection is consumed by autopilot's G4/D2 and the
 # Marshal's nudge watcher; ADR 0009 vendors it into both, byte-identical. The
 # canonical copy is autopilot's (the Marshal adopts it); pin every copy to it.
-v4_canon="$ROOT/autopilot/scripts/claim_overlap.sh"
+v4_canon="$ROOT/plugins/autopilot/scripts/claim_overlap.sh"
 if [ ! -f "$v4_canon" ]; then
   v4_canon="$(find "$ROOT" -path "$ROOT/.git" -prune -o -path "$ROOT/.claude" -prune -o -name node_modules -prune -o -name 'claim_overlap.sh' -print 2>/dev/null | sort | head -1)"
 fi
@@ -177,13 +177,13 @@ fi
 v5_begin='vendored:escalation-criterion:begin'
 v5_end='vendored:escalation-criterion:end'
 v5_extract() { awk -v b="$v5_begin" -v e="$v5_end" '$0 ~ b {f=1; next} $0 ~ e {f=0} f' "$1"; }
-v5_expected="autopilot/references/planner-prompt.md
-autopilot/references/implementer-prompt.md
+v5_expected="plugins/autopilot/references/planner-prompt.md
+plugins/autopilot/references/implementer-prompt.md
 plugins/spec-gen/skills/spec/SKILL.md
-codebase-health/plugins/codebase-health/skills/cleanup-audit/references/severity-rubric.md"
+plugins/codebase-health/skills/cleanup-audit/references/severity-rubric.md"
 v5_is_expected() {  # <relpath> -> 0 if one of the pinned prompts
   case "$1" in
-    autopilot/references/planner-prompt.md|autopilot/references/implementer-prompt.md|plugins/spec-gen/skills/spec/SKILL.md|codebase-health/plugins/codebase-health/skills/cleanup-audit/references/severity-rubric.md) return 0 ;;
+    plugins/autopilot/references/planner-prompt.md|plugins/autopilot/references/implementer-prompt.md|plugins/spec-gen/skills/spec/SKILL.md|plugins/codebase-health/skills/cleanup-audit/references/severity-rubric.md) return 0 ;;
     *) return 1 ;;
   esac
 }
@@ -259,8 +259,8 @@ import json, os, sys
 root, mkt = sys.argv[1], sys.argv[2]
 expected = {
     "spec-gen": "./plugins/spec-gen",
-    "autopilot": "./autopilot",
-    "codebase-health": "./codebase-health/plugins/codebase-health",
+    "autopilot": "./plugins/autopilot",
+    "codebase-health": "./plugins/codebase-health",
     "marshal": "./plugins/marshal",
 }
 try:
@@ -316,8 +316,8 @@ V6OUT
       { [ -d "$pdir" ] && [ -f "$pdir/.claude-plugin/plugin.json" ]; } || { violation V6 "plugin '$pname' source not independently installable: $psrc"; v6_bad=1; }
     done <<'V6PLUGINS'
 spec-gen|./plugins/spec-gen
-autopilot|./autopilot
-codebase-health|./codebase-health/plugins/codebase-health
+autopilot|./plugins/autopilot
+codebase-health|./plugins/codebase-health
 marshal|./plugins/marshal
 V6PLUGINS
     [ "$v6_bad" -eq 0 ] && ok V6 "four plugins registered + installable (reduced grep check; python3 absent)"

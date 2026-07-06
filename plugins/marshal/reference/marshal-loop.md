@@ -86,7 +86,7 @@ fire is harmless.
 
 | Var | Default | Meaning |
 |---|---|---|
-| `MARSHAL_HOST` | sibling `autopilot/scripts/host.sh` | host adapter entrypoint |
+| `MARSHAL_HOST` | sibling `plugins/autopilot/scripts/host.sh` | host adapter entrypoint |
 | `MARSHAL_MAIN` | `main` | trunk branch |
 | `MARSHAL_REBASE_FILE_BUDGET` | `2` | D7.0 file budget |
 | `MARSHAL_REBASE_HUNK_BUDGET` | `3` | D7.0 hunk budget |

@@ -3,7 +3,7 @@
 # substrate (marshal.sh, claim_overlap.sh, branch_age_watcher.sh) driven end-to-
 # end through a MOCK host backend (mock_host.py via uv, ADR 0015).
 #
-# Ground rules (mirroring autopilot/scripts/self_test.sh):
+# Ground rules (mirroring plugins/autopilot/scripts/self_test.sh):
 #   - Hermetic: everything runs inside a mktemp -d sandbox with local BARE repos
 #     standing in for `origin`. No network, no host API, no credentials, no
 #     writes outside the sandbox.
@@ -47,7 +47,7 @@ export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null
 
 # ==============================================================================
 # claim_overlap.sh — the VENDORED byte-identical canonical primitive (ADR 0009).
-# The Marshal adopts autopilot's canonical copy (autopilot/scripts/claim_overlap.sh)
+# The Marshal adopts autopilot's canonical copy (plugins/autopilot/scripts/claim_overlap.sh)
 # verbatim; it does NOT ship an independent implementation. These assertions mirror
 # autopilot's AV3-09 matrix so this vendored copy is exercised in-plugin and any
 # drift from the canonical behaviour reds here. (Byte-identity itself is asserted
@@ -106,7 +106,7 @@ assert_eq       CO06 "blocked_by DRAFT -> ineligible (exit 2)" "2" "$(bash "$CLA
 r1="$(co api/limiter.py core/engine.py 2>&1)"; r2="$(co api/limiter.py core/engine.py 2>&1)"
 assert_eq       CO10 "output is deterministic across runs" "$r1" "$r2"
 assert_eq       CO10 "vendored copy is byte-identical to autopilot's canonical" \
-  "" "$(diff "$ROOT/autopilot/scripts/claim_overlap.sh" "$CLAIM" 2>&1)"
+  "" "$(diff "$ROOT/plugins/autopilot/scripts/claim_overlap.sh" "$CLAIM" 2>&1)"
 
 # ==============================================================================
 # branch_age_watcher.sh — staleness / 48h planning-failure watcher (ADR 0012/0009)
@@ -551,7 +551,7 @@ SHIMEOF
 chmod +x "$MGSHIM/gh"
 
 mg_out="$( cd "$GWC" && PATH="$MGSHIM:$PATH" GH_SHIM_REPO="$GBARE" \
-    MARSHAL_HOST="$ROOT/autopilot/scripts/host.sh" \
+    MARSHAL_HOST="$ROOT/plugins/autopilot/scripts/host.sh" \
     MARSHAL_BUILD_POLL_MAX=1 MARSHAL_BUILD_POLL_INTERVAL=0 \
     bash "$MARSHAL" 2>&1 )"
 assert_contains MG01 "real github.sh pr-list-ready enumerates the queue (strict FIFO: 11 before 10)" "candidates n=2 order=11,10" "$mg_out"

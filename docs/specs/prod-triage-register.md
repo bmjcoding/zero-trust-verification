@@ -24,7 +24,7 @@
 > maps, `environments` primitive), §5 (behaviors), §10 (completeness grammar `rule-<n>: <path>`),
 > §11 (validator exit 0/3/4/5 + degrade rows), §12 (the join — READ CAREFULLY BELOW), §13
 > (induced consumers). Reused artifacts confirmed present: scripts/validate_manifest.sh,
-> plugins/spec-gen/scripts/{profile_resolve.py,resume_projection.py}, autopilot/scripts/{host.sh,
+> plugins/spec-gen/scripts/{profile_resolve.py,resume_projection.py}, plugins/autopilot/scripts/{host.sh,
 > secret_get.sh}, tests/fixtures/join/{manifest.yaml,journeys.json}.
 > Baseline: greenfield plugin dir plugins/triage/; NO greenfield infra.
 
@@ -102,7 +102,7 @@ handoff). TR-08 grows self_test + extends lint (V7 telemetry contract, V5 tier-s
 ## A. Ingestion (vendor-neutral, ADR 0006 + ADR 0013)
 
 ### TR-01 — Telemetry adapter surface + bounded-window guard [ADR 0006, ADR 0013]
-`plugins/triage/scripts/telemetry.sh <subcommand>`, modeled on autopilot/scripts/host.sh
+`plugins/triage/scripts/telemetry.sh <subcommand>`, modeled on plugins/autopilot/scripts/host.sh
 (verified detect matrix at :60-74). Callers never name a vendor.
 Subcommands: `window --since <ts> --until <ts> [--service S] [--event E]` → normalized incident-
 window NDJSON (TR-02) on stdout; `probe` → reachability/auth (exit 0/non-zero+reason); `backend`
@@ -114,7 +114,7 @@ Backend detection (first match wins), mirroring host.sh but WITHOUT an origin he
      host.sh sniffs Bitbucket-vs-GitHub from the origin URL; there is NO origin-equivalent for a
      telemetry vendor, so absence is an ADR 0002 external-fact escalation, never a guessed default.
 Backends: `otel_file.sh` (default; OTLP/OTEL-JSON logs file — hermetic + community), `cloudwatch.sh`
-(Logs Insights), `dynatrace.sh` (Grail/DQL). Secrets via the existing autopilot/scripts/secret_get.sh
+(Logs Insights), `dynatrace.sh` (Grail/DQL). Secrets via the existing plugins/autopilot/scripts/secret_get.sh
 chain — tokens never enter agent context.
 **Bounded-window guard (the cost invariant, made mechanical):** `window` REFUSES if `--since`/
 `--until` are absent, if the span exceeds a configured max (`triage.config.yaml`
@@ -278,7 +278,7 @@ a new source feeding the left edge).
 
 ### TR-08 — self_test + vendoring lint [ADR 0001/0015]
 Grow `plugins/triage/scripts/self_test.sh` (uv-bootstrapped, ADR 0015 — `uv run --no-project`,
-no manual venv, matching autopilot/scripts/self_test.sh:257-265) to cover every `[det]` and
+no manual venv, matching plugins/autopilot/scripts/self_test.sh:257-265) to cover every `[det]` and
 `[det-cond]` above (the [det-cond] ones run against triage-owned fixtures with an explicit
 'not-suite-end-to-end' banner). Extend scripts/lint_consistency.sh:
   V5 (existing) — extend the escalation-block tier set from FOUR to FIVE (one-line change; the
@@ -294,7 +294,7 @@ update the marketplace `description` string, which currently says 'four-plugin' 
 change to five, or V6 documents a lie (flagged as a required edit, not left implicit).
 **Acceptance:**
 - `[det]` self_test.sh runs green hermetically (OTLP-JSON fixture backend only — the `default`
-  backend IS the test backend), matching autopilot/codebase-health/spec-gen/marshal self-test discipline.
+  backend IS the test backend), matching autopilot, codebase-health, spec-gen, and marshal self-test discipline.
 - `[det]` a planted drift in the vendored telemetry-contract / escalation-block / window-schema is
   caught by V7/V5/V1 (`$ROOT` fixture-tree teeth, the existing lint self-test pattern).
 - `[det]` the marketplace lint (V6) passes with FIVE plugins, each carrying its own plugin.json,

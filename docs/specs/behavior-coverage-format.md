@@ -30,7 +30,7 @@ can verify the claim against proof (git-log + test-node existence) without an LL
 ## Producer / consumer
 
 - **Producer** — autopilot AV3-05 writes this section from the Subtask's
-  `behaviors_to_test[]` (`autopilot/references/validator-prompts.md`). Human PRs
+  `behaviors_to_test[]` (`plugins/autopilot/references/validator-prompts.md`). Human PRs
   may write it by hand in the same shape.
 - **Consumer** — codebase-health CH-06 `check_behavior_coverage.sh` parses the
   section and verifies each claim: a claimed behavior with no RED commit in the
