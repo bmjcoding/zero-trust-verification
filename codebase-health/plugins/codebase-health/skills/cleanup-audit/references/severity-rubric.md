@@ -58,6 +58,20 @@ depend on severities meaning the same thing everywhere.
   by a survived mutant on that symbol in an ingested report; the survived
   mutant is evidence of sole-coverage, not a third route to HIGH.
 
+
+## Escalation boundary (ADR 0002 — the one rule, vendored verbatim)
+
+The audit is **read-only**: it *reports*, it never resolves or acts. The one autonomous judgment it makes is severity, and the same ADR 0002 boundary governs it — the audit may settle a severity itself only within these limits; anything past them surfaces to a human (a **needs-verification** mark or an escalation note), never a silent HIGH/CRITICAL. The block below is byte-identical across all tiers (kept in sync by the repo `lint_consistency.sh`); for this read-only tier read "resolve a decision" as "settle a severity/finding" and the "decision-log entry" as the finding's evidence line.
+
+<!-- vendored:escalation-criterion:begin (ADR 0002 — byte-identical across all tiers; do NOT edit one copy) -->
+Resolve a decision yourself ONLY when it is BOTH (1) reversible at low cost — undoing it is a normal PR, not a migration or announcement — AND (2) verifiable downstream by the suite's own gates (a test, the D6 audit, or the audit tier). Record each such decision as a one-line decision-log entry (tracker + PR body); promote to an ADR only when it is hard to reverse, surprising without context, AND a real trade-off.
+
+You MUST escalate — never decide unilaterally — any decision requiring:
+1. values / risk appetite (e.g. silent-dedupe vs reject-and-alert on a duplicate);
+2. external facts you cannot observe (alert seams, compliance, org standards, upstream commitments);
+3. irreversible / outward-facing commitments (public API shapes, wire formats).
+<!-- vendored:escalation-criterion:end -->
+
 ## Architecture strength labels
 
 Architecture findings carry severity AND a recommendation strength:
