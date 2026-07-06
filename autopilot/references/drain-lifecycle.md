@@ -148,7 +148,13 @@ External churn > 100 commits since drain start → write `## Drift Notes` warnin
 Topo-walk the DAG. Pick the lowest-ID Subtask where:
 - Status is `[ ]` (not `[x]`, not `[BLOCKED]`)
 - All `depends_on[]` Subtasks are `[x] Done`
-- **Not claim-blocked (ADR 0009 / AV3-09):** if the Subtask has a `blocked_by_pr: <host>/<pr#>` edge (set at G4 by claim consultation), it is eligible ONLY when that PR has resolved. Poll `bash ${SKILL_DIR}/scripts/host.sh pr-state --num <pr#>` (same cadence as D7.5) and gate on `bash ${SKILL_DIR}/scripts/claim_overlap.sh eligibility --pr-state <STATE>` — exit 0 (`MERGED | DECLINED | NONE`) = eligible; exit 2 (`OPEN | DRAFT`) = still blocked.
+- **Not claim-blocked (ADR 0009 / AV3-09):** if the Subtask has a `blocked_by_pr: <host>/<pr#>` edge (set at G4 by claim consultation), it is eligible ONLY when that PR has resolved. Poll `bash ${SKILL_DIR}/scripts/host.sh pr-state --num <pr#>` (same cadence as D7.5) and gate on `bash ${SKILL_DIR}/scripts/claim_overlap.sh eligibility --pr-state <STATE>`:
+
+  | `claim_overlap.sh eligibility` exit | `<STATE>` | Action |
+  |---|---|---|
+  | 0 | `MERGED \| DECLINED \| NONE` | The claim resolved — the Subtask is eligible; select it. |
+  | 2 | `OPEN \| DRAFT` | The claim is still open — treat as claim-blocked (the WAIT path below). |
+  | 64 | a `<STATE>` outside `OPEN\|DRAFT\|MERGED\|DECLINED\|NONE` — either `UNKNOWN` (`host.sh pr-state` read the PR but its state was null / unmappable to the vocabulary) or an empty string (`host.sh pr-state` itself died `exit 1` on an unreadable read, leaving `<STATE>` empty) | **FAIL CLOSED (loop-safety invariant 3).** `claim_overlap.sh` refused to guess eligibility from an unresolvable state, so the orchestrator must NOT proceed — proceeding would fail OPEN on an unresolved claim. Write `STATUS: HUMAN_NEEDED — claim-eligibility-usage-error` citing the offending `<STATE>` (empty when the read died), `CronDelete`, exit. **External fault: no `impl`/`ci` counter increment** — identical handling to D7.5's `exit 64 → ci-check-usage-error` and D1.0's `exit 64 → lock-check-usage-error`. |
 
 
 **Story affinity (AV3-06).** PR-per-Story caps the drain at **one open (draft) Story PR at a time**. If a Story already has an open draft PR — i.e. some of its Subtasks are `[x] Done` and at least one is still `[ ]`, and it is not blocked — restrict selection to that Story's remaining eligible Subtasks: finish (or block out) the open Story before opening another. Only when the open Story has no eligible Subtask left (all its `[ ]` Subtasks are dependency- or claim-blocked) may D2 start a Subtask in a different Story. This keeps the branch/PR count bounded and the Story PR reviewable as a coherent unit. When two Stories are both fully open (none started), the lowest-ID Subtask's Story wins and becomes the open Story.
@@ -549,7 +555,7 @@ Tracker tracks `consecutive_impl_blocks: N` and `consecutive_ci_blocks: N` at th
 G5 already-shipped Subtasks do NOT affect either counter — they're marked Done at GENERATE-time before any drain has started.
 
 
-External faults (`foreign-commits-on-branch`, `trunk-renamed`, `runbook-pr-blocked`, `unexpected-branch-shape`, `ci-check-usage-error`) route straight to `HUMAN_NEEDED` and never touch counters.
+External faults (`foreign-commits-on-branch`, `trunk-renamed`, `runbook-pr-blocked`, `unexpected-branch-shape`, `ci-check-usage-error`, `claim-eligibility-usage-error`) route straight to `HUMAN_NEEDED` and never touch counters.
 
 
 The caps are runbook-configured: `budget.max_impl_blocks` (default 3) and `budget.max_ci_blocks` (default 2 — CI flakes are usually environmental; retrying past 2 burns budget). At `consecutive_impl_blocks >= budget.max_impl_blocks` OR `consecutive_ci_blocks >= budget.max_ci_blocks`:
