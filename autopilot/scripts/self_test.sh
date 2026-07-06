@@ -128,7 +128,52 @@ class H(http.server.BaseHTTPRequestHandler):
                 self._send_json({"id": 92, "state": "OPEN", "version": 2,
                                  "draft": False, "title": "[DRAFT] Prefixed PR"}); return
             self._send_json({"id": int(num), "state": "OPEN", "version": 3}); return
+        if p.endswith("/default-branch"):
+            # pr-list-ready trunk resolution (repo default branch).
+            self._send_json({"id": "refs/heads/main", "displayId": "main"}); return
         if "/pull-requests?" in p:
+            if "order=NEWEST" in p:
+                # pr-list-ready queue enumeration (AV3-15b), served in TWO pages so
+                # the DC pagination loop is exercised (isLastPage:False on page 1 is
+                # the `false // true` jq trap). Page 1 (start=0) carries the fixtures
+                # aligned with the gh shim for the shared contract_matrix: PR 42
+                # APPROVED, PR 77 PENDING (one reviewer not approved), PR 88 a draft
+                # (excluded), PR 99 a non-trunk target (excluded). Page 2 (start=100)
+                # carries PR 201, targeting `page2branch` — reachable ONLY if the
+                # loop honours isLastPage:False and follows nextPageStart.
+                if "start=100" in p:
+                    self._send_json({"isLastPage": True, "values": [
+                        {"id": 201, "title": "p2", "state": "OPEN", "draft": False,
+                         "createdDate": 1783250000000,
+                         "fromRef": {"displayId": "feature-p2", "id": "refs/heads/feature-p2",
+                                     "latestCommit": "fff201sha"},
+                         "toRef": {"displayId": "page2branch", "id": "refs/heads/page2branch"},
+                         "reviewers": [{"approved": True}]}]}); return
+                self._send_json({"isLastPage": False, "nextPageStart": 100, "values": [
+                    {"id": 42, "title": "x", "state": "OPEN", "draft": False,
+                     "createdDate": 1783245600000,
+                     "fromRef": {"displayId": "feature-x", "id": "refs/heads/feature-x",
+                                 "latestCommit": "aaa42sha"},
+                     "toRef": {"displayId": "main", "id": "refs/heads/main"},
+                     "reviewers": [{"approved": True}, {"approved": True}]},
+                    {"id": 77, "title": "y", "state": "OPEN", "draft": False,
+                     "createdDate": 1783242000000,
+                     "fromRef": {"displayId": "feature-y", "id": "refs/heads/feature-y",
+                                 "latestCommit": "bbb77sha"},
+                     "toRef": {"displayId": "main", "id": "refs/heads/main"},
+                     "reviewers": [{"approved": True}, {"approved": False}]},
+                    {"id": 88, "title": "d", "state": "OPEN", "draft": True,
+                     "createdDate": 1783240000000,
+                     "fromRef": {"displayId": "feature-draft", "id": "refs/heads/feature-draft",
+                                 "latestCommit": "ddd88sha"},
+                     "toRef": {"displayId": "main", "id": "refs/heads/main"},
+                     "reviewers": [{"approved": True}]},
+                    {"id": 99, "title": "r", "state": "OPEN", "draft": False,
+                     "createdDate": 1783241000000,
+                     "fromRef": {"displayId": "feature-rel", "id": "refs/heads/feature-rel",
+                                 "latestCommit": "eee99sha"},
+                     "toRef": {"displayId": "release/2.0", "id": "refs/heads/release/2.0"},
+                     "reviewers": [{"approved": True}]}]}); return
             if "at=refs/heads/feature-x" in p:
                 self._send_json({"values": [{"id": 42, "state": "OPEN"}]}); return
             self._send_json({"values": []}); return
@@ -290,6 +335,27 @@ contract_matrix() {  # <id> <invoker-fn>
   assert_eq "$ID" "build-status bbb -> FAILED" "FAILED" "$($H build-status --sha bbb222 2>/dev/null)"
   assert_eq "$ID" "build-status ccc -> INPROGRESS" "INPROGRESS" "$($H build-status --sha ccc333 2>/dev/null)"
   assert_eq "$ID" "build-status ddd -> UNKNOWN" "UNKNOWN" "$($H build-status --sha ddd444 2>/dev/null)"
+
+  # pr-list-ready — the Merge Marshal's queue-enumeration primitive, and the
+  # REAL-BACKEND assertion the mock hid (the P0): host.sh -> {github.sh via the gh
+  # shim | bitbucket.sh via the DC mock} must emit the EXACT 5-column TSV the
+  # Marshal loop consumes — `ready_ts \t num \t branch \t head_sha \t approval`,
+  # ready_ts an INTEGER EPOCH, drafts and non-trunk PRs excluded, APPROVED tagged.
+  # Fixtures are aligned across both backends so this body needs no per-backend
+  # branching. (Trunk resolves to the repo default branch — "main" — in both.)
+  local TB; TB="$(printf '\t')"
+  local ready
+  ready="$($H pr-list-ready 2>/dev/null | sort -t"$TB" -k1,1n -k2,2n)"
+  assert_eq "$ID" "pr-list-ready emits the marshal-consumable FIFO TSV" \
+    "$(printf '1783242000\t77\tfeature-y\tbbb77sha\tPENDING\n1783245600\t42\tfeature-x\taaa42sha\tAPPROVED')" "$ready"
+  assert_not_contains "$ID" "pr-list-ready excludes draft PRs" "feature-draft" "$ready"
+  assert_not_contains "$ID" "pr-list-ready excludes non-trunk PRs" "feature-rel" "$ready"
+  # The Marshal's OWN selection+order pipeline (APPROVED-only, strict FIFO by
+  # ready_ts then num) applied to the REAL backend output must keep exactly PR 42
+  # — proving the emitted rows are consumed as the loop expects, not just shaped.
+  local picked
+  picked="$($H pr-list-ready 2>/dev/null | awk -F"$TB" '$2!="" && $5=="APPROVED"' | sort -t"$TB" -k1,1n -k2,2n | awk -F"$TB" '{printf "%s,",$2}')"
+  assert_eq "$ID" "marshal ordering over real output -> only APPROVED PR 42" "42," "$picked"
 }
 
 echo "== bitbucket.sh + DC backend (T01-T07, T35, T36, HD01-HD10) =="
@@ -430,6 +496,21 @@ assert_eq HD09 "host.sh pr-state --num 91 -> DRAFT" "DRAFT" "$(hostbb pr-state -
 
 # HD10 — the shared T01-class contract matrix, host.sh -> DC backend.
 contract_matrix H-DC hostbb
+
+# HD12 — DC pr-list-ready empty queue: point the trunk at a branch no PR targets;
+# every fixture PR is toRef-filtered out -> empty output, exit 0 (not an error).
+out="$(AUTOPILOT_TRUNK=no-such-trunk hostbb pr-list-ready 2>/dev/null)"; rc=$?
+assert_eq HD12 "DC pr-list-ready empty queue -> no output" "" "$out"
+assert_eq HD12 "DC pr-list-ready empty queue -> exit 0" "0" "$rc"
+
+# HD13 — DC pr-list-ready PAGINATES. PR 201 lives on page 2 (start=100) and targets
+# `page2branch`; it is reachable ONLY if the loop honours page 1's isLastPage:False
+# and follows nextPageStart. The `.isLastPage // true` jq trap (false read as true)
+# stops after page 1 and drops it — with order=NEWEST that is the oldest/FIFO-head
+# PR. This assertion reds on that bug.
+out="$(AUTOPILOT_TRUNK=page2branch hostbb pr-list-ready 2>/dev/null | sort -t"$(printf '\t')" -k1,1n)"
+assert_eq HD13 "DC pr-list-ready follows pagination to page 2 (PR 201)" \
+  "$(printf '1783250000\t201\tfeature-p2\tfff201sha\tAPPROVED')" "$out"
 
 else
   skip DC-bitbucket "mock Bitbucket DC server unavailable in this environment"
@@ -1625,8 +1706,28 @@ case "$sub" in
         printf '{"state":"%s","isDraft":%s}\n' "$state" "$isdraft"
         ;;
       list)
-        if [[ "$(argval --head "$@" || true)" == "feature-x" ]]; then
-          printf '[{"state":"OPEN","isDraft":false}]\n'
+        head="$(argval --head "$@" || true)"
+        base="$(argval --base "$@" || true)"
+        if [[ -n "$head" ]]; then
+          # pr-state --branch path (state,isDraft only).
+          if [[ "$head" == "feature-x" ]]; then printf '[{"state":"OPEN","isDraft":false}]\n'; else printf '[]\n'; fi
+        elif [[ "$base" == "main" ]]; then
+          # pr-list-ready queue enumeration (AV3-15b) — aligned with the DC mock
+          # fixture: PR 42 APPROVED, PR 77 PENDING (reviewDecision != APPROVED),
+          # PR 88 a draft (excluded via isDraft). Non-trunk PRs never reach here:
+          # `--base` filters server-side (the GitHub analogue of the DC toRef test).
+          printf '[{"number":42,"headRefName":"feature-x","headRefOid":"aaa42sha","reviewDecision":"APPROVED","createdAt":"2026-07-05T10:00:00Z","isDraft":false},{"number":77,"headRefName":"feature-y","headRefOid":"bbb77sha","reviewDecision":"REVIEW_REQUIRED","createdAt":"2026-07-05T09:00:00Z","isDraft":false},{"number":88,"headRefName":"feature-draft","headRefOid":"ddd88sha","reviewDecision":"APPROVED","createdAt":"2026-07-05T08:00:00Z","isDraft":true}]\n'
+        elif [[ "$base" == "rfrtest" ]]; then
+          # ReadyForReviewEvent-refinement fixture: PR 91 was opened as a draft at
+          # 08:00Z and readied-for-review later; its FIFO key must come from the
+          # RFR event (see the graphql shim), NOT createdAt.
+          printf '[{"number":91,"headRefName":"feature-rfr","headRefOid":"fff91sha","reviewDecision":"APPROVED","createdAt":"2026-07-05T08:00:00Z","isDraft":false}]\n'
+        elif [[ "$base" == "hardening" ]]; then
+          # Robustness fixture: PR 93 has a FRACTIONAL-second createdAt (must still
+          # convert, not abort the whole enumeration); PR 94 has an EMPTY headRefOid
+          # (must be dropped — no head sha = not a merge candidate, and an empty
+          # middle column would shift the Marshal's read).
+          printf '[{"number":93,"headRefName":"feature-frac","headRefOid":"fff93sha","reviewDecision":"APPROVED","createdAt":"2026-07-05T10:00:00.500Z","isDraft":false},{"number":94,"headRefName":"feature-nosha","headRefOid":"","reviewDecision":"APPROVED","createdAt":"2026-07-05T09:00:00Z","isDraft":false}]\n'
         else
           printf '[]\n'
         fi
@@ -1643,8 +1744,19 @@ case "$sub" in
   api)
     path="${2:-}"
     case "$path" in
+      graphql)
+        # ReadyForReviewEvent lookup (pr-list-ready FIFO-key refinement). Returns
+        # a real event only for PR 91; every other PR was opened non-draft (empty
+        # nodes -> the caller falls back to createdAt).
+        gqn=""
+        for a in "$@"; do case "$a" in n=*) gqn="${a#n=}" ;; esac; done
+        if [[ "$gqn" == "91" ]]; then
+          printf '{"data":{"repository":{"pullRequest":{"timelineItems":{"nodes":[{"__typename":"ReadyForReviewEvent","createdAt":"2026-07-05T12:00:00Z"}]}}}}}\n'
+        else
+          printf '{"data":{"repository":{"pullRequest":{"timelineItems":{"nodes":[]}}}}}\n'
+        fi ;;
       repos/acme/widget)
-        printf '{"allow_merge_commit":true,"allow_squash_merge":true,"allow_rebase_merge":false}\n' ;;
+        printf '{"default_branch":"main","allow_merge_commit":true,"allow_squash_merge":true,"allow_rebase_merge":false}\n' ;;
       */commits/*/status)
         sha="${path%/status}"; sha="${sha##*/commits/}"
         case "$sha" in
@@ -1725,6 +1837,25 @@ assert_eq HG29 "partial check-run page -> INPROGRESS (never false-green)" "INPRO
 out=$( cd "$GH_REPO_DIR" && PATH="$GHSHIM:$PATH" GH_SHIM_STATE="$GH_STATE" \
        bash "$HERE/ci_check.sh" --sha aaa111 --pr 42 --once 2>/dev/null )
 assert_eq HG30 "ci_check GREEN via GitHub backend" "VERDICT=GREEN" "$out"
+
+# HG31 — pr-list-ready FIFO-key refinement: PR 91 was opened as a draft at 08:00Z
+# and readied-for-review at 12:00Z. Its ready_ts MUST be the ReadyForReviewEvent
+# epoch (1783252800), NOT createdAt's 1783238400 — else a readied-from-draft PR
+# would jump the FIFO queue. This is what makes the refinement non-vacuous.
+out="$(ggh pr-list-ready --base rfrtest 2>/dev/null)"
+assert_eq HG31 "readied-from-draft PR keys off the ReadyForReviewEvent, not createdAt" \
+  "$(printf '1783252800\t91\tfeature-rfr\tfff91sha\tAPPROVED')" "$out"
+# HG32 — an empty queue is empty output + exit 0 (no rows, not an error).
+out="$(ggh pr-list-ready --base emptybase 2>/dev/null)"; rc=$?
+assert_eq HG32 "empty queue -> no output" "" "$out"
+assert_eq HG32 "empty queue -> exit 0" "0" "$rc"
+
+# HG33 — robustness: a fractional-second createdAt (PR 93) still converts to the
+# whole-second epoch (1783245600) rather than aborting the WHOLE enumeration, and
+# a PR with an EMPTY head sha (PR 94) is dropped. Output is exactly PR 93.
+out="$(ggh pr-list-ready --base hardening 2>/dev/null)"
+assert_eq HG33 "fractional createdAt converts + empty-head-sha PR dropped (one bad row != whole-queue abort)" \
+  "$(printf '1783245600\t93\tfeature-frac\tfff93sha\tAPPROVED')" "$out"
 
 echo "== host.sh backend detection (H50) =="
 

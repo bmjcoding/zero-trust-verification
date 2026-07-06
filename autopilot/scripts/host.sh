@@ -17,6 +17,9 @@
 # Subcommand surface (delegated verbatim to the backend):
 #   pr-open [--draft]  pr-ready  pr-state  pr-comment  pr-merge
 #   pr-approve  pr-decline  pr-merge-strategies  build-status
+#   pr-list-ready      -> enumerate the ready+approval-tagged merge queue as TSV
+#                         (the Merge Marshal's queue primitive; see
+#                          plugins/marshal/reference/host-contract.md)
 #
 # Plus one introspection subcommand, host-local (not delegated):
 #   backend            -> prints the detected backend id (BITBUCKET_DC | GITHUB)
@@ -42,7 +45,7 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 usage() {
   cat >&2 <<EOF
 usage: host.sh <subcommand> [args]
-subcommands: backend pr-open pr-ready pr-state pr-comment pr-approve pr-decline pr-merge pr-merge-strategies build-status
+subcommands: backend pr-open pr-ready pr-state pr-comment pr-approve pr-decline pr-merge pr-merge-strategies build-status pr-list-ready
 EOF
   exit 64
 }
@@ -87,7 +90,7 @@ case "$SUB" in
   backend)
     detect_backend; echo
     ;;
-  pr-open|pr-ready|pr-state|pr-comment|pr-approve|pr-decline|pr-merge|pr-merge-strategies|build-status)
+  pr-open|pr-ready|pr-state|pr-comment|pr-approve|pr-decline|pr-merge|pr-merge-strategies|build-status|pr-list-ready)
     BACKEND="$(detect_backend)"
     SCRIPT="$(backend_script "$BACKEND")"
     [[ -f "$SCRIPT" ]] || die_state "backend-missing" "backend script not found: $SCRIPT"

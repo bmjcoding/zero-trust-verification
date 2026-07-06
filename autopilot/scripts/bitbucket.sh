@@ -32,6 +32,21 @@
 #                          across backends); the tokens are the shared vocabulary.
 #   build-status      --sha <sha>
 #                       -> prints aggregated state: SUCCESSFUL | FAILED | INPROGRESS | UNKNOWN
+#   pr-list-ready     [--base <trunk>]
+#                       -> enumerate the merge queue as TSV, one ready PR per line:
+#                            <ready_ts>\t<pr_num>\t<src_branch>\t<head_sha>\t<approval>
+#                          ready_ts is INTEGER EPOCH SECONDS (createdDate is DC's
+#                          epoch MILLIS / 1000; DC's REST surface exposes no draft->
+#                          ready transition timestamp, so createdDate is the
+#                          contract's documented fallback). approval is APPROVED
+#                          (>=1 reviewer and ALL reviewers approved) | PENDING.
+#                          Selection: OPEN PRs whose toRef is the trunk; drafts
+#                          (native draft flag or the [DRAFT] title per DRAFT_MODE)
+#                          excluded. Paginates the DC list endpoint. Empty queue ->
+#                          no output, exit 0. Order unspecified (the Marshal sorts).
+#                          Trunk: --base > $AUTOPILOT_TRUNK > repo default-branch.
+#                          (The Merge Marshal's queue primitive — see
+#                           plugins/marshal/reference/host-contract.md.)
 #
 # Draft PRs (AV3-06 / AV3-15). AUTOPILOT_BITBUCKET_DRAFT_MODE selects the
 # mechanism:
@@ -82,7 +97,7 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 usage() {
   cat >&2 <<EOF
 usage: bitbucket.sh <subcommand> [args]
-subcommands: pr-open pr-ready pr-state pr-comment pr-approve pr-decline pr-merge pr-merge-strategies build-status
+subcommands: pr-open pr-ready pr-state pr-comment pr-approve pr-decline pr-merge pr-merge-strategies build-status pr-list-ready
 EOF
   exit 64
 }
@@ -742,6 +757,95 @@ cmd_build_status() {
   rm -f "$resp_f"
 }
 
+# resolve_trunk: the base branch the merge queue targets. Precedence:
+#   1. --base <b>  2. $AUTOPILOT_TRUNK  3. the repo's DC default-branch  4. "main".
+#   Symmetric with github.sh so the adapter is host-agnostic.
+resolve_trunk() {  # <explicit-base-or-empty> -> echoes the trunk branch name
+  local explicit="$1"
+  if [[ -n "$explicit" ]]; then printf '%s' "$explicit"; return 0; fi
+  if [[ -n "${AUTOPILOT_TRUNK:-}" ]]; then printf '%s' "$AUTOPILOT_TRUNK"; return 0; fi
+  local url resp_f db=""
+  url=$(build_url "/rest/api/1.0/projects/${PROJECT_KEY}/repos/${REPO_SLUG}/default-branch")
+  resp_f=$(mktemp)
+  bb_curl GET "$url" "$resp_f"
+  if (( HTTP_STATUS >= 200 && HTTP_STATUS < 300 )); then
+    db=$(jq -r '.displayId // empty' < "$resp_f" 2>/dev/null || true)
+  fi
+  rm -f "$resp_f"
+  [[ -n "$db" ]] || db="main"
+  printf '%s' "$db"
+}
+
+# pr-list-ready: enumerate the merge queue as the marshal-consumable 5-column TSV
+#   <ready_ts>\t<pr_num>\t<src_branch>\t<head_sha>\t<approval>
+# See the header block and plugins/marshal/reference/host-contract.md.
+cmd_pr_list_ready() {
+  require_jq
+  local base=""
+  while (( $# > 0 )); do
+    case "$1" in
+      --base) base="$2"; shift 2 ;;
+      *) die_state "arg-parse" "pr-list-ready: unknown arg $1" ;;
+    esac
+  done
+  local trunk
+  trunk="$(resolve_trunk "$base")"
+
+  # Paginate the DC pull-requests list (OPEN, all target branches — DC has no
+  # server-side toRef filter on this endpoint, so trunk selection is client-side).
+  # Every emitted field is non-empty and the ready_ts/approval are computed in jq,
+  # so the output is a clean 5-column TSV with no shifting.
+  local resp_f start=0 page=0 last nps
+  resp_f=$(mktemp)
+  while (( page < 1000 )); do   # hard page cap: a runaway-pagination backstop
+    page=$((page+1))
+    local url
+    url=$(build_url "/rest/api/1.0/projects/${PROJECT_KEY}/repos/${REPO_SLUG}/pull-requests?state=OPEN&order=NEWEST&withProperties=false&limit=100&start=${start}")
+    bb_curl GET "$url" "$resp_f"
+    if (( HTTP_STATUS < 200 || HTTP_STATUS >= 300 )); then
+      rm -f "$resp_f"
+      die_state "pr-list-ready-http-${HTTP_STATUS}" "pr-list-ready failed"
+    fi
+    jq -r --arg trunk "$trunk" --arg mode "$DRAFT_MODE" --arg pfx "$DRAFT_PREFIX" '
+      (.values // [])
+      | .[]
+      # target the trunk (toRef displayId, or its refs/heads/ id form)
+      | select( ((.toRef.displayId // "") == $trunk)
+                or ((.toRef.id // "") == ("refs/heads/" + $trunk)) )
+      # exclude drafts: native draft flag, or (title-prefix mode) the [DRAFT] title
+      | ((.draft // false) == true) as $ndraft
+      | (($mode == "title-prefix") and (((.title // "") | startswith($pfx)))) as $pdraft
+      | select(($ndraft or $pdraft) | not)
+      # a PR with no source head commit is not a merge candidate (drop it; an empty
+      # head_sha field would also shift the Marshal read under IFS=TAB)
+      | select((.fromRef.latestCommit // "") != "")
+      # approval: >=1 reviewer AND all reviewers approved (all-of-empty is true, so
+      # the count guard keeps a reviewer-less PR PENDING)
+      | ( ((.reviewers // []) | length) as $rn
+          | (if $rn > 0 and ((.reviewers // []) | all(.approved == true))
+             then "APPROVED" else "PENDING" end) ) as $approval
+      | [ ((.createdDate // 0) / 1000 | floor),
+          .id,
+          (.fromRef.displayId // ((.fromRef.id // "") | ltrimstr("refs/heads/"))),
+          .fromRef.latestCommit,
+          $approval ]
+      | @tsv
+    ' < "$resp_f" 2>/dev/null || { rm -f "$resp_f"; die_state "pr-list-ready-parse" "cannot parse DC pull-request list"; }
+
+    # DC pagination cursor. jq's `//` treats false like null (`false // true` ==
+    # true), so isLastPage MUST be read via has()+else — `.isLastPage // true` would
+    # misread a genuine `false` as `true` and stop after page 1, dropping the OLDEST
+    # (order=NEWEST) PRs, i.e. exactly the FIFO head the Marshal merges first.
+    last=$(jq -r 'if has("isLastPage") then .isLastPage else true end' < "$resp_f" 2>/dev/null || echo true)
+    [[ "$last" == "true" ]] && break
+    nps=$(jq -r '.nextPageStart // empty' < "$resp_f" 2>/dev/null || echo "")
+    # No advancing cursor -> stop (never loop forever on a malformed page).
+    [[ -n "$nps" && "$nps" != "$start" ]] || break
+    start="$nps"
+  done
+  rm -f "$resp_f"
+}
+
 # --- Dispatch -----------------------------------------------------------------
 
 (( $# >= 1 )) || usage
@@ -756,5 +860,6 @@ case "$SUB" in
   pr-merge)             cmd_pr_merge "$@" ;;
   pr-merge-strategies)  cmd_pr_merge_strategies "$@" ;;
   build-status)         cmd_build_status "$@" ;;
+  pr-list-ready)        cmd_pr_list_ready "$@" ;;
   *) usage ;;
 esac
