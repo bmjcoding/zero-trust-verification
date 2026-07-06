@@ -1,5 +1,13 @@
 # Gap Closure Spec — codebase-health 1.2.0 → 1.3.0
 
+> **Relocated 2026-07-06** from the former `codebase-health/` wrapper into
+> `docs/specs/` when the four plugins were normalized under `plugins/`. This is a
+> frozen build record; intra-repo paths below are written relative to the **old**
+> wrapper root and map to the current layout as: `scripts/self_test.sh` /
+> `make_blind_corpus.sh` and `test-fixtures/…` → `tests/codebase-health/…`;
+> `docs/SPEC_1.4.0.md` → `docs/specs/codebase-health-spec-1.4.0.md`; the plugin
+> itself → `plugins/codebase-health/`.
+
 Register of every gap identified in the 2026-07-02 plugin audit. Each item has an
 acceptance criterion that a reviewer can check without trusting the author.
 Status is filled in only by verification (self-test output or independent review),
