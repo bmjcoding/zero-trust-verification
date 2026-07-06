@@ -10,6 +10,10 @@
 #   V1 — the Verification-Manifest JSON Schema. There is ONE canonical copy
 #        (schema/verification-manifest/v1.schema.json). Any vendored copy shipped
 #        inside a plugin (for standalone install) must be byte-identical to it.
+#        SCOPED to */verification-manifest/v1.schema.json: other schemas that reuse
+#        the leaf name v1.schema.json (e.g. org-memory's record schema under
+#        schema/org-memory/) are DIFFERENT single-source schemas, not manifest-schema
+#        copies, and are pinned by their own rule (ADR 0019 / lint V8), not V1.
 #   V2 — the `## Behavior coverage` PR-body format. One canonical definition
 #        (docs/specs/behavior-coverage-format.md) that the autopilot AV3-05
 #        producer and the codebase-health CH-06 consumer both use.
@@ -22,9 +26,14 @@
 #   V5 — the ADR 0002 escalation-criterion block, vendored VERBATIM into every
 #        tier's prompt (autopilot planner/implementer, spec-gen SKILL, audit
 #        severity-rubric); byte-identical AND present in all three tiers.
-#   V6 — the product marketplace (ADR 0001/0011): ONE root .claude-plugin/
-#        marketplace.json is the single entry point registering all four plugins,
+#   V6 — the product marketplace (ADR 0001/0011/0019): ONE root .claude-plugin/
+#        marketplace.json is the single entry point registering all five plugins,
 #        each with a source dir carrying its own .claude-plugin/plugin.json.
+#   V8 — OWM vendoring lint (ADR 0019, register OWM-10): org-memory's manifest-parse
+#        path uses the CANONICAL validate_manifest toolchain (never a forked parser),
+#        and its format-recognizer references name the single-source docs; if the
+#        OWM-09 enumeration path is vendored, its copy is byte-identity-pinned.
+#        (V7 is the parallel mutation-testing stream's rule; V8 does not collide.)
 #   V7 — the mutation adapter map (ADR 0016): the vendored
 #        <!-- vendored:mutation-adapter-map --> doc block AND the executable
 #        resolver mutation_adapter.sh are byte-identical across the autopilot D6.5
@@ -65,7 +74,7 @@ else
       violation V1 "vendored schema copy DRIFTED from canonical: ${c#$ROOT/} (ADR 0001 — vendor byte-for-byte from schema/verification-manifest/v1.schema.json)"
       drift=$((drift+1))
     fi
-  done < <(find "$ROOT" -path "$ROOT/.git" -prune -o -path "$ROOT/.claude" -prune -o -name 'v1.schema.json' -print 2>/dev/null)
+  done < <(find "$ROOT" -path "$ROOT/.git" -prune -o -path "$ROOT/.claude" -prune -o -path '*/verification-manifest/v1.schema.json' -print 2>/dev/null)
   [ "$copies" -eq 0 ] && ok V1 "single canonical manifest schema; no vendored copies to drift (ADR 0001)"
 fi
 
@@ -237,12 +246,12 @@ while IFS= read -r f; do
 done < <(find "$ROOT" -path "$ROOT/.git" -prune -o -path "$ROOT/.claude" -prune -o -name node_modules -prune -o -name '*.md' -print 2>/dev/null | sort)
 [ "$v5_bad" -eq 0 ] && ok V5 "escalation-criterion block present + byte-identical across all three tiers' pinned prompts (ADR 0002)"
 
-# ── V6: one product-entry marketplace registering EXACTLY the four installable
-#        plugins (ADR 0001 / 0011). The repo-root .claude-plugin/marketplace.json
-#        is the single entry point; the registered set must be exactly the four,
+# ── V6: one product-entry marketplace registering EXACTLY the five installable
+#        plugins (ADR 0001 / 0011 / 0019). The repo-root .claude-plugin/marketplace.json
+#        is the single entry point; the registered set must be exactly the five,
 #        each NAME paired with its OWN source dir, and each source dir must carry a
 #        .claude-plugin/plugin.json whose name matches. Structural, per-object
-#        validation via python3 (catches a name<->source swap or a rogue 5th
+#        validation via python3 (catches a name<->source swap or a rogue 6th
 #        plugin that independent greps miss); a reduced grep check if python3 is
 #        absent. Formatting-insensitive.
 MKT="$ROOT/.claude-plugin/marketplace.json"
@@ -268,6 +277,7 @@ expected = {
     "autopilot": "./plugins/autopilot",
     "codebase-health": "./plugins/codebase-health",
     "marshal": "./plugins/marshal",
+    "org-memory": "./plugins/org-memory",
 }
 try:
     d = json.load(open(mkt))
@@ -279,7 +289,7 @@ for p in (d.get("plugins") or []):
 for n in sorted(set(expected) - set(got)):
     print("plugin '%s' not registered in root marketplace" % n)
 for n in sorted(set(got) - set(expected)):
-    print("unexpected plugin '%s' registered (source=%s) - the product is exactly four" % (n, got[n]))
+    print("unexpected plugin '%s' registered (source=%s) - the product is exactly five" % (n, got[n]))
 for n, src in expected.items():
     if n in got and got[n] != src:
         print("plugin '%s' registered source '%s' != expected '%s' (name<->source mismatch)" % (n, got[n], src))
@@ -309,7 +319,7 @@ PYV6
 $v6_out
 V6OUT
     else
-      ok V6 "root marketplace registers exactly the four plugins; name<->source pairing + each plugin.json name verified (structural)"
+      ok V6 "root marketplace registers exactly the five plugins; name<->source pairing + each plugin.json name verified (structural)"
     fi
   else
     # reduced fallback (python3 absent): name+source presence + installability only
@@ -325,11 +335,67 @@ spec-gen|./plugins/spec-gen
 autopilot|./plugins/autopilot
 codebase-health|./plugins/codebase-health
 marshal|./plugins/marshal
+org-memory|./plugins/org-memory
 V6PLUGINS
-    [ "$v6_bad" -eq 0 ] && ok V6 "four plugins registered + installable (reduced grep check; python3 absent)"
+    [ "$v6_bad" -eq 0 ] && ok V6 "five plugins registered + installable (reduced grep check; python3 absent)"
   fi
 fi
 
+# ── V8: OWM vendoring lint (ADR 0019, register OWM-10). org-memory depends on formats
+#        owned elsewhere (the manifest JSON Schema + the validate_manifest toolchain).
+#        This rule asserts OWM's manifest-parse path uses the CANONICAL validator —
+#        never a forked parser — so a manifest-format change can never leave OWM
+#        silently parsing the old shape. Extends the existing lint; no parallel infra.
+#        NUMBERED V8, not V7: V7 is the parallel mutation-testing stream's rule. This
+#        rule must NOT renumber or collide with it.
+OWM_DIR="$ROOT/plugins/org-memory"
+OWM_ENGINE="$OWM_DIR/scripts/owm.py"
+if [ ! -d "$OWM_DIR" ]; then
+  ok V8 "org-memory plugin not present; nothing to pin (ADR 0019)"
+elif [ ! -f "$OWM_ENGINE" ]; then
+  violation V8 "org-memory present but its engine scripts/owm.py is missing (ADR 0019)"
+else
+  v8_bad=0
+  # (a) manifest parsing is ROUTED THROUGH the canonical validator (single source).
+  if grep -q 'import validate_manifest' "$OWM_ENGINE"; then
+    ok V8 "OWM manifest-parse path routes through the canonical validate_manifest (never a fork)"
+  else
+    violation V8 "OWM engine does not import validate_manifest — manifest parsing is not routed through the canonical toolchain (ADR 0019/0014)"; v8_bad=1
+  fi
+  # (b) FORBID a forked YAML/manifest parser inside the OWM engine (the fork signature).
+  if grep -Eq '^[[:space:]]*(import[[:space:]]+yaml|from[[:space:]]+yaml|import[[:space:]]+ruamel|from[[:space:]]+ruamel)' "$OWM_ENGINE"; then
+    violation V8 "OWM engine imports a YAML parser directly — a forked manifest parser (ADR 0019 — reuse validate_manifest, never fork)"; v8_bad=1
+  else
+    ok V8 "OWM engine forks no YAML/manifest parser (delegates to validate_manifest)"
+  fi
+  # (c) the vendored validator + manifest schema are byte-identical to the canonical.
+  for rel in scripts/validate_manifest.py scripts/validate_manifest.sh \
+             schema/verification-manifest/v1.schema.json; do
+    canon="$ROOT/$rel"; vend="$OWM_DIR/$rel"
+    if [ ! -f "$vend" ]; then
+      violation V8 "OWM is missing its vendored $rel (needed to parse manifests standalone; ADR 0011)"; v8_bad=1
+    elif cmp -s "$canon" "$vend"; then
+      ok V8 "OWM vendored $rel byte-identical to canonical"
+    else
+      violation V8 "OWM vendored $rel DRIFTED from canonical (ADR 0001/0019 — vendor byte-for-byte)"; v8_bad=1
+    fi
+  done
+  # (e) OWM-09 enumeration: byte-pin ONLY if it is vendored from a canonical autopilot
+  #     copy. OWM takes NO runtime dependency on the autopilot plugin (ADR 0011), so an
+  #     OWM-LOCAL enumeration path is legitimate and needs no pin.
+  owm09="$OWM_DIR/scripts/host_repo_list.sh"
+  ap09="$ROOT/plugins/autopilot/scripts/host_repo_list.sh"
+  if [ -f "$owm09" ] && [ -f "$ap09" ]; then
+    if cmp -s "$ap09" "$owm09"; then
+      ok V8 "OWM-09 enumeration vendored byte-identical to the autopilot canonical (ADR 0001)"
+    else
+      violation V8 "OWM-09 enumeration copy DRIFTED from the autopilot canonical (ADR 0001)"; v8_bad=1
+    fi
+  elif [ -f "$owm09" ]; then
+    ok V8 "OWM-09 enumeration is OWM-local (not vendored from autopilot); no byte-pin needed (ADR 0011)"
+  fi
+  [ "$v8_bad" -eq 0 ] && ok V8 "OWM recognizers pinned to the canonical formats (ADR 0019 / register OWM-10)"
+fi
 # ── V7: the mutation adapter map (ADR 0016 / MT-09/MT-10) — the ONE map, pinned
 #        so the autopilot D6.5 PRODUCER and the codebase-health PR-Gate CONSUMER
 #        cannot drift. Four guarantees:
