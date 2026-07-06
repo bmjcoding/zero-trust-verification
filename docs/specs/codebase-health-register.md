@@ -40,8 +40,11 @@ harness lives **out of the installable plugin**, at `tests/codebase-health/`
 
 **Dev deps:** `jscpd` is **required** for `self_test.sh` (`npm install -g jscpd`;
 ND1's clone-pair is scored off real jscpd output — a shim-only pass is forbidden);
-`ruff` and `pytest`/`jest`+`node` are optional (their absence turns specific
-assertions into loud `[skip]`s, never a silent pass).
+`ruff` is optional but **auto-sourced through `uv`** (`uvx ruff`) when not on
+PATH (ADR 0015), so its 3 C901 checks run by default and only `[skip]` when
+neither PATH nor uv can supply it (offline / cold cache); `pytest`/`jest`+`node`
+are optional (their absence turns specific assertions into loud `[skip]`s, never
+a silent pass).
 
 **The two gates** (any change to fixtures or detectors, in order): (1) **red-first**
 — land the fixture + assertion first, run `self_test.sh` twice, confirm the new
