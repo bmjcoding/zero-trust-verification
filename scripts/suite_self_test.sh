@@ -6,9 +6,10 @@
 #   1. cross-plugin vendoring lints (scripts/lint_consistency.sh) — GREEN run
 #   2. vendoring-lint RED-tests — plant a drift per byte-identity/integrity rule
 #      (V1 schema, V3 validator + its exemption, V4 claim-overlap, V5 escalation,
-#      V6 marketplace incl. name<->source swap and a rogue plugin, V8 OWM manifest-
-#      parse fork) and assert the lint catches it, plus a few false-POSITIVE guards —
-#      so no vendor lint is vacuous and none reds on a benign reformat/prose mention
+#      V6 marketplace incl. name<->source swap and a rogue plugin, V7 mutation
+#      adapter map/resolver/producer+consumer tokens, V8 OWM manifest-parse fork)
+#      and assert the lint catches it, plus a few false-POSITIVE guards — so no
+#      vendor lint is vacuous and none reds on a benign reformat/prose mention
 #   3. the root manifest-validator self-test (scripts/self_test.sh)
 #   4. every plugin's own self-test: autopilot, spec-gen, codebase-health, marshal,
 #      org-memory
@@ -127,6 +128,21 @@ seed_plugins() {
   for src in plugins/spec-gen plugins/autopilot plugins/codebase-health plugins/marshal plugins/org-memory; do
     mkdir -p "$d/$src/.claude-plugin"; cp "$ROOT/$src/.claude-plugin/plugin.json" "$d/$src/.claude-plugin/"
   done
+}
+# seed the V7 mutation-adapter-map artifacts (ADR 0016): the two vendored doc-block
+# copies + the two byte-identical resolver copies + the producer/consumer scripts.
+seed_mut() {
+  local d="$1"
+  mkdir -p "$d/plugins/codebase-health/skills/cleanup-audit/references" \
+           "$d/plugins/autopilot/references" \
+           "$d/plugins/codebase-health/skills/cleanup-audit/scripts" \
+           "$d/plugins/autopilot/scripts"
+  cp "$ROOT/plugins/codebase-health/skills/cleanup-audit/references/cross-language-tooling.md" "$d/plugins/codebase-health/skills/cleanup-audit/references/"
+  cp "$ROOT/plugins/autopilot/references/mutation-adapters.md"                                  "$d/plugins/autopilot/references/"
+  cp "$ROOT/plugins/codebase-health/skills/cleanup-audit/scripts/mutation_adapter.sh"           "$d/plugins/codebase-health/skills/cleanup-audit/scripts/"
+  cp "$ROOT/plugins/autopilot/scripts/mutation_adapter.sh"                                       "$d/plugins/autopilot/scripts/"
+  cp "$ROOT/plugins/autopilot/scripts/mutation_gate.sh"                                          "$d/plugins/autopilot/scripts/"
+  cp "$ROOT/plugins/codebase-health/skills/cleanup-audit/scripts/check_mutation_survivors.sh"   "$d/plugins/codebase-health/skills/cleanup-audit/scripts/"
 }
 
 # seed what lint V8 (OWM vendoring) needs into a sandbox: the canonical validator +
@@ -250,6 +266,36 @@ dr="$SANDBOX/v8p"; seed_owm "$dr"
 printf '\n# benign reword: manifest parsing still routes through the canonical validate_manifest toolchain.\n' \
   >> "$dr/plugins/org-memory/scripts/owm.py"
 expect_no_fail V8 "$dr" "benign comment reword that still reuses validate_manifest"
+# V7 (ADR 0016 / MT-09) — the mutation adapter map must not drift between the
+# autopilot D6.5 producer and the codebase-health PR-Gate consumer. Plant a drift
+# per guarantee (doc block, resolver script, sole-source, producer/consumer token)
+# and assert V7 fires; a benign out-of-block edit must stay green.
+dr="$SANDBOX/v7"; seed_mut "$dr"
+sed 's#| StrykerJS | TS/JS |#| StrykerJS | DRIFTED |#' "$dr/plugins/autopilot/references/mutation-adapters.md" > "$dr/m.tmp" \
+  && mv "$dr/m.tmp" "$dr/plugins/autopilot/references/mutation-adapters.md"
+expect_fail V7 "$dr" "drifted vendored mutation-adapter-map doc block"
+
+dr="$SANDBOX/v7s"; seed_mut "$dr"
+printf '\n# drift\n' >> "$dr/plugins/autopilot/scripts/mutation_adapter.sh"
+expect_fail V7 "$dr" "drifted vendored mutation_adapter.sh resolver"
+
+dr="$SANDBOX/v7c"; seed_mut "$dr"
+mkdir -p "$dr/plugins/marshal/scripts"; cp "$ROOT/plugins/autopilot/scripts/mutation_adapter.sh" "$dr/plugins/marshal/scripts/"
+expect_fail V7 "$dr" "a THIRD mutation_adapter.sh copy (second map, MT-10)"
+
+dr="$SANDBOX/v7t"; seed_mut "$dr"
+sed 's/BLOCKED: vacuous-test/BLOCKED: renamed-token/g' "$dr/plugins/autopilot/scripts/mutation_gate.sh" > "$dr/g.tmp" \
+  && mv "$dr/g.tmp" "$dr/plugins/autopilot/scripts/mutation_gate.sh"
+expect_fail V7 "$dr" "drifted [BLOCKED: vacuous-test] producer token"
+
+dr="$SANDBOX/v7u"; seed_mut "$dr"
+sed 's/mutant-on-core-path/mutant-elsewhere/g' "$dr/plugins/codebase-health/skills/cleanup-audit/scripts/check_mutation_survivors.sh" > "$dr/c.tmp" \
+  && mv "$dr/c.tmp" "$dr/plugins/codebase-health/skills/cleanup-audit/scripts/check_mutation_survivors.sh"
+expect_fail V7 "$dr" "drifted mutant-on-core-path consumer token"
+
+dr="$SANDBOX/v7p"; seed_mut "$dr"
+printf '\nSome extra prose AFTER the vendored block.\n' >> "$dr/plugins/autopilot/references/mutation-adapters.md"
+expect_no_fail V7 "$dr" "prose appended outside the vendored map markers"
 
 if [ "$RED_FAIL" -eq 0 ]; then
   echo "  -> lint-red-tests PASS (every vendor lint caught its planted drift; no false positives)"; record "lint-red-tests" PASS
