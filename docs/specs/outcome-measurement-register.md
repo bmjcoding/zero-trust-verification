@@ -18,7 +18,7 @@
 >                 journey-walker's judgment as [det] (adversarial finding H1).
 > Sources (normative): CONTEXT.md (Vital, Journey, Merge Marshal = 'wiring not a
 > checker; every decision a timestamp/sha/build-state/file-surface intersection');
-> ADR 0016 (this design); ADR 0002 (escalation), 0003 (no fifth checker; the
+> ADR 0023 (this design); ADR 0002 (escalation), 0003 (no fifth checker; the
 > scheduled ambient audit is DESIGN INTENT, not yet wired), 0004 (report-only,
 > deterministic-evidence-only gating), 0006 (OTEL profiles; ALERT SEAM LIVES OUTSIDE
 > THE REPO — 'unknown' is the honest grade), 0010/0011 (Marshal = single-fire cron
@@ -28,15 +28,15 @@
 > Machinery REUSED (verified present in-tree, not assumed): scripts/host.sh subcommand
 > set INCLUDING pr-list-ready (host.sh:93), autopilot mock host (T01-class), audit
 > journeys.json (agent-written by journey-walker) + state.json append-only degrade-
-> never-act pattern, scripts/lint_consistency.sh V1-V6 (V7 is the next free rule),
+> never-act pattern, scripts/lint_consistency.sh V1-V10 (V11 is the next free rule),
 > scripts/suite_self_test.sh component_skips skip-honesty, validate_manifest.py
 > EXIT_COMPLETE/INCOMPLETE/SCHEMA_INVALID/UNSUPPORTED = 0/3/4/5, the Marshal's
 > operator-wired single-fire cron entry (plugins/marshal, README §cron entry).
 >
 > This register delivers a NEW capability as MODES of two existing plugins plus one
-> shared store + renderer. NOT greenfield, NOT a fifth plugin (ADR 0016 §3). Every
+> shared store + renderer. NOT greenfield, NOT a fifth plugin (ADR 0023). Every
 > item preserves report-only, never-blocking, zero-hook, opens-no-PR, files-no-finding
-> (ADR 0004/0016 §4).
+> (ADR 0004/0023).
 >
 > ===== WHAT CHANGED FROM r1 (DRAFT), and WHY (adversarial hardening) =====
 >  H1 HONESTY: journeys.json is written by the journey-walker AGENT (agents/journey-
@@ -82,7 +82,7 @@
 
 ## 0. Position and posture (read first)
 
-Outcome measurement is **wiring, not a checker** (ADR 0016, passing ADR 0003's test as
+Outcome measurement is **wiring, not a checker** (ADR 0023, passing ADR 0003's test as
 the Marshal did in ADR 0011). It forms NO quality opinion of its own. But — sharpened
 from r1 — its numbers are of TWO honesty classes, and the register never conflates
 them:
@@ -112,7 +112,7 @@ idempotent, schema-versioned; never touch target repo or diff); broken-state-deg
 to-LESS-action (audit invariant 4); adoption posture preserved (measurement mode grants
 nothing; audit side stays read-only).
 
-**The load-bearing constraint (ADR 0016 §2):** the BEFORE baseline MUST be captured at
+**The load-bearing constraint (ADR 0023):** the BEFORE baseline MUST be captured at
 the adoption event or the before/after is lost. Because deploy/merge cadence, post-merge
 build-failure rate, and lead time are reconstructable from trailing git + host history,
 the baseline is captured RETROACTIVELY at adoption (not by a forward wait). NOTE the
@@ -129,14 +129,14 @@ OM-04 (emission share, Class-A, audit) parallelize after OM-02. OM-05 (defect-es
 and OM-06 (incident/MTTR AND alert-seam/paged, all external per H2) sit behind the
 external-source adapter and degrade to annotated. OM-07 (renderer + delta/significance
 + honesty-class labeling) consumes the store. OM-08 (scheduled digest) rides the
-Marshal's EXISTING cron entry (H3). OM-09 (V7 lint + self_test growth) locks every
+Marshal's EXISTING cron entry (H3). OM-09 (V11 lint + self_test growth) locks every
 [det] above and asserts the [audit-run]/[drain] tags are NOT dressed as [det].
 
 ## Non-goals (explicit)
 
 - **No gating, no ratchet, no hook, ever.** Not even soak-then-block. Report-only is
   permanent (ADR 0004).
-- **No new plugin.** Modes of Marshal + audit (ADR 0016 §3). No fifth marketplace
+- **No new plugin.** Modes of Marshal + audit (ADR 0023). No fifth marketplace
   entry, no fifth self-test root.
 - **No autonomous action of ANY kind.** Outcome-measurement opens NO PR, files NO
   finding, triggers NO drain or remediation, requests NO fresh audit. It reads history
@@ -167,7 +167,7 @@ Marshal's EXISTING cron entry (H3). OM-09 (V7 lint + self_test growth) locks eve
 
 ## A. Shared store + baseline (the substrate)
 
-### OM-01 — Outcome store schema + degrade table [ADR 0016 §3; mirrors state.json]
+### OM-01 — Outcome store schema + degrade table [ADR 0023; mirrors state.json]
 A new `outcome/outcomes.json`, schema_version 1, append-only `runs[]`, plus a single
 frozen `baseline` object. Optional fields do not break the schema (state.json rule: an
 absent metric = 'no comparable baseline', never read as 0, never a fabricated
@@ -195,7 +195,7 @@ structural source of truth, validated by the SAME jsonschema toolchain as the ma
 - [det] a write against a corrupt store exits non-zero and leaves the file byte-identical
   (byte-compare before/after).
 
-### OM-02 — Baseline capture at adoption, frozen, refuse-second [ADR 0016 §2 — LOAD-BEARING]
+### OM-02 — Baseline capture at adoption, frozen, refuse-second [ADR 0023 — LOAD-BEARING]
 `scripts/outcome_baseline.sh capture` computes the BEFORE snapshot. The four DORA-family
 fields (Class-D) are reconstructed retroactively from `git log` + `host.sh` over a
 configurable trailing window (default 8 weeks, OM-07 significance rule). The emission-
@@ -348,21 +348,21 @@ creates a status check.
   created.
 - [drain] a scheduled fire on the live repo produces a digest with real numbers.
 
-### OM-09 — V7 vendoring lint + self_test growth (lock every [det]; guard the [audit-run] tags) [ADR 0001 pattern]
-Add rule **V7** to `scripts/lint_consistency.sh` (V1-V6 exist; V7 is next free): the
+### OM-09 — V11 vendoring lint + self_test growth (lock every [det]; guard the [audit-run] tags) [ADR 0001 pattern]
+Add rule **V11** to `scripts/lint_consistency.sh` (V1-V10 exist; V11 is next free): the
 outcome-store schema (`schema/outcome/v1.schema.json`) and the renderer contract are the
 single canonical copy; any vendored copy inside Marshal or audit (standalone install) is
 byte-identical — the V1/V3 pattern (the two producers must not drift on the store
-contract). Grow `suite_self_test.sh`: a GREEN V7 run, a RED-drift plant (mutate a
-vendored copy, assert V7 catches it), a false-positive guard (benign reformat does not
+contract). Grow `suite_self_test.sh`: a GREEN V11 run, a RED-drift plant (mutate a
+vendored copy, assert V11 catches it), a false-positive guard (benign reformat does not
 red), and skip-honesty via the existing `component_skips` detector (an outcome step that
 cannot reach the host is PASS-WITH-SKIPS, not a false green). **New in hardening:** a
 self-test assertion that the emission-share acceptance is registered as [audit-run] (or
 its fixture-arithmetic slice as [det]) and NOWHERE as a whole-metric [det] — a
 machine-checkable guard against re-laundering H1 in a future edit.
 **Acceptance:**
-- [det] V7 GREEN against the real tree; V7 RED on a byte-drifted vendored store-schema
-  copy; V7 does not red on a whitespace-only reformat (has-teeth + not-vacuous, mirrors
+- [det] V11 GREEN against the real tree; V11 RED on a byte-drifted vendored store-schema
+  copy; V11 does not red on a whitespace-only reformat (has-teeth + not-vacuous, mirrors
   V1 self-test).
 - [det] `suite_self_test.sh` records the new producer assertions and, when the host mock
   is absent, records them PASS(skips) not PASS (skip-honesty via component_skips).

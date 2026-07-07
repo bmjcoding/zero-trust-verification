@@ -8,12 +8,15 @@
 #      (V1 schema, V3 validator + its exemption, V4 claim-overlap, V5 escalation,
 #      V6 marketplace incl. name<->source swap and a rogue plugin, V7 mutation
 #      adapter map/resolver/producer+consumer tokens, V8 OWM manifest-parse fork,
-#      V9 triage telemetry-contract byte-identity)
+#      V9 triage telemetry-contract byte-identity, V10 remediation tables,
+#      V11 outcome-store schema/contract byte-identity + the H1 anti-laundering guard)
 #      and assert the lint catches it, plus a few false-POSITIVE guards — so no
 #      vendor lint is vacuous and none reds on a benign reformat/prose mention
 #   3. the root manifest-validator self-test (scripts/self_test.sh)
 #   4. every plugin's own self-test: autopilot, spec-gen, codebase-health, marshal,
 #      org-memory, triage
+#   5. the outcome-measurement layer self-test (scripts/outcome_self_test.sh,
+#      ADR 0023; OM-01..OM-08), skip-honest on the Marshal MOCK host
 #
 # HONESTY: a plugin self-test can `exit 0` while SKIPPING guarded sections when an
 # optional dep is absent (autopilot's mock server, marshal's uv/jq loop backends,
@@ -174,6 +177,20 @@ seed_rl() {
   mkdir -p "$d/plugins" "$d/docs/specs"
   cp -R "$ROOT/plugins/codebase-health" "$d/plugins/codebase-health"
   cp "$ROOT/docs/specs/codebase-health-spec-1.4.0.md" "$d/docs/specs/"
+}
+
+# seed what lint V11 (outcome-store vendoring) needs: the canonical outcome schema +
+# a vendored copy, the canonical outcome-store-contract doc + a vendored block copy,
+# and the register (for the H1 anti-laundering guard). ADR 0023 / register OM-09.
+seed_om() {
+  local d="$1"
+  mkdir -p "$d/schema/outcome" "$d/plugins/marshal/schema/outcome" \
+           "$d/docs/specs" "$d/plugins/marshal/reference"
+  cp "$ROOT/schema/outcome/v1.schema.json" "$d/schema/outcome/"
+  cp "$ROOT/schema/outcome/v1.schema.json" "$d/plugins/marshal/schema/outcome/"
+  cp "$ROOT/docs/specs/outcome-store-contract.md" "$d/docs/specs/"
+  cp "$ROOT/plugins/marshal/reference/outcome-measurement.md" "$d/plugins/marshal/reference/"
+  cp "$ROOT/docs/specs/outcome-measurement-register.md" "$d/docs/specs/"
 }
 
 # V1 — a vendored manifest schema copy drifts from canonical.
@@ -383,6 +400,42 @@ dr="$SANDBOX/v10p"; seed_rl "$dr"
 printf '# benign trailing note: provenance table unchanged\n' >> "$dr/$RL_PROV_REL"
 expect_no_fail V10 "$dr" "benign trailing comment appended to slug_provenance.tsv"
 
+# V11 (ADR 0023 / register OM-09) — the outcome-store schema + contract block must
+# not drift between the two producers, and the register must not launder an
+# agent-graded number as [det]. Plant a drift per guarantee and assert V11 fires; two
+# false-positive guards (identical reformat, prose outside the block) stay green.
+# Numbered V11 (V7 mutation / V8 OWM / V9 triage / V10 remediation are taken).
+OM_SCHEMA_REL="plugins/marshal/schema/outcome/v1.schema.json"
+OM_BLOCK_REL="plugins/marshal/reference/outcome-measurement.md"
+OM_REG_REL="docs/specs/outcome-measurement-register.md"
+
+# V11-a — a vendored outcome-store schema copy drifts from the canonical.
+dr="$SANDBOX/v11a"; seed_om "$dr"; printf '\n' >> "$dr/$OM_SCHEMA_REL"
+expect_fail V11 "$dr" "drifted vendored outcome-store schema copy"
+
+# V11-b — the vendored outcome-store-contract block drifts from the canonical.
+dr="$SANDBOX/v11b"; seed_om "$dr"
+sed 's/append-only/APPEND-ONLY-DRIFTED/' "$dr/$OM_BLOCK_REL" > "$dr/om.tmp" && mv "$dr/om.tmp" "$dr/$OM_BLOCK_REL"
+expect_fail V11 "$dr" "drifted vendored outcome-store-contract block"
+
+# V11-c — the H1 anti-laundering guard: a [det] acceptance claims a real-repo
+# agent-graded number in the register.
+dr="$SANDBOX/v11c"; seed_om "$dr"
+printf -- '- [det] on a REAL repo the emission share (agent-graded input) is 0.9\n' >> "$dr/$OM_REG_REL"
+expect_fail V11 "$dr" "register [det] acceptance laundering a real-repo agent-graded number"
+
+# V11 false-positive guard #1 — reformatting the canonical AND the vendored copy
+# IDENTICALLY (both get the same trailing newline) stays green: the rule keys on
+# DRIFT, not on formatting.
+dr="$SANDBOX/v11p1"; seed_om "$dr"
+printf '\n' >> "$dr/schema/outcome/v1.schema.json"; printf '\n' >> "$dr/$OM_SCHEMA_REL"
+expect_no_fail V11 "$dr" "canonical + vendored schema reformatted identically (no drift)"
+
+# V11 false-positive guard #2 — prose appended OUTSIDE the contract-block markers.
+dr="$SANDBOX/v11p2"; seed_om "$dr"
+printf '\nSome extra prose after the vendored outcome-store-contract block.\n' >> "$dr/$OM_BLOCK_REL"
+expect_no_fail V11 "$dr" "prose appended outside the outcome-store-contract markers"
+
 if [ "$RED_FAIL" -eq 0 ]; then
   echo "  -> lint-red-tests PASS (every vendor lint caught its planted drift; no false positives)"; record "lint-red-tests" PASS
 else
@@ -403,6 +456,14 @@ run_ok "codebase-health" bash "$ROOT/tests/codebase-health/self_test.sh"
 run_ok "marshal"         bash "$ROOT/plugins/marshal/scripts/self_test.sh"
 run_ok "org-memory"      bash "$ROOT/plugins/org-memory/scripts/self_test.sh"
 run_ok "triage"          bash "$ROOT/plugins/triage/scripts/self_test.sh"
+
+# ==============================================================================
+# 5. Outcome-measurement layer self-test (ADR 0023; register OM-01..OM-08). Its
+#    host-dependent DORA/digest assertions drive the Marshal MOCK host and SKIP with
+#    a loud notice when uv is absent (skip-honesty via component_skips) — never a
+#    false green.
+# ==============================================================================
+run_ok "outcome-self-test" bash "$ROOT/scripts/outcome_self_test.sh"
 
 # ==============================================================================
 # Summary
