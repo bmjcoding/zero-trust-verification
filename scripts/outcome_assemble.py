@@ -27,13 +27,14 @@ def _flag(argv, name, default=None):
 def main(argv):
     dora_file = _flag(argv, "--dora-file")
     emission_file = _flag(argv, "--emission-file")
+    metrics_file = _flag(argv, "--metrics-file")
     captured_at = _flag(argv, "--captured-at")
     git_sha = _flag(argv, "--git-sha", "")
     kind = _flag(argv, "--kind", "run")
 
-    if not captured_at or (not dora_file and not emission_file):
+    if not captured_at or (not dora_file and not emission_file and not metrics_file):
         sys.stderr.write("outcome_assemble: --captured-at and at least one of "
-                         "--dora-file / --emission-file required\n")
+                         "--dora-file / --emission-file / --metrics-file required\n")
         return 64
     dora = {}
     if dora_file:
@@ -44,13 +45,16 @@ def main(argv):
             return 64
 
     metrics = list(dora.get("metrics") or [])
-    if emission_file:
+    for extra in (emission_file, metrics_file):
+        if not extra:
+            continue
         try:
-            em = json.loads(Path(emission_file).read_text(encoding="utf-8"))
-            if em.get("ok") and em.get("metrics"):
-                metrics.extend(em["metrics"])
+            blob = json.loads(Path(extra).read_text(encoding="utf-8"))
+            # accept {ok, metrics:[...]} (producers) or a bare {metrics:[...]}.
+            if blob.get("metrics") and (blob.get("ok", True)):
+                metrics.extend(blob["metrics"])
         except (OSError, ValueError) as exc:
-            sys.stderr.write("outcome_assemble: bad emission blob (skipped): %s\n" % exc)
+            sys.stderr.write("outcome_assemble: bad metrics blob (skipped): %s\n" % exc)
 
     snap = {
         "captured_at": captured_at,
