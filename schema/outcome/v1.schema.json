@@ -1,0 +1,70 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://zero-trust-verification/schema/outcome/v1.schema.json",
+  "title": "Outcome measurement store (v1)",
+  "description": "Append-only outcome store (ADR 0023). One frozen baseline + a runs[] history. EVERY metric row MUST carry an honesty_class {deterministic|agent-graded|human-annotated} and a provenance string, so no unlabeled number can enter the store (the H1 anti-laundering guard). Validated by the SAME jsonschema Draft202012Validator toolchain as the manifest (ADR 0014). Absent fields mean 'no comparable value' (state.json rule: never read as 0).",
+  "type": "object",
+  "required": ["schema_version", "runs"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "_note": { "type": "string" },
+    "baseline": { "$ref": "#/$defs/frozen_snapshot" },
+    "runs": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/snapshot" }
+    }
+  },
+  "$defs": {
+    "honesty_class": {
+      "description": "The single mandatory honesty label. deterministic = Class-D (git-log / build-status provable, no agent). agent-graded = Class-A (input is journeys.json, written by the journey-walker agent). human-annotated = an operator-entered external fact. NEVER model-estimated.",
+      "enum": ["deterministic", "agent-graded", "human-annotated"]
+    },
+    "window": {
+      "type": "object",
+      "properties": {
+        "weeks": { "type": ["number", "null"] },
+        "since": { "type": ["string", "number", "null"] },
+        "until": { "type": ["string", "number", "null"] },
+        "merges": { "type": ["integer", "null"] }
+      }
+    },
+    "metric_row": {
+      "type": "object",
+      "required": ["name", "honesty_class", "provenance"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "value": { "type": ["number", "null"] },
+        "unit": { "type": ["string", "null"] },
+        "honesty_class": { "$ref": "#/$defs/honesty_class" },
+        "provenance": { "type": "string", "minLength": 1 },
+        "source_absent": { "type": "boolean" },
+        "detail": { "type": ["object", "null"] },
+        "note": { "type": ["string", "null"] }
+      }
+    },
+    "snapshot": {
+      "type": "object",
+      "required": ["captured_at", "git_sha", "metrics"],
+      "properties": {
+        "captured_at": { "type": "string", "minLength": 1 },
+        "git_sha": { "type": "string" },
+        "kind": { "type": "string" },
+        "window": { "$ref": "#/$defs/window" },
+        "window_short": { "type": "boolean" },
+        "frozen": { "type": "boolean" },
+        "metrics": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/metric_row" }
+        }
+      }
+    },
+    "frozen_snapshot": {
+      "allOf": [{ "$ref": "#/$defs/snapshot" }],
+      "type": "object",
+      "required": ["frozen"],
+      "properties": {
+        "frozen": { "const": true }
+      }
+    }
+  }
+}
