@@ -40,6 +40,22 @@ EXTERNAL_LABELS = {
 }
 ORDER = DORA_METRICS + AGENT_METRICS + list(EXTERNAL_LABELS)
 
+# The authoritative name -> honesty-class binding, mirrored from the schema's
+# name<->class constraint (H1 anti-laundering, defense-in-depth). For a metric with
+# a SINGLE authoritative class the renderer badges by THIS map, never by the stored
+# string — so even a hand-crafted store that bypassed the schema can NEVER render a
+# Class-A (agent-graded) number as [det]; a stored class that disagrees is surfaced
+# as a loud [HONESTY-MISMATCH]. External metrics have two valid classes
+# (deterministic | human-annotated), so they are trusted as-stored (the schema
+# already constrains them to those two).
+AUTHORITATIVE_CLASS = {
+    "emission_share": "agent-graded",
+    "deploy_frequency": "deterministic",
+    "lead_time": "deterministic",
+    "change_failure_rate": "deterministic",
+    "mttr_build": "deterministic",
+}
+
 BADGE = {
     "deterministic": "[det]",
     "agent-graded": "[agent-graded]",
@@ -121,14 +137,25 @@ def render(store):
 
     for name in present:
         row, run = after[name]
-        hc = row.get("honesty_class", "?")
+        stored_hc = row.get("honesty_class", "?")
+        # A known metric is badged by its AUTHORITATIVE class, never the stored
+        # string — a laundered [det] on an agent-graded metric is structurally
+        # impossible in the render, and a disagreement is surfaced, not hidden.
+        auth = AUTHORITATIVE_CLASS.get(name)
+        hc = auth if auth is not None else stored_hc
+        mismatch = auth is not None and stored_hc != auth
         badge = BADGE.get(hc, "[?]")
         val = row.get("value")
         pretty = PRETTY.get(name, name)
         entry = {"metric": name, "value": val, "honesty_class": hc,
-                 "badge": badge, "delta": None, "significant": None}
+                 "stored_honesty_class": stored_hc, "badge": badge,
+                 "honesty_mismatch": mismatch, "delta": None, "significant": None}
 
         line = "- **%s**: %s %s" % (pretty, _fmt(val), badge)
+        if mismatch:
+            line += (" **[HONESTY-MISMATCH: store says '%s', authoritative is '%s' — "
+                     "badged by the authoritative class, never laundered]**"
+                     % (stored_hc, hc))
 
         b = base_metrics.get(name)
         if has_baseline and b is not None and isinstance(b.get("value"), (int, float)) \

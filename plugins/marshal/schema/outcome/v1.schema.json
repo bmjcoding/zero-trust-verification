@@ -40,7 +40,24 @@
         "source_absent": { "type": "boolean" },
         "detail": { "type": ["object", "null"] },
         "note": { "type": ["string", "null"] }
-      }
+      },
+      "allOf": [
+        {
+          "$comment": "H1 anti-laundering (structural): the emission share is agent-graded and can be NOTHING else — a mislabeled emission_share row is schema-invalid, so a laundered number cannot enter the store.",
+          "if": { "required": ["name"], "properties": { "name": { "const": "emission_share" } } },
+          "then": { "properties": { "honesty_class": { "const": "agent-graded" } } }
+        },
+        {
+          "$comment": "The four DORA-family metrics are Class-D (deterministic) and can be NOTHING else — an agent-graded/human-annotated DORA row is schema-invalid.",
+          "if": { "required": ["name"], "properties": { "name": { "enum": ["deploy_frequency", "lead_time", "change_failure_rate", "mttr_build"] } } },
+          "then": { "properties": { "honesty_class": { "const": "deterministic" } } }
+        },
+        {
+          "$comment": "The external metrics are deterministic (from a configured source) OR human-annotated (fallback) — NEVER agent-graded (there is no agent in their loop).",
+          "if": { "required": ["name"], "properties": { "name": { "enum": ["defect_escape_rate", "incident_count", "mttr_incident", "paged_share"] } } },
+          "then": { "properties": { "honesty_class": { "enum": ["deterministic", "human-annotated"] } } }
+        }
+      ]
     },
     "snapshot": {
       "type": "object",
