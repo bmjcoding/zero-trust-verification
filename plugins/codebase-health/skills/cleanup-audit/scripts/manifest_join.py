@@ -75,14 +75,19 @@ def sd_locus(decl):
 
 
 def sd_out_of_scope(class_name: str, locus: str, extra: str = "") -> None:
-    """Emit THE one informational out-of-scope-by-declaration line (ADR 0022): a
-    non-`app` locus is verified elsewhere by declaration, not assessed in-repo. It
+    """Emit THE one informational out-of-scope-by-declaration line (ADR 0022). It
     names the class + declared locus and is NEVER a finding/violation/blocking/
-    counted line. This is the mechanical embodiment of SD-00's silence about the
-    gateway/mesh — the opposite of a raw missing-X finding."""
+    counted line — the mechanical embodiment of SD-00's silence, the opposite of a
+    raw missing-X finding. A declared out-of-repo locus (gateway/mesh/…) is verified
+    elsewhere by declaration; `none-declared` is honestly UNdeclared (not verified
+    elsewhere — just no in-repo control to assess), so it gets the truthful wording."""
     tail = f" — {extra}" if extra else ""
-    emit(f"[out-of-scope-by-declaration] {class_name} (locus={locus}): "
-         f"verified elsewhere by declaration — not assessed in-repo{tail}")
+    if locus == "none-declared":
+        body = ("no locus declared — no in-repo control to verify, and none declared "
+                "elsewhere (honest silence, not a finding)")
+    else:
+        body = "verified elsewhere by declaration — not assessed in-repo"
+    emit(f"[out-of-scope-by-declaration] {class_name} (locus={locus}): {body}{tail}")
 # vendored:sd-locus-guard:end
 
 
@@ -361,7 +366,10 @@ def run(manifest_path: Path, journeys_path: Path, audited_env: str) -> int:
                     else:
                         emit(f"ROW {SLUG_ISOLATION} NOTE comment-only fpsrc={path}:{symbol}:{SLUG_ISOLATION} fp={fp_i} :: locus=app discovered={disc_iso or 'none'} (no explicit-lock candidate discovered — unknown, agent; NOT a verdict)")
                 else:
-                    sd_out_of_scope(CLASS_ISOLATION, iso_loc, "unknown — isolation configured outside repo")
+                    # `none-declared` already reads "no in-repo control to verify"; the
+                    # DB/session-config degrade only clarifies a declared-elsewhere locus.
+                    iso_extra = "" if iso_loc == "none-declared" else "unknown — isolation configured outside repo"
+                    sd_out_of_scope(CLASS_ISOLATION, iso_loc, iso_extra)
 
             # ── SD-10: timeout budget composition, DETERMINISTIC-in-the-join ─────
             # timeout_budget_ms carries no locus: per-call timeouts are greppable and

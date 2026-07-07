@@ -225,6 +225,13 @@ if [ -x "$SD_SEEDS" ]; then
   # migration DDL destructive (positive) + additive (must_not_flag)
   printf 'ALTER TABLE loans DROP COLUMN legacy_rate;\n' > "$SRC/migrations/0002_drop.sql"
   printf 'ALTER TABLE loans ADD COLUMN note TEXT;\n' > "$SRC/migrations/0003_add.sql"
+  # SD-09 least-privilege breadth (positive) + scoped (must_not_flag)
+  printf 'FROM python:3.12\nUSER root\nCOPY . /app\n' > "$SRC/app/Dockerfile.bad"
+  printf 'FROM python:3.12\nRUN useradd appuser\nUSER appuser\n' > "$SRC/app/Dockerfile.ok"
+  printf 'GRANT ALL PRIVILEGES ON loans TO svc;\n' > "$SRC/migrations/0004_grant_all.sql"
+  printf 'GRANT SELECT ON loans TO reader;\n' > "$SRC/migrations/0005_grant_select.sql"
+  printf '{"Statement":[{"Effect":"Allow","Action":"*","Resource":"*"}]}\n' > "$SRC/app/iam_bad.json"
+  printf '{"Statement":[{"Effect":"Allow","Action":"s3:GetObject","Resource":"arn:aws:s3:::b/*"}]}\n' > "$SRC/app/iam_ok.json"
 
   bash "$SD_SEEDS" "$SRC" "$OUT" >/dev/null 2>&1
   seed_has()  { if grep -q "$2" "$OUT/$1" 2>/dev/null; then ok "$3"; else fail "$3 [not in $OUT/$1]"; fi; }
@@ -243,6 +250,15 @@ if [ -x "$SD_SEEDS" ]; then
   seed_lacks sd_queue_unbounded.txt  'queue_ok.py'   "SD-11 queue must_not_flag: Queue(maxsize=) NOT flagged"
   seed_has   sd_migration_ddl.txt    '0002_drop.sql' "SD-11 migration DDL: destructive DROP COLUMN candidate flagged"
   seed_lacks sd_migration_ddl.txt    '0003_add.sql'  "SD-11 migration must_not_flag: additive ADD COLUMN NULL NOT flagged"
+  # SD-09 least-privilege breadth seeds (in-repo slivers ONLY, NOT an access review)
+  seed_has   sd_least_privilege.txt  'Dockerfile.bad'         "SD-09 least-privilege: Dockerfile USER root candidate flagged"
+  seed_lacks sd_least_privilege.txt  'Dockerfile.ok'          "SD-09 least-privilege must_not_flag: USER appuser NOT flagged"
+  seed_has   sd_least_privilege.txt  '0004_grant_all.sql'     "SD-09 least-privilege: GRANT ALL in checked-in DDL candidate flagged"
+  seed_lacks sd_least_privilege.txt  '0005_grant_select.sql'  "SD-09 least-privilege must_not_flag: GRANT SELECT NOT flagged"
+  seed_has   sd_least_privilege.txt  'iam_bad.json'           "SD-09 least-privilege: IAM \"*\" wildcard candidate flagged"
+  seed_lacks sd_least_privilege.txt  'iam_ok.json'            "SD-09 least-privilege must_not_flag: a scoped IAM action NOT flagged"
+  # the SD-09 mandate MUST disclaim access-review / audit-grade coverage (SD §3.5)
+  assert_grep "$OUT/sd_least_privilege.txt" 'NOT an access review' "SD-09: the report disclaims access-review scope (never audit-grade entitlement coverage)"
   # every seed output is labelled a CANDIDATE, not a finding/verdict
   assert_grep "$OUT/sd_money_float.txt" 'candidate' "SD-11: seed output is labelled a candidate (not a verdict)"
 
