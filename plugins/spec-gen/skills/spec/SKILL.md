@@ -8,7 +8,7 @@ description: >
   "resume a spec session", or "amend a merged spec". An interrogator, not a
   generator: silence is impossible on the straight-through path.
 license: MIT
-argument-hint: "[--profile <name>] <intent...> | @draft.md | --resume @<spec>.manifest.yaml | --amend @<spec>.manifest.yaml <intent...>"
+argument-hint: "[--profile <name>] <intent...> | @draft.md | --from-findings @<register> | --resume @<spec>.manifest.yaml | --amend @<spec>.manifest.yaml <intent...>"
 metadata:
   version: "0.1.0"
 ---
@@ -63,6 +63,7 @@ You MUST escalate — never decide unilaterally — any decision requiring:
 |---|---|---|
 | `/spec [--profile <name>] <intent...>` | Fresh | Raw intent (paragraph, meeting notes, Jira) |
 | `/spec @draft.md` | Fresh | Draft Spec — interrogated, not trusted; gaps found the same way |
+| `/spec --from-findings @<register>` | Fresh | Findings register (a GAPS_SPEC-style audit register) — the remediation loop's entry point (ADR 0017 / RL-04); interrogated exactly like a Draft-Spec input (reuses the Fresh path, no new mode), not trusted, gaps found the same way; REFUSED finalization if it cannot reach a complete manifest (HC1) |
 | `/spec --resume @<spec>.manifest.yaml` | Resume | `completeness: incomplete` from a prior (possibly crashed) session |
 | `/spec --amend @<spec>.manifest.yaml <intent...>` | Amend | Amendment against a merged Spec → `manifest_revision` N+1 |
 
