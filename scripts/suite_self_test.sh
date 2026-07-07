@@ -166,6 +166,16 @@ seed_owm() {
   cp -R "$ROOT/plugins/org-memory" "$d/plugins/org-memory"
 }
 
+# seed what lint V10 (remediation loop) needs: the whole codebase-health plugin
+# (classify_fix.sh + slug_provenance.tsv + the audit taxonomy the slugs must exist
+# in) plus the SPEC_1.4.0 §12 doc the provenance anchors cite.
+seed_rl() {
+  local d="$1"
+  mkdir -p "$d/plugins" "$d/docs/specs"
+  cp -R "$ROOT/plugins/codebase-health" "$d/plugins/codebase-health"
+  cp "$ROOT/docs/specs/codebase-health-spec-1.4.0.md" "$d/docs/specs/"
+}
+
 # V1 — a vendored manifest schema copy drifts from canonical.
 dr="$SANDBOX/v1"; mkdir -p "$dr/schema/verification-manifest" "$dr/plugins/x/schema/verification-manifest"
 cp "$ROOT/schema/verification-manifest/v1.schema.json" "$dr/schema/verification-manifest/v1.schema.json"
@@ -320,6 +330,58 @@ expect_fail V9 "$dr" "drifted vendored telemetry-contract block"
 dr="$SANDBOX/v9p"; seed_tel "$dr"
 printf '\nSome extra prose AFTER the vendored telemetry-contract block.\n' >> "$dr/plugins/triage/reference/backends.md"
 expect_no_fail V9 "$dr" "prose appended outside the telemetry-contract markers"
+
+# V9 vendored spec-gen script drift (ADR 0001 §18 — closes the missing-pin gap): triage
+# vendors profile_resolve.py/resume_projection.py from spec-gen; drift the vendored copy
+# -> V9 fires. Seed the canonical + vendored pair (and telemetry-contract.md so V9 runs).
+dr="$SANDBOX/v9s"
+mkdir -p "$dr/plugins/spec-gen/scripts" "$dr/plugins/triage/scripts" "$dr/plugins/triage/reference"
+cp "$ROOT/plugins/triage/reference/telemetry-contract.md" "$dr/plugins/triage/reference/"
+cp "$ROOT/plugins/spec-gen/scripts/profile_resolve.py"   "$dr/plugins/spec-gen/scripts/"
+cp "$ROOT/plugins/spec-gen/scripts/resume_projection.py" "$dr/plugins/spec-gen/scripts/"
+cp "$ROOT/plugins/spec-gen/scripts/profile_resolve.py"   "$dr/plugins/triage/scripts/"
+cp "$ROOT/plugins/spec-gen/scripts/resume_projection.py" "$dr/plugins/triage/scripts/"
+printf '\n# drift\n' >> "$dr/plugins/triage/scripts/profile_resolve.py"
+expect_fail V9 "$dr" "drifted vendored spec-gen script (triage profile_resolve.py != canonical)"
+
+# V9 vendored-script false-positive guard — an unmodified vendored pair stays GREEN.
+dr="$SANDBOX/v9sp"
+mkdir -p "$dr/plugins/spec-gen/scripts" "$dr/plugins/triage/scripts" "$dr/plugins/triage/reference"
+cp "$ROOT/plugins/triage/reference/telemetry-contract.md" "$dr/plugins/triage/reference/"
+cp "$ROOT/plugins/spec-gen/scripts/profile_resolve.py"   "$dr/plugins/spec-gen/scripts/"
+cp "$ROOT/plugins/spec-gen/scripts/resume_projection.py" "$dr/plugins/spec-gen/scripts/"
+cp "$ROOT/plugins/spec-gen/scripts/profile_resolve.py"   "$dr/plugins/triage/scripts/"
+cp "$ROOT/plugins/spec-gen/scripts/resume_projection.py" "$dr/plugins/triage/scripts/"
+expect_no_fail V9 "$dr" "unmodified vendored spec-gen scripts (byte-identical to canonical)"
+# V10 (ADR 0017/0018 / register RL-13) — the remediation loop's two lint-pinned
+# tables. Plant a drift in EACH (escalate-class table + slug_provenance §12/taxonomy)
+# and assert V10 fires; a benign TSV comment must stay green. Numbered V10 (V9 is
+# the parallel prod-triage stream's rule — no collision).
+RL_CLASSIFY_REL="plugins/codebase-health/skills/cleanup-audit/scripts/classify_fix.sh"
+RL_PROV_REL="plugins/codebase-health/skills/cleanup-audit/scripts/slug_provenance.tsv"
+TAB="$(printf '\t')"
+
+# V10-a — a Category-TX money/auth slug is dropped from the escalate-class table
+# (the escalate-class must stay a SUPERSET of audit-state-and-verify.md's TX catalog).
+dr="$SANDBOX/v10a"; seed_rl "$dr"
+sed 's/|missing-audit-trail)/)/' "$dr/$RL_CLASSIFY_REL" > "$dr/cf.tmp" && mv "$dr/cf.tmp" "$dr/$RL_CLASSIFY_REL"
+expect_fail V10 "$dr" "TX slug 'missing-audit-trail' dropped from the escalate-class table (no longer a superset)"
+
+# V10-b — a §12 provenance anchor is flipped (deterministic <-> agent), which would
+# silently change what the loop autonomously files.
+dr="$SANDBOX/v10b"; seed_rl "$dr"
+sed "s/^dark-money-movement${TAB}deterministic/dark-money-movement${TAB}agent/" "$dr/$RL_PROV_REL" > "$dr/pv.tmp" && mv "$dr/pv.tmp" "$dr/$RL_PROV_REL"
+expect_fail V10 "$dr" "§12 provenance anchor flipped (dark-money-movement deterministic->agent)"
+
+# V10-c — an invented slug (not in the audit taxonomy) is added to the table.
+dr="$SANDBOX/v10c"; seed_rl "$dr"
+printf 'totally-invented-nonexistent-slug\tdeterministic\tbogus\n' >> "$dr/$RL_PROV_REL"
+expect_fail V10 "$dr" "invented slug (absent from the audit taxonomy) added to slug_provenance.tsv"
+
+# V10 false-positive guard — a benign trailing comment on the TSV stays GREEN.
+dr="$SANDBOX/v10p"; seed_rl "$dr"
+printf '# benign trailing note: provenance table unchanged\n' >> "$dr/$RL_PROV_REL"
+expect_no_fail V10 "$dr" "benign trailing comment appended to slug_provenance.tsv"
 
 if [ "$RED_FAIL" -eq 0 ]; then
   echo "  -> lint-red-tests PASS (every vendor lint caught its planted drift; no false positives)"; record "lint-red-tests" PASS
