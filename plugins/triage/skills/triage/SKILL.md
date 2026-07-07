@@ -61,8 +61,12 @@ human-authored incident report already can.
 6. **emit** — from a CONFIDENT join, `emit_incident_spec.py` writes an incident-Spec
    that references EXISTING behavior IDs and mints NONE (§6). It REFUSES from a
    no-join correlation and honors the open-incident dedupe.
-7. **hand off** — `resume_handoff.sh` proves the manifest is resumable-incomplete
-   (validator exit 3) and opens the DRAFT PR proposal.
+7. **hand off** — `resume_handoff.sh --manifest <m> --prose <md> --incident-id <id>
+   --key <incident_key> --branch <b>` proves the manifest is resumable-incomplete
+   (validator exit 3) and opens the DRAFT PR proposal. Pass `--key` (the
+   `incident_key` from the emit step) so the open incident is recorded in the
+   loop-guard ledger and a re-fire is deduped — the handoff REFUSES to open a PR
+   without it.
 
 ## Where you apply judgment (and where you must NOT)
 

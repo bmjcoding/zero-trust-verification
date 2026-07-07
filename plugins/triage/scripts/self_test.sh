@@ -182,6 +182,10 @@ assert_contains     TR-loop-guard "exclude-self keeps the real payments record" 
 # dedupe key is (event_name, journey, drift-class) and EXCLUDES any timestamp.
 k1="$(tri_py "$LOOP_GUARD" incident-key --event pay.captured --journey J-pay-001 --drift-class class-drift)"
 assert_eq TR-loop-guard "incident-key is deterministic + slugged" "pay-captured__j-pay-001__class-drift" "$k1"
+# behavioral time-independence: two calls (wall clock advanced between them) -> the
+# SAME key, so a retried incident collapses to one Spec (no hidden clock/random input).
+k1b="$(tri_py "$LOOP_GUARD" incident-key --event pay.captured --journey J-pay-001 --drift-class class-drift)"
+assert_eq TR-loop-guard "incident-key is time-independent (two calls -> identical key)" "$k1" "$k1b"
 # grep-provable: the incident_key function's signature takes no timestamp, and the
 # whole function region names no clock/time field (so retries collapse).
 assert_contains     TR-loop-guard "incident_key signature is (event,journey,drift) — no timestamp param" \
@@ -195,10 +199,20 @@ openout="$(MOCK_PR_STATE=OPEN TRIAGE_HOST="$MOCK_HOST" tri_py "$LOOP_GUARD" is-o
 assert_eq TR-loop-guard "ledgered + PR OPEN -> is-open reports open" "open" "$openout"
 assert_rc TR-loop-guard "is-open exits 0 when open" 0 "$oirc"
 assert_contains TR-loop-guard "is-open logs already-open-incident-spec" "already-open-incident-spec" "$(cat "$SANDBOX/isopen.err")"
+# THE case the register singles out (lines 155-161): a still-DRAFT incident-Spec.
+# pr-list-ready OMITS drafts BY CONTRACT, so the dedupe MUST catch it via pr-state
+# on the ledger — this is precisely why the loop-guard consults pr-state, not just
+# enumeration. DRAFT is non-terminal -> suppressed.
+draftout="$(MOCK_PR_STATE=DRAFT TRIAGE_HOST="$MOCK_HOST" tri_py "$LOOP_GUARD" is-open --key "$k1" --config "$PLUGIN/triage.config.yaml" --host "$MOCK_HOST" --ledger "$SANDBOX/ledger.tsv" 2>/dev/null)"; drc=$?
+assert_eq TR-loop-guard "ledgered + PR still DRAFT -> suppressed (pr-state catches what pr-list-ready omits)" "open" "$draftout"
+assert_rc TR-loop-guard "is-open exits 0 on a still-draft incident-Spec" 0 "$drc"
 # a ledgered incident whose PR is MERGED (terminal) is CLEAR (no false suppression).
 clearout="$(MOCK_PR_STATE=MERGED TRIAGE_HOST="$MOCK_HOST" tri_py "$LOOP_GUARD" is-open --key "$k1" --config "$PLUGIN/triage.config.yaml" --host "$MOCK_HOST" --ledger "$SANDBOX/ledger.tsv" 2>/dev/null)"; crc=$?
 assert_eq TR-loop-guard "ledgered + PR MERGED (terminal) -> clear" "clear" "$clearout"
 assert_rc TR-loop-guard "is-open exits non-zero (1) when clear" 1 "$crc"
+# a CLOSED/DECLINED terminal PR (a withdrawn proposal) also frees the incident.
+closedout="$(MOCK_PR_STATE=CLOSED TRIAGE_HOST="$MOCK_HOST" tri_py "$LOOP_GUARD" is-open --key "$k1" --config "$PLUGIN/triage.config.yaml" --host "$MOCK_HOST" --ledger "$SANDBOX/ledger.tsv" 2>/dev/null)"; ccrc=$?
+assert_eq TR-loop-guard "ledgered + PR CLOSED (terminal) -> clear" "clear" "$closedout"
 
 # =============================================================================
 # TR-03 — incident<->manifest correlation (§12 key, journey DERIVED)
@@ -335,6 +349,21 @@ assert_contains TR-07 "handoff confirms resumable-incomplete via the projector" 
 assert_contains TR-07 "handoff opened a DRAFT PR proposal" "DRAFT incident-Spec PR" "$hout"
 assert_contains TR-07 "host pr-open was invoked WITH --draft (report-only, never auto-merge)" "--draft" "$(cat "$OPENLOG")"
 assert_contains TR-07 "handoff recorded the incident-key -> PR in the ledger" "9001" "$(cat "$HANDLEDGER")"
+# loop-safety regression (skeptic finding): the DOCUMENTED handoff passes NO --ledger,
+# so the write path MUST default from triage.config.yaml loop_guard.ledger (symmetry
+# with loop_guard.py's read path). Otherwise a re-fire reads an empty ledger and emits
+# a DUPLICATE incident-Spec. Prove a no---ledger handoff still records the incident.
+CFGLEDGER="$SANDBOX/cfg-default-ledger.tsv"
+CFG2="$SANDBOX/cfg2.yaml"
+printf 'loop_guard:\n  self_emitters:\n    - triage-agent\n  ledger: %s\n' "$CFGLEDGER" > "$CFG2"
+TRIAGE_CONFIG="$CFG2" MOCK_PR_OPEN_LOG="$SANDBOX/pr_open2.log" MOCK_PR_NUM=9002 \
+  bash "$HANDOFF" --manifest "$MAN" --prose "$MD" --incident-id "incident-y" --key "$k1" --branch "triage/incident-y" --host "$MOCK_HOST" >/dev/null 2>&1
+assert_eq       TR-07 "handoff WITHOUT --ledger records to the config-default ledger (dedupe not defeated)" "1" "$([ -f "$CFGLEDGER" ] && echo 1 || echo 0)"
+assert_contains TR-07 "config-default ledger holds the incident-key -> PR row" "9002" "$(cat "$CFGLEDGER" 2>/dev/null)"
+# and the handoff REFUSES to open a PR without --key (loop-guard cannot dedupe without it).
+nokey="$(bash "$HANDOFF" --manifest "$MAN" --incident-id "incident-z" --branch "triage/incident-z" --host "$MOCK_HOST" 2>&1)"; nkrc=$?
+assert_rc_nonzero TR-07 "handoff REFUSES to open a PR without --key (dedupe safety)" "$nkrc"
+assert_contains   TR-07 "no-key refusal names the ledger dedupe reason" "cannot dedupe" "$nokey"
 
 # =============================================================================
 # TR-08 — lint teeth: the NEW V9 rule catches a planted telemetry-contract drift.

@@ -50,6 +50,19 @@ done
 [ -f "$MANIFEST" ] || die "manifest not found: $MANIFEST"
 [ -n "$INCIDENT_ID" ] || die "--incident-id required"
 
+# ── ledger path: default from triage.config.yaml loop_guard.ledger (SYMMETRY with
+#    loop_guard.py's READ path). Without this, the documented handoff (no --ledger)
+#    would open a PR but record nothing, and the next incident's dedupe would read an
+#    empty ledger and emit a DUPLICATE incident-Spec — defeating TR-loop-guard. ──
+CONFIG="${TRIAGE_CONFIG:-$PLUGIN_ROOT/triage.config.yaml}"
+if [ -z "$LEDGER" ]; then
+  LEDGER="$(awk '
+    /^[A-Za-z_]/ { insec = ($1 == "loop_guard:") }
+    insec && $1 == "ledger:" { sub(/^[[:space:]]*ledger:[[:space:]]*/,""); sub(/[[:space:]]*#.*$/,""); gsub(/^"|"$/,""); print; exit }
+  ' "$CONFIG" 2>/dev/null)"
+  [ -n "$LEDGER" ] || LEDGER="triage/open-incidents.tsv"
+fi
+
 # ── 1. RESUMABLE-INCOMPLETE proof via the vendored resume projector (exit 3) ──
 PROJ="$(triage_py "$PROJECTOR" "$MANIFEST")" || die "resume_projection.py failed"
 VEXIT="$(printf '%s' "$PROJ" | python3 -c 'import sys,json; print(json.load(sys.stdin).get("validator_exit"))' 2>/dev/null || true)"
@@ -63,6 +76,9 @@ fi
 
 # ── 2. DRAFT PR via the vendored host adapter (report-only first, ADR 0020) ──
 [ -n "$BRANCH" ] || die "--branch required to open the incident-Spec PR"
+# --key is REQUIRED to open a PR: without it the loop-guard ledger cannot record the
+# open incident, and a re-fire would emit a DUPLICATE incident-Spec (TR-loop-guard).
+[ -n "$KEY" ] || die "--key required to open the incident-Spec PR (the loop-guard ledger cannot dedupe a re-fire without it)"
 [ -f "$HOST" ] || die "host adapter not found: $HOST (set \$TRIAGE_HOST)"
 TITLE="[incident-spec] ${INCIDENT_ID} (proposal — read-only triage; not a fix)"
 OPEN_ARGS=(pr-open --draft --title "$TITLE" --src "$BRANCH" --dest "$DEST")
@@ -75,8 +91,9 @@ PR_NUM="$(printf '%s' "$OPEN_OUT" | grep -oE '[0-9]+' | tail -1)"
 echo "[ok] opened DRAFT incident-Spec PR #$PR_NUM (proposal for human review; report-only, never auto-merged)"
 
 # ── 3. record the open incident in the loop-guard ledger (dedupe a re-fire) ──
-if [ -n "$KEY" ] && [ -n "$LEDGER" ]; then
-  mkdir -p "$(dirname "$LEDGER")"
-  printf '%s\t%s\n' "$KEY" "$PR_NUM" >> "$LEDGER"
-  echo "[ok] recorded incident-key -> PR #$PR_NUM in the loop-guard ledger ($LEDGER)"
-fi
+# LEDGER is always set now (explicit --ledger or the config default), and KEY is
+# required above, so every opened incident-Spec is recorded — the READ path
+# (loop_guard.py is-open) will find it on a re-fire and suppress the duplicate.
+mkdir -p "$(dirname "$LEDGER")"
+printf '%s\t%s\n' "$KEY" "$PR_NUM" >> "$LEDGER"
+echo "[ok] recorded incident-key -> PR #$PR_NUM in the loop-guard ledger ($LEDGER)"
