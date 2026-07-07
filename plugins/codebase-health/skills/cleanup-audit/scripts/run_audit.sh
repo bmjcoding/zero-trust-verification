@@ -215,6 +215,15 @@ grep -rEn "${GREP_EXCLUDES[@]}" "$TX_GUARD_RE" \
   "$TARGET" 2>/dev/null > "$OUT/tx_guards.txt" || true
 grep -rEn "${GREP_EXCLUDES[@]}" "$TX_RETRY_RE" \
   "$TARGET" 2>/dev/null > "$OUT/tx_retries.txt" || true
+# System-Design Coverage SEEDS (SD-11): the honest in-repo slivers (money-as-float
+# ∩ VITAL, tz-in-production, timeout-kwarg-absence, jitter-absence, unbounded queue,
+# destructive migration DDL). CANDIDATES, never verdicts — never counted, never
+# ratcheted, never gating (same posture as the VITAL/TX seeds above). The verdict
+# layer (money-path reasoning, DST/date-boundary, reversibility, isolation) stays agent.
+if [ -x "$SCRIPT_DIR/sd_seeds.sh" ]; then
+  echo "-> grep system-design seeds (candidates, not counted): money-float/tz/timeout/jitter/queue/migration"
+  bash "$SCRIPT_DIR/sd_seeds.sh" "$TARGET" "$OUT" || true
+fi
 # Alerting seam: alert/monitor/prometheus/SLO-named config files (minus
 # EXCLUDE_DIRS). Empty = honest "unknown — no alert config in repo".
 src_files | grep -iE '(^|/)[^/]*(alert|monitor|slo)[^/]*\.(ya?ml|json|toml|ini|cfg|conf|rules)$|(^|/)prometheus[^/]*$' \
