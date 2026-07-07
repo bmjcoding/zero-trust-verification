@@ -25,8 +25,12 @@ Every metric row carries, MANDATORY:
       journey-walker AGENT — NOT hermetic; the projection arithmetic over a fixed
       fixture is [det], the number on a real repo is [audit-run].
     - `human-annotated`: an operator-entered external fact.
-  NOTHING is model-estimated. A row without `honesty_class` is schema-invalid — no
-  unlabeled number can enter the store.
+  NOTHING is model-estimated. The schema BINDS each metric name to its class
+  (`emission_share` => `agent-graded`; the four DORA metrics => `deterministic`; the
+  external metrics => `deterministic`|`human-annotated`), so a row that is UNLABELED
+  **or MISLABELED** (a laundered class) is schema-invalid — neither can enter the
+  store, and the renderer badges a known metric by its authoritative class, never the
+  stored string.
 - `provenance` — a non-empty string naming the derivation (e.g. `git-log ...`,
   `journeys.json@<sha>`, `external-tracker:<file>`, `annotated:operator (...)`).
 

@@ -4,11 +4,12 @@
 # covered by a named assertion here (the CH-10-style close). All fixtures are built
 # in a mktemp sandbox with local repos; no network, no live host, no credentials.
 #
-# The pure-git / store / renderer assertions need only python (uv-or-python3). The
-# host-dependent assertions (DORA build-status + the digest post) drive the Marshal
-# MOCK host, which needs uv (ADR 0015); they are gated on UV_OK and SKIPPED-with-a-
-# loud-notice when uv is absent (skip-honesty — the suite's component_skips detector
-# turns a skip into PASS(skips), never a false green).
+# The store writer needs the uv-locked jsonschema toolchain (ADR 0015); if it is
+# unreachable the WHOLE layer SKIPS with a loud notice (skip-honesty — never a false
+# green, never a false red). ON TOP of that, the host-dependent assertions (DORA
+# build-status + the digest post) drive the Marshal MOCK host, which needs uv; they
+# are additionally gated on UV_OK and SKIPPED-with-a-notice when uv is absent. The
+# suite's component_skips detector turns any skip into PASS(skips).
 #
 # Usage: bash scripts/outcome_self_test.sh
 # Exit 0 = all assertions pass; non-zero = at least one failure.
@@ -58,6 +59,22 @@ print(val)
 PY
 }
 
+# Skip-honesty (register OM-09): the store/baseline/emit/external/digest assertions
+# all route through the store writer, which needs the uv-locked jsonschema toolchain
+# (ADR 0015). We probe EXACTLY as the real assertions resolve deps — through
+# outcome_store.sh (which self-bootstraps via `uv run --project`) — not a bare
+# `--no-project` import, so the probe can never disagree with the assertions. If the
+# store toolchain is unreachable we SKIP the whole layer with a loud notice the
+# suite's component_skips() detector catches: PASS-WITH-SKIPS, never a false green or
+# false red. (The suite runs a `uv run --project` component before this one, so the
+# toolchain is warm; standalone in a fresh clone this bootstraps it.)
+if ! ( printf '{"schema_version":1,"runs":[]}' > "$SANDBOX/_probe.json" \
+       && bash "$STORE_SH" validate --store "$SANDBOX/_probe.json" >/dev/null 2>&1 ); then
+  echo "  [skip] outcome-store jsonschema toolchain unavailable (ADR 0015) — ALL outcome self-test sections SKIPPED (skip-honesty; the suite requires uv)"
+  echo "outcome_self_test: PASS=0 FAIL=0 (SKIPPED — no jsonschema toolchain)"
+  exit 0
+fi
+
 # ============================================================================
 # OM-01 — outcome store schema + degrade
 # ============================================================================
@@ -78,6 +95,17 @@ H2="$(cksum < "$STORE")"; assert_eq OS04 "corrupt store left byte-identical" "$H
 printf '{"schema_version":99,"runs":[]}' > "$STORE"
 printf '{"captured_at":"t","git_sha":"g","metrics":[]}' | bash "$STORE_SH" append-run --store "$STORE" >/dev/null 2>&1
 assert_rc OS05 "unknown schema_version refused" 5 $?
+# OM-01 H1 anti-laundering (structural): the schema binds each metric name to its
+# honesty class, so a MISLABELED row cannot enter the store (not just an unlabeled one).
+printf '{"captured_at":"t","git_sha":"g","metrics":[{"name":"emission_share","value":0.9,"honesty_class":"deterministic","provenance":"journeys.json@x"}]}' \
+  | bash "$STORE_SH" append-run --store "$SANDBOX/laund1.json" >/dev/null 2>&1
+assert_rc OS06 "laundered emission_share (agent-graded metric tagged deterministic) rejected schema-invalid" 4 $?
+printf '{"captured_at":"t","git_sha":"g","metrics":[{"name":"deploy_frequency","value":3,"honesty_class":"agent-graded","provenance":"g"}]}' \
+  | bash "$STORE_SH" append-run --store "$SANDBOX/laund2.json" >/dev/null 2>&1
+assert_rc OS06 "DORA metric mislabeled agent-graded rejected schema-invalid" 4 $?
+printf '{"captured_at":"t","git_sha":"g","metrics":[{"name":"paged_share","value":0.5,"honesty_class":"agent-graded","provenance":"g"}]}' \
+  | bash "$STORE_SH" append-run --store "$SANDBOX/laund3.json" >/dev/null 2>&1
+assert_rc OS06 "external metric mislabeled agent-graded rejected schema-invalid" 4 $?
 
 # ============================================================================
 # DORA fixture (shared by OM-02 / OM-03) — a hand-computed history
@@ -151,7 +179,11 @@ grep -F "\$sha" "$MAP" | cut -f2 | head -1
 SHIMEOF
   chmod +x "$SHIM"
   DSHIM="$(py "$HERE/outcome_dora.py" --repo "$FIX" --trunk main --since $SINCE --until $UNTIL --host "$SHIM")"
-  assert_eq DR05 "both backends yield byte-identical DORA (backend-agnostic contract)" "$(dora_norm "$DHOST")" "$(dora_norm "$DSHIM")"
+  DHOSTN="$(dora_norm "$DHOST")"; DSHIMN="$(dora_norm "$DSHIM")"
+  # non-vacuity precondition: both derivations must be NON-EMPTY and carry the
+  # host-derived mttr_build (else DR05 would pass on mutual emptiness).
+  assert_contains DR05 "backend maps are non-empty (mttr_build present, not degenerate)" "mttr_build" "$DHOSTN"
+  assert_eq DR05 "both backends yield byte-identical DORA (backend-agnostic contract)" "$DHOSTN" "$DSHIMN"
   # OM-03 writes ONLY the store: capture makes zero host writes
   CST="$SANDBOX/cap.json"; CSTATE="$SANDBOX/cstate.json"; printf '{"trunk":"main","prs":[]}' > "$CSTATE"
   bash "$CAPTURE_SH" --store "$CST" --repo "$FIX" --trunk main --since $SINCE --until $UNTIL --now $UNTIL --host "$MOCK" --host-repo "$FIX/.git" --host-state "$CSTATE" >/dev/null 2>&1
@@ -355,6 +387,16 @@ assert_contains RP06 "no baseline -> [OUTCOME-NO-BASELINE]" "OUTCOME-NO-BASELINE
 assert_absent   RP06 "no baseline -> no fabricated delta" "Δ" "$OUT"
 printf 'not json{{{' > "$SANDBOX/corruptstore.json"
 bash "$REPORT_SH" --store "$SANDBOX/corruptstore.json" >/dev/null 2>&1; assert_rc RP07 "renderer on corrupt store still exits 0" 0 $?
+# RP08 — defense-in-depth: a HAND-CRAFTED store that bypassed the schema (emission_share
+# mislabeled deterministic) still cannot render [det]; the renderer badges by the
+# AUTHORITATIVE class and surfaces the mismatch loudly (the H1 guard, belt AND braces).
+LAUNDR="$SANDBOX/laundrender.json"
+printf '{"schema_version":1,"runs":[{"captured_at":"t","git_sha":"g","metrics":[{"name":"emission_share","value":0.95,"honesty_class":"deterministic","provenance":"journeys.json@x"}]}]}' > "$LAUNDR"
+RPO="$(bash "$REPORT_SH" --store "$LAUNDR")"
+RPEM="$(printf '%s\n' "$RPO" | grep 'emission share')"
+assert_contains RP08 "hand-crafted laundered store still badges [agent-graded]" "[agent-graded]" "$RPEM"
+assert_absent   RP08 "hand-crafted laundered store NEVER renders [det]" "[det]" "$RPEM"
+assert_contains RP08 "honesty mismatch surfaced loudly (not hidden)" "HONESTY-MISMATCH" "$RPEM"
 
 # ============================================================================
 # OM-08 — scheduled digest (rides the Marshal cron); read-only, posts via host
@@ -365,13 +407,16 @@ if [ "$UV_OK" = "1" ]; then
   ( cd "$DGREPO" && printf 'a\n' > defs.txt && printf 'a\n' > calls.txt && git add -A && GIT_AUTHOR_DATE="@$E" GIT_COMMITTER_DATE="@$E" git commit -qm root )
   ( cd "$DGREPO" && printf 'a\nb\n' > defs.txt && printf 'a\nb\n' > calls.txt && git add -A && GIT_AUTHOR_DATE="@$E" GIT_COMMITTER_DATE="@$((E+86400))" git commit -qm D1 )
   cp "$EM3" "$DGREPO/audit/journeys.json"
+  # behavioral no-fresh-audit proof (H6): record the journeys.json content hash before
+  # the fire; the digest must READ it, never re-walk/rewrite it.
+  JHASH_BEFORE="$(cksum < "$DGREPO/audit/journeys.json")"
   DGSTORE="$SANDBOX/dg.json"; DGSTATE="$SANDBOX/dgstate.json"; printf '{"trunk":"main","prs":[]}' > "$DGSTATE"
   OUT="$(bash "$DIGEST_SH" --store "$DGSTORE" --repo "$DGREPO" --trunk main --since $SINCE --until $UNTIL --now $UNTIL --host "$MOCK" --host-repo "$DGREPO/.git" --host-state "$DGSTATE" --artifact "$SANDBOX/DIGEST.md" --post-pr 7 2>&1)"
   assert_rc DG01 "digest fire exits 0" 0 $?
   assert_contains DG01 "step 1 capture ran" "step 1 outcome-capture ok" "$OUT"
   assert_contains DG01 "step 2 emit ran (read-only, no fresh audit)" "read-only; no fresh audit" "$OUT"
   # store has DORA + agent-graded emission
-  assert_contains DG02 "store gained a DORA run" "3" "$(metric_val "$DGSTORE" mttr_build >/dev/null 2>&1; py - "$DGSTORE" <<'PY'
+  assert_eq DG02 "store gained both a DORA run and an emission run" "3" "$(py - "$DGSTORE" <<'PY'
 import json,sys
 names={m["name"] for r in json.load(open(sys.argv[1]))["runs"] for m in r["metrics"]}
 print("3" if {"deploy_frequency","emission_share"} <= names else "0")
@@ -392,8 +437,13 @@ PY
 )"
   assert_contains DG03 "the single comment IS the digest (audit-emit posts nothing)" "Outcome measurement digest" "$BODY"
   assert_contains DG04 "digest declares no status check / no PR / no finding" "created no status check" "$OUT"
-  # no fresh audit: the digest spawns no walker / run_audit
-  assert_absent DG05 "digest triggers no fresh audit (no run_audit/walker spawn)" "run_audit" "$OUT"
+  # no fresh audit (H6) — BEHAVIORAL: the journeys.json the digest consumed is
+  # byte-unchanged (it was READ, never re-walked/rewritten), AND no walker/run_audit
+  # token appears in the fire output.
+  JHASH_AFTER="$(cksum < "$DGREPO/audit/journeys.json")"
+  assert_eq DG05 "journeys.json byte-unchanged — digest read it, never re-walked (H6)" "$JHASH_BEFORE" "$JHASH_AFTER"
+  assert_absent DG05 "no run_audit token in the fire output" "run_audit" "$OUT"
+  assert_absent DG05 "no journey-walker spawn token in the fire output" "journey-walker" "$OUT"
   # host-unreachable fire still renders + exits 0
   bash "$DIGEST_SH" --store "$SANDBOX/dg2.json" --repo "$DGREPO" --trunk main --since $SINCE --until $UNTIL --now $UNTIL --no-host --journeys "$DGREPO/audit/journeys.json" >/dev/null 2>&1
   assert_rc DG06 "host-unreachable digest still exits 0 (degrade)" 0 $?

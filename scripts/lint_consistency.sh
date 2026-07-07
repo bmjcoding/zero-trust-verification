@@ -669,6 +669,18 @@ else
   done < <(find "$ROOT" -path "$ROOT/.git" -prune -o -path "$ROOT/.claude" -prune -o -name node_modules -prune -o -path '*/outcome/v1.schema.json' -print 2>/dev/null)
   [ "$o_copies" -eq 0 ] && ok V11 "single canonical outcome-store schema; no vendored copies to drift (ADR 0023)"
 
+  # (a2) STRUCTURAL H1 guard: the schema must BIND each metric name to its honesty
+  #      class (emission_share -> agent-graded; the DORA family -> deterministic), so a
+  #      mislabeled/laundered row is schema-INVALID at the store boundary. This is the
+  #      robust enforcement (the register grep in (c) is a keyword backstop only). A
+  #      future edit that drops the binding is caught here.
+  if grep -q '"emission_share"' "$OUTCANON" && grep -q '"agent-graded"' "$OUTCANON" \
+     && grep -q '"deploy_frequency"' "$OUTCANON" && grep -q 'allOf' "$OUTCANON"; then
+    ok V11 "schema structurally binds metric name -> honesty_class (emission_share => agent-graded; DORA => deterministic) — a laundered row is schema-invalid"
+  else
+    violation V11 "outcome-store schema lost its name<->honesty_class binding (H1 structural guard); a mislabeled emission_share/DORA row could enter the store (ADR 0023)"; v11_bad=1
+  fi
+
   # (b) the vendored outcome-store-contract block: single source + byte-identical.
   v11_begin='vendored:outcome-store-contract:begin'
   v11_end='vendored:outcome-store-contract:end'
@@ -712,17 +724,20 @@ else
     else
       violation V11 "register: no [audit-run] acceptance for the real-repo emission share (H1 residual missing — register OM-09)"; v11_bad=1
     fi
-    # NO [det] ACCEPTANCE may claim a real-repo agent-graded number (the laundering
-    # H1 exists to prevent). A [det] line about the FIXTURE arithmetic is legitimate;
-    # a [det] ACCEPTANCE that mentions BOTH agent-graded AND a real repo is not.
-    # Blockquote (`>`) lines are DESIGN RATIONALE, not acceptances (the H1 note there
-    # correctly says the real-repo metric is [audit-run], not [det]) — exclude them so
-    # the guard inspects acceptance bullets only.
-    launder="$(grep -F '[det]' "$REG" | grep -v '^[[:space:]]*>' | grep -i 'agent-graded' | grep -Ei 'real[ -]?repo' || true)"
+    # NO [det]/[deterministic] ACCEPTANCE may claim a real/live/production-repo
+    # agent-graded number (the laundering H1 exists to prevent). A [det] line about the
+    # FIXTURE arithmetic is legitimate; one mentioning BOTH agent-graded AND a real repo
+    # is not. Blockquote (`>`) lines are DESIGN RATIONALE, not acceptances (the H1 note
+    # there correctly says the real-repo metric is [audit-run]) — excluded. This is a
+    # keyword BACKSTOP over the register prose, broadened past the exact red-test
+    # phrasing; the STRUCTURAL guarantee is the schema binding in (a2), not this grep.
+    launder="$(grep -iE '\[det\]|\[deterministic\]' "$REG" | grep -v '^[[:space:]]*>' \
+               | grep -iE 'agent[ -]?graded' \
+               | grep -iE '(real|live|production)[ -]?(repo|repository)' || true)"
     if [ -n "$launder" ]; then
-      violation V11 "register: a [det] acceptance claims a real-repo agent-graded number (H1 laundering): ${launder}"; v11_bad=1
+      violation V11 "register: a [det] acceptance claims a real/live/production-repo agent-graded number (H1 laundering): ${launder}"; v11_bad=1
     else
-      ok V11 "register: no [det] acceptance claims a real-repo agent-graded number (H1 guard holds)"
+      ok V11 "register: no [det] acceptance claims a real-repo agent-graded number (H1 keyword backstop holds; schema binding in (a2) is the structural guarantee)"
     fi
   fi
   [ "$v11_bad" -eq 0 ] && ok V11 "outcome-store schema + contract block single-source byte-identical + H1 anti-laundering guard holds (ADR 0023 / register OM-09)"
