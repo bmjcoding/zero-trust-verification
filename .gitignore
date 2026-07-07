@@ -6,4 +6,6 @@ tests/codebase-health/test-fixtures/blind/
 .venv/
 __pycache__/
 *.pyc
-outcome/
+# the runtime outcome store at the repo root only — NOT the vendored schema copies
+# under schema/outcome/ or plugins/*/schema/outcome/ (anchored with a leading slash).
+/outcome/
