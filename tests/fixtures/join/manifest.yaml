@@ -23,6 +23,12 @@ journeys:
     criticality_reason: "Money movement"
     confirmation: confirmed
     confirmed_by: DL-001
+    # SD-01 declared locus family (additive-optional). All app-locus here so the
+    # reference pair exercises the VERIFY path; the self-test derives gateway/
+    # sidecar/db-config/none-declared variants in $WORK to exercise out-of-scope.
+    abuse_controls:
+      locus: app
+      note: "App-side token-bucket on the capture entry step"
     steps:
       - name: "Capture authorized"
         vital_class: money
@@ -36,6 +42,13 @@ journeys:
           justification: "Retry-safe capture"
         compensation:
           none_reason: "Capture is terminal; refunds are a separate journey"
+        resilience_posture:
+          locus: app
+          mechanism: breaker
+        isolation_requirement:
+          locus: app
+          level: serializable
+        timeout_budget_ms: 3000
 behaviors:
   - id: B-pay-001
     title: "Captures an authorized payment once"

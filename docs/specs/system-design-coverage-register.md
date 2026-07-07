@@ -8,7 +8,12 @@
 > Defaulted human questions (async-promotable, SD-AMEND): (A) all in-repo-assessable SD principles are
 > in scope by default; the Config Profile narrows per LOB. (B) locus declaration is optional-with-degrade
 > — making it completeness-gating for CORE money/auth is a per-repo promote-later risk call, not applied.
-> Status: DRAFT r1 (hardened from an empty stub against the governing sources; adversarial pass applied across HONESTY / FEASIBILITY / [det]-[drain] / CONTRADICTION / ESCALATION).
+> Status: IMPLEMENTED 2026-07-07 (branch feat/system-design-coverage; SD-01..SD-12). The [det] half lands as
+> schema fields + validator fixtures (SD-01/02), the four declare-then-verify §12 rows on the CH-03 join engine
+> manifest_join.py (SD-03..10), the sd_seeds.sh in-repo candidate seeds (SD-09/11), and lint V12 + scripts/
+> sd_self_test.sh (SD-12). Every [audit-run] item (declared/discovered VALUE quality, shed-priority, breadth,
+> deadlock) stays comment-only, blind-eval scored — never automated coverage. Suite green ZERO-skip on bash 3.2.57.
+> Prior status — DRAFT r1 (hardened from an empty stub against the governing sources; adversarial pass applied across HONESTY / FEASIBILITY / [det]-[drain] / CONTRADICTION / ESCALATION).
 > Style: GAPS_SPEC register (mirrors codebase-health-register.md and mutation-testing-register.md).
 > Acceptance tags (honest about their home, per the 1.4.0 convention):
 >   `[det]` = hermetic self_test.sh / lint assertion — grep / fixture / golden-JSON / exit-code provable, no network, NO agent judgment. Legal ONLY over a mechanical claim (field presence, exact match, join-lattice truth table, exit code). NEVER over a criticality/locus/priority VALUE or any recall/relevance claim.
@@ -87,6 +92,7 @@ NEVER grade rotation compliance from code (policy lives in Vault/KMS/ops calenda
 ### SD-09 — Least-privilege breadth → in-repo seeds only, NOT an access review [SD §3.5]
 The honest in-repo seeds (Dockerfile `USER root`, `GRANT ALL` in checked-in DDL, `"*"` in checked-in IAM JSON) ship as `[det]` candidate seeds (SD-11) written to an `audit/` candidates file — NOT verdicts. The mandate MUST state it is not an access review and NEVER imply audit-grade entitlement coverage (SD §3.5). IAM/Terraform elsewhere → out-of-scope-by-declaration.
 **Acceptance:** `[det]` the seed greps produce candidates-not-verdicts on a fixture (medium precision, labeled candidate); a fixture with IAM-elsewhere declaration → out-of-scope line; a self_test asserts the report text disclaims access-review scope. `[audit-run]` breadth judgment (agent, comment-only).
+> **Reconciliation (IMPLEMENTED 2026-07-07):** the breadth seeds (`Dockerfile USER root`, `GRANT ALL` in DDL, IAM `"*"`/`AdministratorAccess`) + must_not_flag negatives + the access-review-disclaimer assertion are implemented (`sd_seeds.sh` seed 7 → `audit/sd_least_privilege.txt`; SD-09 section of `sd_self_test.sh`). The "IAM-elsewhere declaration → out-of-scope line" acceptance is subsumed by that disclaimer rather than a manifest row: SD-01's declared locus family (abuse_controls / resilience_posture / isolation_requirement / timeout_budget_ms; rotation_seam is Config-Profile data) defines NO least-privilege locus field, so there is no declaration to drive a per-scope out-of-scope-by-declaration row. The seed's disclaimer states verbatim that IAM/Terraform breadth living elsewhere is out of the repo's reach — the honest equivalent, without inventing a field SD-01 does not carry. Adding a least-privilege locus field is a future SD-01 amendment, not applied here.
 
 ### SD-10 — Timeout budget composition → `timeout_budget_ms` [SD §3.7]
 Per-call timeouts are greppable (the honest Pack-5 half, SD-11); whether budgets COMPOSE across hops needs topology. Verify each step's configured timeout against the declared per-step `timeout_budget_ms` (in-repo, `[det]`-in-the-join). Cross-hop composition is agent/topology → comment-only. Absent budget → the per-call grep still runs (honest), composition reports `unknown`.

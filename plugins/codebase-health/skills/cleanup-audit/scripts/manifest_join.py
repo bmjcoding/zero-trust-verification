@@ -45,6 +45,51 @@ SLUG_SEAM = "manifest-seam-drift"
 SLUG_IDEMPOTENCY = "manifest-idempotency-drift"
 SLUG_CRITICALITY = "manifest-criticality-drift"
 
+# ── System-Design Coverage rows (SD-03..SD-10; ADR 0021/0022) ─────────────────
+# vendored:sd-locus-guard:begin
+# SD-00 (the honesty spine, ADR 0021/0022): the manifest DECLARES a control
+# `locus`; this engine VERIFIES ONLY `locus: app` — the sole locus whose evidence
+# is in the repo — and reports EVERY other locus as out-of-scope-by-declaration.
+# That informational line is NEVER a finding, NEVER a violation, NEVER counted,
+# NEVER blocking (ADR 0022). A raw "missing X" finding for a non-app/absent locus
+# is the CENTRAL PROHIBITION this tier exists to prevent (unfalsifiable against an
+# out-of-repo control); this engine emits no such line. Every app-locus SD finding
+# caps at comment-only because the discovered side is agent-derived (MT-06), so no
+# SD row is ever a blocking severity — only the mechanical JOIN is [det].
+SLUG_ABUSE = "abuse-controls-drift"
+SLUG_RESILIENCE = "resilience-posture-drift"
+SLUG_ISOLATION = "isolation-drift"
+SLUG_TIMEOUT = "timeout-budget-drift"
+CLASS_ABUSE = "abuse-controls"
+CLASS_RESILIENCE = "resilience-posture"
+CLASS_ISOLATION = "isolation"
+
+
+def sd_locus(decl):
+    """The declared locus string for an SD field object, or None when the field or
+    its locus is absent (nothing declared -> no row emitted, additive-safe)."""
+    if not isinstance(decl, dict):
+        return None
+    loc = decl.get("locus")
+    return loc if isinstance(loc, str) and loc else None
+
+
+def sd_out_of_scope(class_name: str, locus: str, extra: str = "") -> None:
+    """Emit THE one informational out-of-scope-by-declaration line (ADR 0022). It
+    names the class + declared locus and is NEVER a finding/violation/blocking/
+    counted line — the mechanical embodiment of SD-00's silence, the opposite of a
+    raw missing-X finding. A declared out-of-repo locus (gateway/mesh/…) is verified
+    elsewhere by declaration; `none-declared` is honestly UNdeclared (not verified
+    elsewhere — just no in-repo control to assess), so it gets the truthful wording."""
+    tail = f" — {extra}" if extra else ""
+    if locus == "none-declared":
+        body = ("no locus declared — no in-repo control to verify, and none declared "
+                "elsewhere (honest silence, not a finding)")
+    else:
+        body = "verified elsewhere by declaration — not assessed in-repo"
+    emit(f"[out-of-scope-by-declaration] {class_name} (locus={locus}): {body}{tail}")
+# vendored:sd-locus-guard:end
+
 
 def fingerprint(path: str, symbol: str, slug: str) -> str:
     """audit-state-and-verify.md: first 12 hex of sha1('<path>:<symbol>:<slug>')."""
@@ -198,6 +243,24 @@ def run(manifest_path: Path, journeys_path: Path, audited_env: str) -> int:
 
         derived_crit = derived  # per-journey criticality drives step severity
 
+        # ── SD-05: abuse controls (rate limiting), journey-scoped, VERIFY app-only ──
+        # locus:app -> verify the discovered (agent-traced) limiter, comment-only
+        # (MT-06). Any other locus -> out-of-scope-by-declaration, NEVER a raw
+        # "missing rate limit" finding (SD-00). Field absent -> no row (additive).
+        abuse_loc = sd_locus(mj.get("abuse_controls"))
+        if abuse_loc is not None:
+            fp_ab = fingerprint(src, dname, SLUG_ABUSE)
+            if abuse_loc == "app":
+                discovered_ab = disc.get("abuse_control")
+                if discovered_ab == "present":
+                    emit(f"ROW {SLUG_ABUSE} PASS comment-only fpsrc={src}:{dname}:{SLUG_ABUSE} fp={fp_ab} :: locus=app discovered=present")
+                elif discovered_ab == "absent":
+                    emit(f"ROW {SLUG_ABUSE} FAIL comment-only fpsrc={src}:{dname}:{SLUG_ABUSE} fp={fp_ab} :: locus=app discovered=absent (app-declared limiter not discovered on the traced journey — candidate, agent-traced, MT-06)")
+                else:
+                    emit(f"ROW {SLUG_ABUSE} NEEDS-VERIFICATION comment-only fpsrc={src}:{dname}:{SLUG_ABUSE} fp={fp_ab} :: locus=app discovered={discovered_ab or 'unknown'} (limiter presence not determined — agent)")
+            else:
+                sd_out_of_scope(CLASS_ABUSE, abuse_loc)
+
         # ── per-step rows keyed by event_name (row 2) ──────────────────────────
         d_steps = disc.get("steps", []) or []
         d_step_by_event = {s.get("event_name"): s for s in d_steps if s.get("event_name")}
@@ -268,6 +331,62 @@ def run(manifest_path: Path, journeys_path: Path, audited_env: str) -> int:
             if isinstance(comp, dict):
                 intent_comp = comp.get("ref") or comp.get("none_reason") or "unspecified"
                 emit(f"ROW compensation NOTE :: intent={intent_comp} discovered={ds.get('compensation_note')}")
+
+            # ── SD-06: resilience posture (breakers/shed/bulkheads), VERIFY app-only ──
+            # locus:app -> verify the discovered (agent-traced) breaker/mechanism,
+            # comment-only. shed-priority is DERIVED from criticality (agent) -> a
+            # comment-only NOTE always. Other locus -> out-of-scope (sidecar/mesh);
+            # NEVER a raw "missing circuit breaker" finding (SD-00).
+            res_loc = sd_locus(ms.get("resilience_posture"))
+            if res_loc is not None:
+                fp_r = fingerprint(path, symbol, SLUG_RESILIENCE)
+                if res_loc == "app":
+                    mech = (ms.get("resilience_posture") or {}).get("mechanism", "unspecified")
+                    disc_mech = ds.get("resilience_mechanism")
+                    if disc_mech and disc_mech not in ("none", "unknown"):
+                        emit(f"ROW {SLUG_RESILIENCE} PASS comment-only fpsrc={path}:{symbol}:{SLUG_RESILIENCE} fp={fp_r} :: locus=app mechanism={mech} discovered={disc_mech}")
+                    else:
+                        emit(f"ROW {SLUG_RESILIENCE} FAIL comment-only fpsrc={path}:{symbol}:{SLUG_RESILIENCE} fp={fp_r} :: locus=app mechanism={mech} discovered={disc_mech or 'none'} (app-declared {mech} not discovered on the traced step — candidate, agent-traced, MT-06)")
+                    # shed-priority: derived from the criticality ladder (agent) -> comment-only NOTE, never [det]
+                    emit(f"ROW {SLUG_RESILIENCE} NOTE shed-priority=derived({derived_crit}) comment-only :: shed-priority derived from criticality (agent, MT-06) — never [det]")
+                else:
+                    sd_out_of_scope(CLASS_RESILIENCE, res_loc)
+
+            # ── SD-07: transaction isolation, app verifies a CANDIDATE (never a verdict) ──
+            # locus:app + discovered explicit-lock -> a NOTE candidate (comment-only):
+            # isolation-correctness needs runtime, so no PASS/FAIL verdict is minted.
+            # db-config/none-declared -> out-of-scope + the honest degrade line.
+            iso_loc = sd_locus(ms.get("isolation_requirement"))
+            if iso_loc is not None:
+                fp_i = fingerprint(path, symbol, SLUG_ISOLATION)
+                if iso_loc == "app":
+                    disc_iso = ds.get("isolation")
+                    if disc_iso and disc_iso not in ("none", "unknown"):
+                        emit(f"ROW {SLUG_ISOLATION} NOTE comment-only fpsrc={path}:{symbol}:{SLUG_ISOLATION} fp={fp_i} :: locus=app discovered={disc_iso} (explicit-lock CANDIDATE, not a verdict — isolation-correctness needs runtime; unknown, agent)")
+                    else:
+                        emit(f"ROW {SLUG_ISOLATION} NOTE comment-only fpsrc={path}:{symbol}:{SLUG_ISOLATION} fp={fp_i} :: locus=app discovered={disc_iso or 'none'} (no explicit-lock candidate discovered — unknown, agent; NOT a verdict)")
+                else:
+                    # `none-declared` already reads "no in-repo control to verify"; the
+                    # DB/session-config degrade only clarifies a declared-elsewhere locus.
+                    iso_extra = "" if iso_loc == "none-declared" else "unknown — isolation configured outside repo"
+                    sd_out_of_scope(CLASS_ISOLATION, iso_loc, iso_extra)
+
+            # ── SD-10: timeout budget composition, DETERMINISTIC-in-the-join ─────
+            # timeout_budget_ms carries no locus: per-call timeouts are greppable and
+            # in-repo, so a discovered configured timeout > declared budget is a real
+            # [det] join finding — but it STILL ships comment-only through the ADR-0004
+            # soak (ADR 0022). Cross-hop composition needs topology -> agent/unknown.
+            budget = ms.get("timeout_budget_ms")
+            if isinstance(budget, int):
+                fp_t = fingerprint(path, symbol, SLUG_TIMEOUT)
+                disc_to = ds.get("timeout_ms")
+                if isinstance(disc_to, int):
+                    if disc_to > budget:
+                        emit(f"ROW {SLUG_TIMEOUT} FAIL comment-only fpsrc={path}:{symbol}:{SLUG_TIMEOUT} fp={fp_t} :: discovered={disc_to}ms > budget={budget}ms (deterministic-in-join; comment-only in the ADR-0004 soak, ADR 0022)")
+                    else:
+                        emit(f"ROW {SLUG_TIMEOUT} PASS comment-only fpsrc={path}:{symbol}:{SLUG_TIMEOUT} fp={fp_t} :: discovered={disc_to}ms <= budget={budget}ms")
+                else:
+                    emit(f"ROW {SLUG_TIMEOUT} NOTE comment-only fpsrc={path}:{symbol}:{SLUG_TIMEOUT} fp={fp_t} :: no discovered per-call timeout — per-call candidate only; cross-hop composition unknown (agent/topology)")
 
     return 0
 

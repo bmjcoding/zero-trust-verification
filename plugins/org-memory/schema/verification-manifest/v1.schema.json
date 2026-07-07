@@ -87,6 +87,8 @@
     "confirmation": { "enum": ["confirmed", "proposed"] },
     "lifecycle": { "enum": ["active", "withdrawn"] },
     "confirmedBy": { "type": "string", "pattern": "^DL-[0-9]{3}$" },
+    "controlLocus": { "enum": ["app", "gateway", "mesh", "sidecar", "db-config", "vault", "kms", "ops", "none-declared"] },
+    "resilienceMechanism": { "enum": ["breaker", "fail-fast", "bulkhead", "shed", "none-declared"] },
     "journey": {
       "type": "object",
       "required": ["id", "name", "lifecycle", "criticality", "confirmation", "steps"],
@@ -99,6 +101,16 @@
         "criticality_reason": { "type": "string" },
         "confirmation": { "$ref": "#/$defs/confirmation" },
         "confirmed_by": { "$ref": "#/$defs/confirmedBy" },
+        "abuse_controls": {
+          "type": "object",
+          "description": "SD-01/ADR 0021: declared locus for this journey's abuse controls (rate limiting). Additive-optional; the audit VERIFIES only locus:app and reports every other locus out-of-scope-by-declaration.",
+          "required": ["locus"],
+          "properties": {
+            "locus": { "$ref": "#/$defs/controlLocus" },
+            "note": { "type": "string" }
+          },
+          "additionalProperties": true
+        },
         "steps": { "type": "array", "items": { "$ref": "#/$defs/step" } }
       },
       "additionalProperties": true
@@ -130,6 +142,31 @@
         "vital_class": { "enum": ["money", "state-transition", "external-side-effect", "auth", null] },
         "required_emission": { "enum": ["OBSERVED", "LOG-ONLY"] },
         "event_name": { "type": "string" },
+        "resilience_posture": {
+          "type": "object",
+          "description": "SD-01/ADR 0021: declared locus + mechanism for this step's resilience posture (breakers/shed/bulkheads). Additive-optional; VERIFIED only at locus:app.",
+          "required": ["locus"],
+          "properties": {
+            "locus": { "$ref": "#/$defs/controlLocus" },
+            "mechanism": { "$ref": "#/$defs/resilienceMechanism" }
+          },
+          "additionalProperties": true
+        },
+        "isolation_requirement": {
+          "type": "object",
+          "description": "SD-01/ADR 0021: declared locus + level for this money-write's transaction isolation. Additive-optional; VERIFIED only at locus:app (db-config/none-declared -> out-of-scope-by-declaration).",
+          "required": ["locus"],
+          "properties": {
+            "locus": { "$ref": "#/$defs/controlLocus" },
+            "level": { "type": "string" }
+          },
+          "additionalProperties": true
+        },
+        "timeout_budget_ms": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "SD-01/ADR 0021: declared per-step timeout budget in ms (SD §3.7). Additive-optional; in-repo so verified deterministically-in-the-join against the discovered configured timeout — no locus (per-call timeouts are greppable)."
+        },
         "alert_seam": {
           "type": "object",
           "properties": { "default": { "enum": ["paged", "dashboard-only", "none"] } },

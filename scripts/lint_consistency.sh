@@ -743,6 +743,75 @@ else
   [ "$v11_bad" -eq 0 ] && ok V11 "outcome-store schema + contract block single-source byte-identical + H1 anti-laundering guard holds (ADR 0023 / register OM-09)"
 fi
 
+# ── V12: the System-Design Coverage tier's two structural guards (ADR 0021/0022;
+#        register SD-12). The tier is REPORT-ONLY and adds NO join engine (ADR 0003)
+#        — two invariants must hold in SOURCE or the declare-then-verify honesty spine
+#        silently breaks:
+#   (a) UNFALSIFIABILITY (SD-00/SD-03): the CH-03 join engine (manifest_join.py) routes
+#       every non-app locus through the out-of-scope-by-declaration emitter and NEVER
+#       emits a raw "missing X" finding for a non-app control (unfalsifiable against an
+#       out-of-repo locus — the central prohibition). The marked vendored:sd-locus-guard
+#       region must be present, the out-of-scope emitter must exist, and NO emitted
+#       output line anywhere in the engine may carry a raw missing/no-<control> phrase.
+#   (b) NO PARALLEL COMPARATOR (SD-04/SD-12; MT-10 precedent): the four SD drift rows
+#       live IN manifest_join.py, not a sibling — a second join engine that drifts is
+#       exactly what ADR 0003 forbids. Each slug must be present in manifest_join.py and
+#       ABSENT from every other cleanup-audit script.
+#        NUMBERED V12: V7 (mutation) / V8 (OWM) / V9 (triage) / V10 (remediation) / V11
+#        (outcome) are TAKEN. V1 ALREADY byte-pins the three vendored SD-01 schema copies
+#        (its find walks the new-field-bearing */verification-manifest/v1.schema.json
+#        copies automatically) — V12 does NOT duplicate that; it adds (a)+(b) only.
+SD_SKILL_SCRIPTS="$ROOT/plugins/codebase-health/skills/cleanup-audit/scripts"
+JOINPY="$SD_SKILL_SCRIPTS/manifest_join.py"
+SD_SLUGS="abuse-controls-drift resilience-posture-drift isolation-drift timeout-budget-drift"
+if [ ! -f "$JOINPY" ]; then
+  ok V12 "CH-03 join engine not present; no SD rows to guard (register SD-12)"
+else
+  v12_bad=0
+  # (a) unfalsifiability — the marked guard region is present.
+  if grep -qF 'vendored:sd-locus-guard:begin' "$JOINPY" && grep -qF 'vendored:sd-locus-guard:end' "$JOINPY"; then
+    ok V12 "unfalsifiability: the vendored:sd-locus-guard region is present in the CH-03 join engine"
+  else
+    violation V12 "the SD locus-guard region (vendored:sd-locus-guard) is missing from manifest_join.py — the out-of-scope short-circuit is unguarded (SD-00 / ADR 0022)"; v12_bad=1
+  fi
+  # (a) the out-of-scope-by-declaration emitter exists (non-app loci have somewhere to go).
+  if grep -qF 'out-of-scope-by-declaration' "$JOINPY"; then
+    ok V12 "unfalsifiability: the join engine emits out-of-scope-by-declaration for non-app loci (ADR 0022)"
+  else
+    violation V12 "manifest_join.py no longer emits out-of-scope-by-declaration — non-app SD loci would fall through (ADR 0022)"; v12_bad=1
+  fi
+  # (a) the CENTRAL PROHIBITION: no EMITTED line mints a raw missing-X finding for an SD
+  #     control. Restrict the scan to emit(/print( CALLS so a comment ABOUT the prohibition
+  #     (prose) is not a false positive; a raw "missing rate limit"/"no circuit breaker"/…
+  #     phrase inside an emitted string IS the defect this tier exists to prevent.
+  v12_missingx='(missing|no)[[:space:]]+(rate[ -]?limit|circuit[ -]?breaker|breaker|load[ -]?shed|bulkhead|isolation[ -]?level|key[ -]?rotation|entitlement)'
+  if grep -E '(emit|print)\(' "$JOINPY" 2>/dev/null | grep -iqE "$v12_missingx"; then
+    violation V12 "manifest_join.py EMITS a raw missing-X finding for an SD control — unfalsifiable against an out-of-repo locus (the central prohibition, SD-00 / ADR 0021)"; v12_bad=1
+  else
+    ok V12 "unfalsifiability: no emitted line mints a raw missing-X finding for an SD control (the central prohibition holds)"
+  fi
+  # (b) no parallel comparator — each SD drift row lives IN the CH-03 engine.
+  for slug in $SD_SLUGS; do
+    grep -qF "$slug" "$JOINPY" || { violation V12 "SD drift row '$slug' is missing from the CH-03 join engine manifest_join.py (moved out / never added — SD-04)"; v12_bad=1; }
+  done
+  # (b) ... and NOWHERE ELSE under cleanup-audit/scripts — a sibling carrying an SD slug
+  #     is a second comparator that drifts (MT-10 "one map, one source"; ADR 0003).
+  if [ -d "$SD_SKILL_SCRIPTS" ]; then
+    while IFS= read -r f; do
+      [ -n "$f" ] || continue
+      case "$f" in
+        "$JOINPY"|"$SD_SKILL_SCRIPTS/manifest_join.sh") continue ;;
+      esac
+      for slug in $SD_SLUGS; do
+        if grep -qF "$slug" "$f"; then
+          violation V12 "SD drift row '$slug' found in a sibling (${f#$ROOT/}) — a parallel SD comparator outside the CH-03 engine (ADR 0003 / SD-12 no-parallel-infra)"; v12_bad=1
+        fi
+      done
+    done < <(find "$SD_SKILL_SCRIPTS" -maxdepth 1 -type f \( -name '*.sh' -o -name '*.py' \) 2>/dev/null)
+  fi
+  [ "$v12_bad" -eq 0 ] && ok V12 "SD tier: unfalsifiability guard + no-parallel-comparator guard hold (register SD-12; ADR 0021/0022; V1 byte-pins the 3 vendored SD-01 schema copies)"
+fi
+
 echo
 if [ "$FAIL" -eq 0 ]; then echo "== lint_consistency: all cross-plugin contract rules pass =="; else echo "== lint_consistency: violations found =="; fi
 exit "$FAIL"
