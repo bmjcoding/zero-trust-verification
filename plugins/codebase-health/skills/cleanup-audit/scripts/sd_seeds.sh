@@ -84,4 +84,17 @@ MIGRATION_DDL_RE='\bDROP[[:space:]]+(TABLE|COLUMN|CONSTRAINT|INDEX)\b|\bADD[[:sp
 grep -rIiEn "${EXC[@]}" "$MIGRATION_DDL_RE" "$TARGET" 2>/dev/null \
   | label > "$OUT/sd_migration_ddl.txt" || true
 
+# ── 7. least-privilege breadth seeds (SD-09 / SD §3.5): the honest in-repo slivers
+#      ONLY — Dockerfile `USER root`, `GRANT ALL` in checked-in DDL, `"*"` /
+#      AdministratorAccess in checked-in IAM JSON. This is NOT an access review and
+#      NEVER implies audit-grade entitlement coverage (the disclaimer heads the file);
+#      IAM/Terraform breadth that lives elsewhere is out of this repo's reach. Scoped
+#      forms (USER appuser, GRANT SELECT, a named action) -> excluded. Breadth is the
+#      agent's verdict (comment-only) — these are candidates.
+LEAST_PRIV_RE='^[[:space:]]*USER[[:space:]]+root([[:space:]]|$)|\bGRANT[[:space:]]+ALL\b|"Action"[[:space:]]*:[[:space:]]*"\*"|"Resource"[[:space:]]*:[[:space:]]*"\*"|\bAdministratorAccess\b'
+{
+  echo "[disclaimer] least-privilege breadth is CANDIDATES ONLY, NOT an access review — never implies audit-grade entitlement coverage (SD-09 / SD §3.5); IAM/Terraform breadth living elsewhere is out of this repo's reach"
+  grep -rIEn "${EXC[@]}" "$LEAST_PRIV_RE" "$TARGET" 2>/dev/null | label
+} > "$OUT/sd_least_privilege.txt" || true
+
 exit 0
