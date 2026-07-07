@@ -31,14 +31,17 @@ def main(argv):
     git_sha = _flag(argv, "--git-sha", "")
     kind = _flag(argv, "--kind", "run")
 
-    if not dora_file or not captured_at:
-        sys.stderr.write("outcome_assemble: --dora-file and --captured-at required\n")
+    if not captured_at or (not dora_file and not emission_file):
+        sys.stderr.write("outcome_assemble: --captured-at and at least one of "
+                         "--dora-file / --emission-file required\n")
         return 64
-    try:
-        dora = json.loads(Path(dora_file).read_text(encoding="utf-8"))
-    except (OSError, ValueError) as exc:
-        sys.stderr.write("outcome_assemble: bad dora blob: %s\n" % exc)
-        return 64
+    dora = {}
+    if dora_file:
+        try:
+            dora = json.loads(Path(dora_file).read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            sys.stderr.write("outcome_assemble: bad dora blob: %s\n" % exc)
+            return 64
 
     metrics = list(dora.get("metrics") or [])
     if emission_file:
