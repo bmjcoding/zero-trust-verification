@@ -1,0 +1,60 @@
+{
+  "schema_version": 2,
+  "runs": [
+    {"run": 1, "kind": "audit", "date": "2026-07-06", "git_sha": "abc1234", "target": "src/",
+     "findings_by_severity": {"CRITICAL": 0, "HIGH": 4, "MED": 1, "LOW": 0}}
+  ],
+  "findings": {
+    "aaaa1111dead": {
+      "tag": "NAV-H1", "slug": "dead-code", "category": "dead-code",
+      "path": "src/legacy/report.py", "symbol": "format_report_rows_old",
+      "severity": "HIGH", "title": "unused duplicate exporter",
+      "status": "OPEN", "first_seen": 1, "last_seen": 1,
+      "evidence": "no inbound refs; jscpd near-dup of format_report_rows", "verified_by": null
+    },
+    "bbbb2222dark": {
+      "tag": "J-H3", "slug": "dark-money-movement", "category": "journey/uninstrumented",
+      "path": "src/pay/transfer.py", "symbol": "transfer_funds",
+      "severity": "HIGH", "title": "money movement emits no business event (DARK)",
+      "status": "OPEN", "first_seen": 1, "last_seen": 1,
+      "evidence": "transfer_funds in vital_candidates.txt, absent from telemetry.txt; README ## Transfers CORE", "verified_by": null
+    },
+    "cccc3333idem": {
+      "tag": "TX-H1", "slug": "non-idempotent-handler", "category": "security/transactional-integrity",
+      "path": "src/pay/webhook.py", "symbol": "handle_charge",
+      "severity": "HIGH", "title": "webhook handler has no idempotency guard",
+      "status": "OPEN", "first_seen": 1, "last_seen": 1,
+      "evidence": "no dedup key checked before side effect (agent judgment)", "verified_by": null
+    },
+    "dddd4444giant": {
+      "tag": "NAV-M1", "slug": "giant-file", "category": "navigability",
+      "path": "src/megamodule.py", "symbol": "<module>",
+      "severity": "MED", "title": "1600+ line module",
+      "status": "OPEN", "first_seen": 1, "last_seen": 1,
+      "evidence": "size ladder MED tier", "verified_by": null
+    },
+    "eeee5555filed": {
+      "tag": "MK-H1", "slug": "marker", "category": "incomplete-logic",
+      "path": "src/checkout.py", "symbol": "finalize",
+      "severity": "HIGH", "title": "TODO on the checkout path",
+      "status": "OPEN", "first_seen": 1, "last_seen": 1,
+      "evidence": "TODO: wire up tax", "verified_by": null,
+      "remediation": {"status": "PR_OPEN", "ref": "org/repo#42", "opened_at": "2026-07-06T10:00:00Z", "remediation_depth": 0}
+    },
+    "ffff6666wont": {
+      "tag": "MK-H2", "slug": "marker", "category": "incomplete-logic",
+      "path": "src/legacy/notes.py", "symbol": "scratch",
+      "severity": "HIGH", "title": "TODO a human declined to act on",
+      "status": "WONTFIX", "first_seen": 1, "last_seen": 1,
+      "evidence": "TODO: revisit someday", "verified_by": null
+    },
+    "9999unknownslug": {
+      "tag": "ZZ-H9", "slug": "brand-new-unmapped-slug", "category": "architecture",
+      "path": "src/weird.py", "symbol": "mystery",
+      "severity": "HIGH", "title": "a slug not in the provenance table",
+      "status": "OPEN", "first_seen": 1, "last_seen": 1,
+      "evidence": "provenance-unknown fail-safe case", "verified_by": null
+    }
+  },
+  "not_covered": []
+}
