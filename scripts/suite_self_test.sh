@@ -9,7 +9,8 @@
 #      V6 marketplace incl. name<->source swap and a rogue plugin, V7 mutation
 #      adapter map/resolver/producer+consumer tokens, V8 OWM manifest-parse fork,
 #      V9 triage telemetry-contract byte-identity, V10 remediation tables,
-#      V11 outcome-store schema/contract byte-identity + the H1 anti-laundering guard)
+#      V11 outcome-store schema/contract byte-identity + the H1 anti-laundering guard,
+#      V12 System-Design Coverage unfalsifiability + no-parallel-comparator guards)
 #      and assert the lint catches it, plus a few false-POSITIVE guards — so no
 #      vendor lint is vacuous and none reds on a benign reformat/prose mention
 #   3. the root manifest-validator self-test (scripts/self_test.sh)
@@ -17,6 +18,8 @@
 #      org-memory, triage
 #   5. the outcome-measurement layer self-test (scripts/outcome_self_test.sh,
 #      ADR 0023; OM-01..OM-08), skip-honest on the Marshal MOCK host
+#   6. the System-Design Coverage tier self-test (scripts/sd_self_test.sh,
+#      ADR 0021/0022; SD-01..SD-12), skip-honest without the validator toolchain
 #
 # HONESTY: a plugin self-test can `exit 0` while SKIPPING guarded sections when an
 # optional dep is absent (autopilot's mock server, marshal's uv/jq loop backends,
@@ -191,6 +194,17 @@ seed_om() {
   cp "$ROOT/docs/specs/outcome-store-contract.md" "$d/docs/specs/"
   cp "$ROOT/plugins/marshal/reference/outcome-measurement.md" "$d/plugins/marshal/reference/"
   cp "$ROOT/docs/specs/outcome-measurement-register.md" "$d/docs/specs/"
+}
+
+# seed what lint V12 (System-Design Coverage guards) reads: the CH-03 join engine
+# (manifest_join.py + its wrapper) + the canonical manifest schema (so V1 stays
+# green and V12 is the rule under test). ADR 0021/0022 / register SD-12.
+seed_sd() {
+  local d="$1"
+  mkdir -p "$d/plugins/codebase-health/skills/cleanup-audit/scripts" "$d/schema/verification-manifest"
+  cp "$ROOT/plugins/codebase-health/skills/cleanup-audit/scripts/manifest_join.py" "$d/plugins/codebase-health/skills/cleanup-audit/scripts/"
+  cp "$ROOT/plugins/codebase-health/skills/cleanup-audit/scripts/manifest_join.sh" "$d/plugins/codebase-health/skills/cleanup-audit/scripts/"
+  cp "$ROOT/schema/verification-manifest/v1.schema.json" "$d/schema/verification-manifest/"
 }
 
 # V1 — a vendored manifest schema copy drifts from canonical.
@@ -436,6 +450,42 @@ dr="$SANDBOX/v11p2"; seed_om "$dr"
 printf '\nSome extra prose after the vendored outcome-store-contract block.\n' >> "$dr/$OM_BLOCK_REL"
 expect_no_fail V11 "$dr" "prose appended outside the outcome-store-contract markers"
 
+# V12 (ADR 0021/0022 / register SD-12) — the System-Design Coverage tier's two
+# structural guards. Plant a violation per guard and assert V12 fires; a prose
+# mention of a missing-X phrase (no emit) stays green. Numbered V12 (V7 mutation /
+# V8 OWM / V9 triage / V10 remediation / V11 outcome are taken).
+SD_JOINPY_REL="plugins/codebase-health/skills/cleanup-audit/scripts/manifest_join.py"
+
+# V12-a1 — the CENTRAL PROHIBITION: the join engine EMITS a raw missing-X finding
+# for a non-app control (unfalsifiable against an out-of-repo locus).
+dr="$SANDBOX/v12a1"; seed_sd "$dr"
+printf '\nemit("ROW abuse-controls-drift FAIL :: missing rate limit at the gateway")\n' >> "$dr/$SD_JOINPY_REL"
+expect_fail V12 "$dr" "join engine emits a raw missing-X finding for a non-app SD control (unfalsifiability breach)"
+
+# V12-a2 — the marked vendored:sd-locus-guard region is removed (the out-of-scope
+# short-circuit is unguarded).
+dr="$SANDBOX/v12a2"; seed_sd "$dr"
+grep -v 'vendored:sd-locus-guard' "$dr/$SD_JOINPY_REL" > "$dr/j.tmp" && mv "$dr/j.tmp" "$dr/$SD_JOINPY_REL"
+expect_fail V12 "$dr" "the SD locus-guard region stripped from manifest_join.py"
+
+# V12-b1 — a SIBLING script carries an SD drift slug: a second SD comparator outside
+# the CH-03 engine (ADR 0003 / MT-10 no-parallel-infra).
+dr="$SANDBOX/v12b1"; seed_sd "$dr"
+printf '#!/usr/bin/env bash\n# rogue: emits abuse-controls-drift outside the one join engine\necho "ROW abuse-controls-drift PASS"\n' \
+  > "$dr/plugins/codebase-health/skills/cleanup-audit/scripts/sd_rogue_join.sh"
+expect_fail V12 "$dr" "a sibling script carries an SD drift slug (parallel comparator)"
+
+# V12-b2 — an SD drift row is moved OUT of the CH-03 engine (renamed away).
+dr="$SANDBOX/v12b2"; seed_sd "$dr"
+sed 's/timeout-budget-drift/timeout-budget-DRIFTED/g' "$dr/$SD_JOINPY_REL" > "$dr/j.tmp" && mv "$dr/j.tmp" "$dr/$SD_JOINPY_REL"
+expect_fail V12 "$dr" "an SD drift row ('timeout-budget-drift') no longer lives in manifest_join.py"
+
+# V12 false-positive guard — a PROSE comment naming a missing-X phrase (no emit/print
+# call on the line) is documentation, not a raw finding: stays green.
+dr="$SANDBOX/v12p"; seed_sd "$dr"
+printf '\n# SD honesty note: a raw "missing rate limit" finding is exactly what this tier forbids.\n' >> "$dr/$SD_JOINPY_REL"
+expect_no_fail V12 "$dr" "prose comment naming a missing-X phrase (no emit/print call)"
+
 if [ "$RED_FAIL" -eq 0 ]; then
   echo "  -> lint-red-tests PASS (every vendor lint caught its planted drift; no false positives)"; record "lint-red-tests" PASS
 else
@@ -464,6 +514,15 @@ run_ok "triage"          bash "$ROOT/plugins/triage/scripts/self_test.sh"
 #    false green.
 # ==============================================================================
 run_ok "outcome-self-test" bash "$ROOT/scripts/outcome_self_test.sh"
+
+# ==============================================================================
+# 6. System-Design Coverage tier self-test (ADR 0021/0022; register SD-01..SD-12).
+#    Declare-then-verify [det] half: schema additive-safety, the out-of-scope-by-
+#    declaration short-circuit + unfalsifiability guard, the four §12 comparator
+#    rows, the in-repo candidate seeds + must_not_flag negatives. Its join/validator
+#    sections [skip] loudly without the vendored validator toolchain (skip-honest).
+# ==============================================================================
+run_ok "sd-self-test" bash "$ROOT/scripts/sd_self_test.sh"
 
 # ==============================================================================
 # Summary
