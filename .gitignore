@@ -6,3 +6,4 @@ tests/codebase-health/test-fixtures/blind/
 .venv/
 __pycache__/
 *.pyc
+outcome/
