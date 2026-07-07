@@ -474,6 +474,100 @@ else
 fi
 [ "$v7_bad" -eq 0 ] && ok V7 "mutation adapter map + resolver byte-identical, sole-source, producer/consumer tokens pinned (ADR 0016 — cannot drift)"
 
+# ── V10: the remediation loop's two lint-pinned tables (ADR 0017 / 0018; register
+#        RL-02/RL-03/RL-13). The loop is WIRING and holds no quality opinion — but
+#        two of its inputs ARE vendored contracts that must not silently drift:
+#   (a) classify_fix.sh's escalate-class table CITES ADR 0002 and its money/auth
+#       membership is a SUPERSET of audit-state-and-verify.md's Category-TX slug
+#       catalog (a TX slug silently dropped from the classifier would let a
+#       money-path fix auto-drain — the exact failure ADR 0002 forbids);
+#   (b) slug_provenance.tsv — every slug exists in the audit taxonomy AND each
+#       provenance matches SPEC_1.4.0 §12 (a slug flipped det<->agent changes what
+#       the loop autonomously files; drift → red).
+#        NUMBERED V10, not V9: V9 is the parallel prod-triage stream's rule. This
+#        rule must NOT renumber or collide with it.
+RL_SCRIPTS="$ROOT/plugins/codebase-health/skills/cleanup-audit/scripts"
+CLASSIFY="$RL_SCRIPTS/classify_fix.sh"
+PROVTSV="$RL_SCRIPTS/slug_provenance.tsv"
+TAXONOMY="$ROOT/plugins/codebase-health/skills/cleanup-audit/references/audit-state-and-verify.md"
+CHSPEC="$ROOT/docs/specs/codebase-health-spec-1.4.0.md"
+if [ ! -f "$CLASSIFY" ] && [ ! -f "$PROVTSV" ]; then
+  ok V10 "remediation loop not present; nothing to pin (ADR 0017)"
+else
+  v10_bad=0
+  # (a) escalate-class table: cites ADR 0002, and is a SUPERSET of the TX catalog.
+  if [ ! -f "$CLASSIFY" ]; then
+    violation V10 "classify_fix.sh missing but the loop is present (register RL-03)"; v10_bad=1
+  else
+    if grep -qF 'ADR 0002' "$CLASSIFY"; then
+      ok V10 "escalate-class table cites the ADR-0002 block"
+    else
+      violation V10 "classify_fix.sh escalate-class table does not cite ADR 0002 (register RL-03/V10)"; v10_bad=1
+    fi
+    # The money/auth Category-TX catalog is authored in audit-state-and-verify.md.
+    # Each TX slug must be present THERE (source of truth) AND in classify_fix.sh
+    # (the escalate-class must be a superset). A drop on either side → red.
+    for tx in non-idempotent-handler missing-dedup-guard unsafe-retry double-submit-window missing-compensation missing-audit-trail; do
+      if [ -f "$TAXONOMY" ] && ! grep -qF "$tx" "$TAXONOMY"; then
+        violation V10 "TX slug '$tx' absent from audit-state-and-verify.md catalog (V10 hardcoded list needs reconciling)"; v10_bad=1
+      fi
+      if ! grep -qF "$tx" "$CLASSIFY"; then
+        violation V10 "escalate-class table is NOT a superset: TX slug '$tx' missing from classify_fix.sh (money-path fix could auto-drain — ADR 0002)"; v10_bad=1
+      fi
+    done
+  fi
+  # (b) slug_provenance.tsv: taxonomy existence + §12 provenance match.
+  if [ ! -f "$PROVTSV" ]; then
+    violation V10 "slug_provenance.tsv missing but the loop is present (register RL-02)"; v10_bad=1
+  else
+    # "audit taxonomy" = the references + SPEC §12 + the detector scripts that
+    # DEFINE defect kinds — deliberately NOT the loop's own routing tables
+    # (slug_provenance.tsv / classify_fix.sh), else a slug would match itself and
+    # an invented slug would slip through.
+    TAX_REFS="$ROOT/plugins/codebase-health/skills/cleanup-audit/references"
+    TAX_MROT="$ROOT/plugins/codebase-health/skills/cleanup-audit/scripts/check_memory_rot.sh"
+    TAX_DEBT="$ROOT/plugins/codebase-health/skills/cleanup-audit/scripts/debt_patterns.sh"
+    v10_tax=""
+    [ -d "$TAX_REFS" ] && v10_tax="$v10_tax $TAX_REFS"
+    [ -f "$CHSPEC" ]   && v10_tax="$v10_tax $CHSPEC"
+    [ -f "$TAX_MROT" ] && v10_tax="$v10_tax $TAX_MROT"
+    [ -f "$TAX_DEBT" ] && v10_tax="$v10_tax $TAX_DEBT"
+    # every slug exists in the audit taxonomy (kebab or underscore form).
+    while IFS="$(printf '\t')" read -r slug prov _rest; do
+      case "$slug" in ''|'#'*) continue ;; esac
+      [ -n "$prov" ] || continue
+      case "$prov" in
+        deterministic|agent) : ;;
+        *) violation V10 "slug_provenance.tsv: slug '$slug' has invalid provenance '$prov' (must be deterministic|agent)"; v10_bad=1 ;;
+      esac
+      alt="$(printf '%s' "$slug" | tr '-' '_')"
+      if [ -z "$v10_tax" ] || ! grep -rIqiE "($slug|$alt)" $v10_tax 2>/dev/null; then
+        violation V10 "slug_provenance.tsv: slug '$slug' does not exist in the audit taxonomy (invented slug — register RL-02/V10)"; v10_bad=1
+      fi
+    done < "$PROVTSV"
+    # §12 provenance anchors (docs/specs/codebase-health-spec-1.4.0.md §12): a slug
+    # flipped det<->agent silently changes what the loop autonomously files.
+    v10_anchor() {  # <slug> <expected-provenance> <§12-ref>
+      local got
+      got="$(awk -F'\t' -v s="$1" '/^[[:space:]]*#/{next} NF<2{next} $1==s{print $2; exit}' "$PROVTSV")"
+      if [ -z "$got" ]; then
+        violation V10 "slug_provenance.tsv missing §12 anchor slug '$1' (expected $2, $3)"; v10_bad=1
+      elif [ "$got" != "$2" ]; then
+        violation V10 "slug_provenance.tsv: '$1' provenance '$got' != §12 '$2' ($3) — determinism sweep drift"; v10_bad=1
+      fi
+    }
+    v10_anchor dark-money-movement    deterministic "J3/§12-flip"
+    v10_anchor giant-file             deterministic "GF1"
+    v10_anchor memory-rot-dangling-ref deterministic "CH-05-det-layer"
+    v10_anchor log-only-refund        agent "J5"
+    v10_anchor non-idempotent-handler agent "TX1"
+    v10_anchor unsafe-retry           agent "TX2"
+    v10_anchor missing-compensation   agent "TX3"
+    v10_anchor convoluted-branching   agent "JC1"
+  fi
+  [ "$v10_bad" -eq 0 ] && ok V10 "remediation escalate-class table (ADR-0002 superset of TX catalog) + slug_provenance §12 taxonomy pinned (register RL-02/03/13)"
+fi
+
 echo
 if [ "$FAIL" -eq 0 ]; then echo "== lint_consistency: all cross-plugin contract rules pass =="; else echo "== lint_consistency: violations found =="; fi
 exit "$FAIL"
