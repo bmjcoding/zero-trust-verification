@@ -1255,6 +1255,247 @@ else
   echo "  [skip] check_mutation_survivors.sh absent — MT-04/05/06 checks skipped (standalone install)"
 fi
 
+# ==============================================================================
+# Remediation loop (RL-01..RL-12) — deterministic substrate (ADR 0017/0018).
+# The loop is WIRING, not a checker: every assertion below is a deterministic
+# script call / grep / fixture, never agent judgment. Report-only/advisory-first
+# posture is asserted structurally (no merge, no blocking path). RED-FIRST: the
+# RL-0x scripts do not exist until the loop lands, so every assertion here fails
+# on two consecutive runs before implementation (invariant 9).
+# ==============================================================================
+REM="$SKILL_SCRIPTS"
+REMFIX="$HARNESS_DIR/test-fixtures/remediation"
+AP="$REPO_ROOT/plugins/autopilot/scripts"
+
+echo "== RL-00. loop file set present (non-vacuity gate: a deleted loop script is a RED, never a silent skip) =="
+# The whole loop ships as one unit. Assert every file exists so a later section
+# gated on `[ -f <script> ]` can never SILENTLY pass by skipping (the mock-hidden
+# gap the Marshal-P0 lesson warns about).
+for rl in read_findings.sh finding_eligible.sh classify_fix.sh remediation_route.sh \
+          remediation_depth.sh already_filed.sh remediation_stamp.sh \
+          remediation_scope_guard.sh build_register.sh remediation_state.py remediation_lib.sh \
+          slug_provenance.tsv; do
+  [ -f "$REM/$rl" ] && ok "RL-00: loop file present: $rl" || fail "RL-00: loop file MISSING: $rl (the loop is one unit)"
+done
+[ -f "$PLUGIN/skills/cleanup-audit/remediation.config.yaml" ] && ok "RL-00: shipped remediation.config.yaml present" || fail "RL-00: remediation.config.yaml missing"
+[ -f "$PLUGIN/commands/remediate.md" ] && ok "RL-00: /remediate command present" || fail "RL-00: /remediate command missing"
+[ -f "$PLUGIN/skills/cleanup-audit/references/remediation-loop.md" ] && ok "RL-00: remediation-loop.md reference present" || fail "RL-00: remediation-loop.md reference missing"
+
+echo "== RL-01. finding-stream reader (read_findings.sh; ADR 0017 step 1; invariant 1) =="
+if [ -f "$REM/read_findings.sh" ]; then
+  bash "$REM/read_findings.sh" "$REMFIX/state_v2.json" > "$WORK/rl_rows.txt" 2>/dev/null
+  assert_grep     "$WORK/rl_rows.txt" "bbbb2222dark.*dark-money-movement.*OPEN"  "RL-01: OPEN finding normalized (fp|sev|slug|path|symbol|status|remediation_status)"
+  assert_not_grep "$WORK/rl_rows.txt" "ffff6666wont"                            "RL-01: WONTFIX finding is NOT emitted (loop reads OPEN work only)"
+  assert_grep     "$WORK/rl_rows.txt" "eeee5555filed.*PR_OPEN"                  "RL-01: an OPEN finding carrying a PR_OPEN remediation record surfaces its remediation_status"
+  nf="$(head -1 "$WORK/rl_rows.txt" | awk -F'\t' '{print NF}')"
+  if [ "${nf:-0}" = "7" ]; then ok "RL-01: exactly 7 columns — NO fabricated expected_by column (Defect A)"; else fail "RL-01: expected 7 columns, got ${nf:-0} (expected_by must NOT be fabricated)"; fi
+  bash "$REM/read_findings.sh" "$REMFIX/state_corrupt.json" > "$WORK/rl_cor.out" 2>"$WORK/rl_cor.err"; rc=$?
+  if [ "$rc" -eq 0 ] && [ ! -s "$WORK/rl_cor.out" ]; then ok "RL-01: corrupt state -> zero rows, exit 0 (invariant 4)"; else fail "RL-01: corrupt state must emit nothing + exit 0 [rc=$rc]"; fi
+  assert_grep "$WORK/rl_cor.err" "note.*emitting nothing" "RL-01: corrupt-state degrade emits a loud [note] (never silent, never a guessed row)"
+  bash "$REM/read_findings.sh" "$REMFIX/state_badschema.json" > "$WORK/rl_bad.out" 2>/dev/null; rc=$?
+  if [ "$rc" -eq 0 ] && [ ! -s "$WORK/rl_bad.out" ]; then ok "RL-01: unknown schema_version -> zero rows, exit 0"; else fail "RL-01: unknown schema must emit nothing + exit 0 [rc=$rc]"; fi
+  bash "$REM/read_findings.sh" "$REMFIX/state_v2.json" --from-pr-gate "$REMFIX/pr_gate_capture.txt" > "$WORK/rl_prg.out" 2>/dev/null
+  assert_grep "$WORK/rl_prg.out" "memory-rot-dangling-ref.*src/a.py.*foo.*OPEN" "RL-01: --from-pr-gate ingests a captured FINDING line (blocking->HIGH); never re-runs the gate"
+else
+  fail "RL-01: read_findings.sh absent (red-first: implement to green)"
+fi
+
+echo "== RL-02. eligibility gate (finding_eligible.sh; severity floor ∧ deterministic provenance) =="
+if [ -f "$REM/finding_eligible.sh" ]; then
+  printf 'severity_floor: MED\n' > "$WORK/rl_floor_med.yaml"
+  assert_grep <(bash "$REM/finding_eligible.sh" --severity HIGH --slug dark-money-movement)    "^ELIGIBLE$"                    "RL-02: HIGH + deterministic slug -> ELIGIBLE"
+  assert_grep <(bash "$REM/finding_eligible.sh" --severity HIGH --slug non-idempotent-handler) "INELIGIBLE:agent-evidence-only" "RL-02: HIGH + agent-scored slug -> INELIGIBLE(agent-evidence-only) (ADR 0004)"
+  assert_grep <(bash "$REM/finding_eligible.sh" --severity MED  --slug giant-file)             "INELIGIBLE:below-floor"        "RL-02: MED + deterministic slug -> INELIGIBLE(below-floor) (default HIGH)"
+  assert_grep <(bash "$REM/finding_eligible.sh" --severity MED  --slug giant-file --config "$WORK/rl_floor_med.yaml") "^ELIGIBLE$" "RL-02: config floor=MED flips the MED case -> ELIGIBLE"
+  assert_grep <(bash "$REM/finding_eligible.sh" --severity HIGH --slug brand-new-unmapped-slug) "INELIGIBLE:unknown-provenance" "RL-02: unknown slug -> INELIGIBLE(unknown-provenance) (fail-safe toward inaction)"
+else
+  fail "RL-02: finding_eligible.sh absent (red-first)"
+fi
+
+echo "== RL-03. escalate-class routing table (classify_fix.sh; ADR 0002 trilist, lint-pinned V10) =="
+if [ -f "$REM/classify_fix.sh" ]; then
+  for s in marker dead-code commented-code suppression memory-rot-dangling-ref giant-file test-skip vacuous-test missing-behavior-binding; do
+    assert_grep <(bash "$REM/classify_fix.sh" "$s") "^DRAIN$" "RL-03: drain-class slug '$s' -> DRAIN"
+  done
+  for s in non-idempotent-handler missing-dedup-guard unsafe-retry double-submit-window missing-compensation missing-audit-trail dark-money-movement log-only-refund security/authn; do
+    assert_grep <(bash "$REM/classify_fix.sh" "$s") "^ESCALATE$" "RL-03: escalate-class slug '$s' -> ESCALATE"
+  done
+  assert_grep <(bash "$REM/classify_fix.sh" --brand-new-slug 2>/dev/null || bash "$REM/classify_fix.sh" brand-new-unmapped-slug) "^ESCALATE$" "RL-03: unknown slug -> ESCALATE (fail-safe; never auto-drain an unclassified fix)"
+else
+  fail "RL-03: classify_fix.sh absent (red-first)"
+fi
+
+echo "== RL-04. spec-gen findings-register door (/spec --from-findings; reserved-but-unbuilt) =="
+SG_SKILL="$REPO_ROOT/plugins/spec-gen/skills/spec/SKILL.md"
+SG_TIER="$REPO_ROOT/docs/specs/spec-gen-tier-v1.md"
+if [ -f "$SG_SKILL" ]; then
+  assert_grep "$SG_SKILL" 'from-findings.*Fresh|--from-findings' "RL-04: SKILL.md invocation table gains the /spec --from-findings row"
+  # Mode is Fresh (reuses the existing draft/fresh code path — no new mode).
+  if grep -E '`/spec --from-findings' "$SG_SKILL" | grep -q '| Fresh |'; then ok "RL-04: from-findings row Mode is Fresh (reuses the Fresh path, no new mode)"; else fail "RL-04: from-findings row must be Fresh mode (no new mode)"; fi
+  # Input-class name matches the §2 name in spec-gen-tier-v1.md.
+  if grep -qi 'Findings register' "$SG_SKILL" && grep -qi 'Findings register' "$SG_TIER"; then ok "RL-04: input-class name 'Findings register' matches spec-gen-tier-v1.md §2"; else fail "RL-04: input-class name must match §2 'Findings register'"; fi
+  # No new spec-gen mode/script: the door is prompt-level; scripts carry no from-findings branch.
+  if grep -rElq 'from.?findings' "$REPO_ROOT/plugins/spec-gen/scripts" 2>/dev/null; then fail "RL-04: spec-gen scripts must NOT add a from-findings code path (reuse existing, ADR 0017 non-goal)"; else ok "RL-04: no new spec-gen mode/script — the door reuses the Fresh interrogation path"; fi
+else
+  fail "RL-04: spec-gen SKILL.md not found"
+fi
+
+echo "== RL-05. router (remediation_route.sh; deterministic composition, NO LLM) =="
+if [ -f "$REM/remediation_route.sh" ]; then
+  ST="$REMFIX/state_v2.json"
+  printf 'severity_floor: MED\n' > "$WORK/rl_floor_med.yaml"
+  assert_grep <(bash "$REM/remediation_route.sh" --fingerprint bbbb2222dark --severity HIGH --slug dark-money-movement --state "$ST")               "^ESCALATE$"          "RL-05: eligible + det-escalate-class + depth0 + unfiled -> ESCALATE"
+  assert_grep <(bash "$REM/remediation_route.sh" --fingerprint aaaa1111dead --severity HIGH --slug dead-code --state "$ST")                         "^DRAIN$"             "RL-05: eligible + drain-class + depth0 + unfiled -> DRAIN"
+  assert_grep <(bash "$REM/remediation_route.sh" --fingerprint aaaa1111dead --severity HIGH --slug dead-code --state "$ST" --branch remediation/x/story-1) "^ESCALATE$"     "RL-05: eligible + drain-class + depth1 -> ESCALATE (Guard 2 overrides class)"
+  assert_grep <(bash "$REM/remediation_route.sh" --fingerprint eeee5555filed --severity HIGH --slug marker --state "$ST")                           "^SKIP:already-filed$" "RL-05: any + already-filed -> SKIP:already-filed (Guard 1 wins)"
+  assert_grep <(bash "$REM/remediation_route.sh" --fingerprint cccc3333idem --severity HIGH --slug non-idempotent-handler --state "$ST")            "^SKIP:agent-evidence-only$" "RL-05: agent-scored -> SKIP:agent-evidence-only"
+  assert_grep <(bash "$REM/remediation_route.sh" --fingerprint dddd4444giant --severity MED --slug giant-file --state "$ST")                        "^SKIP:below-floor$"  "RL-05: below-floor -> SKIP:below-floor"
+else
+  fail "RL-05: remediation_route.sh absent (red-first)"
+fi
+
+echo "== RL-06. DRAIN path: mode handoff + branch-ns/PR-ref stamp + no-merge + no-single-Story =="
+if [ -f "$AP/detect_input_mode.sh" ] && have_validator; then
+  bash "$VALIDATE_MANIFEST" "$MANIFEST_FIX/valid-complete.yaml" >/dev/null 2>&1; vc=$?
+  assert_grep <(bash "$AP/detect_input_mode.sh" --intent generate --manifest "$MANIFEST_FIX/valid-complete.yaml" --validator-exit "$vc") "MODE=STRAIGHT_THROUGH" "RL-06: complete-manifest register -> STRAIGHT_THROUGH (ADR 0008)"
+  bash "$VALIDATE_MANIFEST" "$MANIFEST_FIX/incomplete.yaml" >/dev/null 2>&1; vi=$?
+  assert_grep <(bash "$AP/detect_input_mode.sh" --intent generate --manifest "$MANIFEST_FIX/incomplete.yaml" --validator-exit "$vi") "MODE=GENERATE_PAUSE" "RL-06: incomplete-manifest register -> GENERATE_PAUSE (spec-gen refusal degrade, ADR 0008)"
+else
+  echo "  [skip] detect_input_mode.sh or validator absent — RL-06 mode-handoff skipped (standalone install)"
+fi
+if [ -f "$REM/remediation_stamp.sh" ] && [ -f "$REM/read_findings.sh" ]; then
+  cp "$REMFIX/state_v2.json" "$WORK/rl_stamp.json"
+  bash "$REM/remediation_stamp.sh" "$WORK/rl_stamp.json" bbbb2222dark --status SPEC_OPEN --ref remediation/dark/runbook --opened-at 2026-07-07T00:00:00Z >/dev/null 2>&1
+  bash "$REM/read_findings.sh" "$WORK/rl_stamp.json" > "$WORK/rl_stamp_rows.txt" 2>/dev/null
+  assert_grep "$WORK/rl_stamp_rows.txt" "bbbb2222dark.*SPEC_OPEN" "RL-06: drain stamps the finding SPEC_OPEN with the remediation ref (branch namespace remediation/<slug>/*)"
+fi
+if [ -f "$REM/build_register.sh" ]; then
+  printf 'aaaa1111dead\tHIGH\tdead-code\tsrc/legacy/report.py\tformat_report_rows_old\tno inbound refs\n' >  "$WORK/rl_rows2.tsv"
+  printf 'eeee5555filed\tHIGH\tmarker\tsrc/checkout.py\tfinalize\tTODO wire tax\n'                        >> "$WORK/rl_rows2.tsv"
+  bash "$REM/build_register.sh" --slug demo --in "$WORK/rl_rows2.tsv" > "$WORK/rl_reg.md" 2>/dev/null
+  rmrows="$(grep -cE '^\| RM-[0-9]' "$WORK/rl_reg.md")"
+  if [ "${rmrows:-0}" -eq 2 ]; then ok "RL-06: 2-finding register -> 2 acceptance rows (no single-Story presumption, ADR 0007)"; else fail "RL-06: 2-finding register must yield 2 rows, got ${rmrows:-0}"; fi
+  assert_grep     "$WORK/rl_reg.md" "one-or-more" "RL-06: register does NOT presume one PR/one Story (Story decomposition is spec-gen's call)"
+  assert_not_grep "$WORK/rl_reg.md" "manifest_revision|schema_version" "RL-06: the loop authors a REGISTER (markdown), never a manifest (spec-gen is the only manifest writer, HC3)"
+fi
+# Guard 3(a): the loop NEVER merges — no merge invocation anywhere in the drain path.
+if grep -rnE 'gh pr merge|git merge|pr merge|--merge' \
+     "$REM/read_findings.sh" "$REM/finding_eligible.sh" "$REM/classify_fix.sh" "$REM/remediation_route.sh" \
+     "$REM/build_register.sh" "$REM/remediation_stamp.sh" "$REM/remediation_depth.sh" "$REM/already_filed.sh" \
+     "$REM/remediation_scope_guard.sh" "$REM/remediation_state.py" \
+     "$REPO_ROOT/plugins/codebase-health/commands/remediate.md" >/dev/null 2>&1; then
+  fail "RL-06/RL-10: a merge invocation exists in the loop drain path (report-only posture violated — the loop NEVER merges, autopilot HC4)"
+else
+  ok "RL-06/RL-10 Guard 3(a): NO merge invocation in the loop drain path (the loop never merges)"
+fi
+
+echo "== RL-07. ESCALATE path: manifest-less -> NOT STRAIGHT_THROUGH; record -> ESCALATED =="
+if [ -f "$AP/detect_input_mode.sh" ]; then
+  out="$(bash "$AP/detect_input_mode.sh" --intent generate)"     # manifest-LESS
+  echo "$out" > "$WORK/rl_esc_mode.txt"
+  assert_grep     "$WORK/rl_esc_mode.txt" "MODE=GENERATE_PAUSE"   "RL-07: manifest-less escalate input -> GENERATE_PAUSE"
+  assert_not_grep "$WORK/rl_esc_mode.txt" "STRAIGHT_THROUGH"      "RL-07: escalate input is NOT STRAIGHT_THROUGH (no autonomous drain of a values-laden fix)"
+else
+  echo "  [skip] detect_input_mode.sh absent — RL-07 mode check skipped (standalone install)"
+fi
+if [ -f "$REM/remediation_stamp.sh" ]; then
+  cp "$REMFIX/state_v2.json" "$WORK/rl_esc.json"
+  bash "$REM/remediation_stamp.sh" "$WORK/rl_esc.json" bbbb2222dark --status ESCALATED --ref '#exchange-7' >/dev/null 2>&1
+  assert_py "import json;assert json.load(open('$WORK/rl_esc.json'))['findings']['bbbb2222dark']['remediation']['status']=='ESCALATED'" "RL-07: escalate stamps the record ESCALATED with an exchange_ref"
+fi
+
+echo "== RL-08. Guard 1 (idempotency): already_filed + additive remediation record (schema stays v2) =="
+if [ -f "$REM/already_filed.sh" ]; then
+  ST="$REMFIX/state_v2.json"
+  assert_grep <(bash "$REM/already_filed.sh" eeee5555filed "$ST") "^FILED"   "RL-08: PR_OPEN record -> FILED (skip; never re-file)"
+  assert_grep <(bash "$REM/already_filed.sh" ffff6666wont  "$ST") "human-wontfix" "RL-08: human WONTFIX -> FILED (never re-filed by the loop)"
+  assert_grep <(bash "$REM/already_filed.sh" bbbb2222dark  "$ST") "^UNFILED" "RL-08: absent record -> UNFILED (loop may file)"
+  assert_grep <(bash "$REM/already_filed.sh" bbbb2222dark  "$REMFIX/state_corrupt.json") "state-unreadable" "RL-08: unreadable state -> FILED (fail-safe: never file rework it can't dedup, invariant 4)"
+fi
+if [ -f "$REM/remediation_stamp.sh" ]; then
+  cp "$REMFIX/state_v2.json" "$WORK/rl_g1.json"
+  bash "$REM/remediation_stamp.sh" "$WORK/rl_g1.json" aaaa1111dead --status SPEC_OPEN --ref remediation/dead/runbook >/dev/null 2>&1
+  assert_py "import json;assert json.load(open('$WORK/rl_g1.json'))['schema_version']==2" "RL-08: schema_version stays 2 after the additive remediation field (no break)"
+  assert_py "import json;d=json.load(open('$WORK/rl_g1.json'))['findings']['aaaa1111dead'];assert d.get('remediation',{}).get('status')=='SPEC_OPEN'" "RL-08: remediation sub-object added additively"
+  # the loop touches ONLY the remediation sub-object — status/severity/verified_by unchanged.
+  assert_py "import json;a=json.load(open('$REMFIX/state_v2.json'))['findings']['aaaa1111dead'];b=json.load(open('$WORK/rl_g1.json'))['findings']['aaaa1111dead'];b2={k:v for k,v in b.items() if k!='remediation'};assert a==b2, 'non-remediation fields changed'" "RL-08: loop touches ONLY remediation (status/severity/verified_by untouched — no false closure)"
+fi
+
+echo "== RL-09. Guard 2 (depth ceiling): self-namespace -> depth+1 -> escalate (reuses claim_overlap --self-namespace) =="
+if [ -f "$REM/remediation_depth.sh" ] && { [ -f "$AP/claim_overlap.sh" ] || [ -n "${CLAIM_OVERLAP:-}" ]; }; then
+  assert_grep <(bash "$REM/remediation_depth.sh" --branch remediation/dark/story-1 --self-namespace remediation/) "^depth=1$" "RL-09: finding on remediation/<slug>/* branch -> depth 1 (parent+1)"
+  assert_grep <(bash "$REM/remediation_depth.sh" --branch feature/normal-work --self-namespace remediation/)      "^depth=0$" "RL-09: finding on a normal branch -> depth 0"
+  # even a marker (would-DRAIN) on the loop's own namespace escalates (Guard 2 overrides class).
+  assert_grep <(bash "$REM/remediation_route.sh" --fingerprint x --severity HIGH --slug marker --state "$REMFIX/state_v2.json" --branch remediation/y/story-1) "^ESCALATE$" "RL-09: depth-1 marker (normally DRAIN) -> ESCALATE (a fix-of-a-fix surfaces to a human)"
+else
+  echo "  [skip] remediation_depth.sh or claim_overlap.sh absent — RL-09 skipped (standalone install)"
+fi
+
+echo "== RL-10. Guard 3 + spec-gen-authored tombstone (CH-05 suppression; loop writes no manifest) =="
+if [ -f "$REM/build_register.sh" ]; then
+  printf 'aaaa1111dead\tHIGH\tdead-code\tsrc/legacy/report.py\told_exporter\tunused\n' > "$WORK/rl_rm.tsv"
+  bash "$REM/build_register.sh" --slug rm --in "$WORK/rl_rm.tsv" > "$WORK/rl_rm.md" 2>/dev/null
+  assert_grep "$WORK/rl_rm.md" "lifecycle: withdrawn.*withdrawn_reason|Withdraw symbol .old_exporter." "RL-10: a removal register DECLARES the withdrawal as an acceptance behavior (spec-gen then emits the tombstone)"
+  assert_grep "$WORK/rl_rm.md" "spec-gen MUST emit the manifest tombstone; the impl diff carries no tombstone" "RL-10: the tombstone is spec-gen's manifest emission, NOT the impl diff (Defect C)"
+fi
+# CH-05 reuse: a manifest tombstone (as spec-gen would emit) suppresses the rot on
+# the loop's own dead-code removal — the deterministic proof of the wiring.
+RLROT="$WORK/rlrot"; mkdir -p "$RLROT"
+( cd "$RLROT"
+  git init -q && git config user.email t@t && git config user.name t
+  mkdir -p docs/adr
+  printf 'def old_exporter():\n    return 1\n' > exporter.py
+  printf '# ADR: old_exporter was the legacy export entrypoint\nold_exporter is referenced here.\n' > docs/adr/0009-x.md
+  cat > manifest.yaml <<'YAML'
+schema_version: 1
+manifest_revision: 1
+behaviors:
+  - id: B-rm-001
+    title: "Remove legacy exporter"
+    lifecycle: withdrawn
+    withdrawn_reason: "dead-code removal per remediation register"
+    test_name_hint: "old_exporter"
+    given: "x"
+    when: "y"
+    then: "z"
+YAML
+  git add -A && git commit -qm base
+  printf 'def kept():\n    return 2\n' > exporter.py     # delete old_exporter
+  git add -A && git commit -qm remove )
+RLB="$(cd "$RLROT" && git rev-parse HEAD~1)"
+( cd "$RLROT" && bash "$SKILL_SCRIPTS/check_memory_rot.sh" "$RLB" --manifest manifest.yaml ) > "$WORK/rl_rot.out" 2>&1; rc=$?
+assert_grep     "$WORK/rl_rot.out" "rot-suppressed tombstone. 'old_exporter'"     "RL-10: spec-gen-authored lifecycle:withdrawn tombstone suppresses CH-05 rot on the loop's cleanup"
+assert_not_grep "$WORK/rl_rot.out" "\[FINDING blocking\] memory-rot-dangling-ref: 'old_exporter'" "RL-10: CH-05 emits NO rot finding for the tombstoned removal"
+
+echo "== RL-11. orchestrator + no-new-plugin (V6 exactly-five holds) =="
+if [ -f "$REPO_ROOT/plugins/codebase-health/commands/remediate.md" ]; then
+  ok "RL-11: /remediate orchestrator homed in codebase-health/commands (not a new plugin)"
+  assert_grep "$REPO_ROOT/plugins/codebase-health/commands/remediate.md" "report-only|advisory-first|NEVER merges|no blocking" "RL-11: /remediate declares the report-only / no-merge / no-blocking posture"
+else
+  fail "RL-11: /remediate command absent (red-first)"
+fi
+assert_not_grep "$REPO_ROOT/.claude-plugin/marketplace.json" '"name":[[:space:]]*"remediation' "RL-11: NO new marketplace plugin entry — the loop is a codebase-health skill (V6 exactly-five holds)"
+
+echo "== RL-12. scope guard (remediation_scope_guard.sh): no mutation tool, no whole-repo run_audit =="
+if [ -f "$REM/remediation_scope_guard.sh" ]; then
+  bash "$REM/remediation_scope_guard.sh" > "$WORK/rl_scope.out" 2>&1; rc=$?
+  if [ "$rc" -eq 0 ]; then ok "RL-12: loop code paths invoke no mutation tool and no whole-repo run_audit (clean)"; else fail "RL-12: scope guard must pass on the real loop scripts [rc=$rc]"; fi
+  # RED-TEST (non-vacuity): plant a mutation invocation + a run_audit call into copies.
+  SB="$WORK/rl_scope_sb"; mkdir -p "$SB"
+  cp "$REM/read_findings.sh" "$REM/classify_fix.sh" "$REM/remediation_lib.sh" "$SB/" 2>/dev/null
+  printf '\ncargo-mutants --in-place\n' >> "$SB/read_findings.sh"
+  printf '\nbash run_audit.sh .\n'      >> "$SB/classify_fix.sh"
+  bash "$REM/remediation_scope_guard.sh" --dir "$SB" > "$WORK/rl_scope_red.out" 2>&1; rc=$?
+  if [ "$rc" -ne 0 ]; then ok "RL-12: planted violations make the scope guard fail (non-vacuous)"; else fail "RL-12: scope guard stayed green on a planted mutation/run_audit invocation (vacuous!)"; fi
+  assert_grep "$WORK/rl_scope_red.out" "SCOPE-VIOLATION .mutation-tool." "RL-12: planted mutation-tool invocation is caught"
+  assert_grep "$WORK/rl_scope_red.out" "SCOPE-VIOLATION .whole-repo."    "RL-12: planted whole-repo run_audit call is caught"
+  # RL-01 reads only: the reader/backend spawn no detector, no mutation tool, no whole-repo scan.
+  assert_not_grep "$REM/read_findings.sh"     "run_audit\.sh|mutmut|cosmic-ray|stryker|pitest|cargo-mutants" "RL-12: read_findings.sh spawns no detector (reporter-only, invariant 1)"
+  assert_not_grep "$REM/remediation_state.py" "run_audit\.sh|mutmut|cosmic-ray|stryker|pitest|cargo-mutants" "RL-12: remediation_state.py spawns no detector"
+else
+  fail "RL-12: remediation_scope_guard.sh absent (red-first)"
+fi
+
 echo
 echo "== self-test: $PASS passed, $FAIL failed =="
 [ "$FAIL" -eq 0 ]

@@ -1,0 +1,32 @@
+# remediation.config.yaml — per-repo config for the remediation loop (RL-02, ADR 0017/0018).
+#
+# SHIPPED DEFAULTS (report-only / advisory-first — ADR 0004 + the future-scope
+# shipping posture). A repo copies this to its root and edits it. Everything the
+# loop does is a HUMAN-reviewed PR by default; the two autonomy levers below stay
+# OFF until a repo opts in AFTER a soak.
+
+# Eligibility floor (RL-02). A finding is loop-eligible only at/above this
+# severity. Default HIGH — and HIGH already means CONFIRMED/traced
+# (severity-rubric.md), so this is a confirmed-defect floor, not a suspicion
+# floor. Values: CRITICAL | HIGH | MED | LOW.
+severity_floor: HIGH
+
+# ── Per-repo autonomy opt-ins (DEFAULT OFF; flip only after a soak) ───────────
+# The loop is report-only first: it files rework PRs for human review and NEVER
+# merges. These two levers are the ONLY way to widen that, and both are off here.
+
+# autonomous_emit_to_drain: when false (default), /remediate reports the routed
+# verdicts and (in a live run) opens the Runbook + Story PRs for review; it does
+# NOT arm any straight-through drain on its own initiative. Turning this on lets a
+# complete-manifest register drain STRAIGHT_THROUGH (ADR 0008) — still never
+# merging (autopilot HC4). Leave OFF until the repo has soaked the report-only run.
+autonomous_emit_to_drain: false
+
+# blocking: the loop is NEVER a merge gate. This stays false; there is no code
+# path that turns a remediation finding into a blocking CI exit. Documented here
+# so a reviewer can confirm the posture at a glance.
+blocking: false
+
+# Loop branch namespace (feeds Guard-2 self-namespace depth detection). Findings
+# whose branch is under this prefix inherit depth+1 and ESCALATE (never re-drain).
+branch_namespace: "remediation/"
