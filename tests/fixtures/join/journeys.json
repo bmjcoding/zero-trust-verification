@@ -12,6 +12,8 @@
       "verdict": "WORKS",
       "executed": true,
       "path_complexity": "CLEAN",
+      "_sd_note": "SD discovered-side signals (abuse_control/resilience_mechanism/isolation/timeout_ms) are AGENT-DERIVED (MT-06): the JOIN is [det], these values are [audit-run] and cap findings at comment-only",
+      "abuse_control": "present",
       "steps": [
         {
           "path": "app/payments.py",
@@ -23,6 +25,9 @@
           "alert_seam": "paged",
           "duplicate_guard": "present",
           "compensation_note": "terminal",
+          "resilience_mechanism": "breaker",
+          "isolation": "explicit-lock",
+          "timeout_ms": 2000,
           "complexity_flags": []
         }
       ]
