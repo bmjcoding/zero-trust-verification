@@ -1,0 +1,28 @@
+{
+  "resourceLogs": [
+    {
+      "resource": {
+        "attributes": [
+          { "key": "service.name", "value": { "stringValue": "payments" } },
+          { "key": "deployment.environment", "value": { "stringValue": "prod" } }
+        ]
+      },
+      "scopeLogs": [
+        {
+          "scope": { "name": "payments.capture" },
+          "logRecords": [
+            {
+              "timeUnixNano": "1783339200000000000",
+              "severityText": "ERROR",
+              "attributes": [
+                { "key": "event.name", "value": { "stringValue": "pay.captured" } },
+                { "key": "vital.class", "value": { "stringValue": "state-transition" } },
+                { "key": "emitter", "value": { "stringValue": "payments-svc" } }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,87 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://zero-trust-verification/schema/triage/correlation/v1",
+  "title": "Incident<->manifest correlation output (TR-03)",
+  "description": "The schema-versioned, idempotent output of correlate.py. Detection NEVER mutates: the same window + manifest produce byte-identical correlation.json. Each correlated record carries its DERIVED journey_id + step index + affected behavior IDs (never a backref — CH-02 is unbuilt), or lands in an explicit no-join bucket with a reason. Class-drift and unmapped-in-prod are surfaced, never dropped; a manifest CORE step absent from the bounded window is informational ONLY (absence-in-a-window is not absence-in-prod — degrade rule 4).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "manifest_status", "correlated", "no_join", "class_drift", "core_steps_absent_in_window", "backref_cross_check"],
+  "properties": {
+    "schema_version": { "type": "integer", "const": 1 },
+    "manifest_status": {
+      "description": "Vendored validate_manifest.sh outcome for the input manifest: complete(0)/incomplete(3)/absent. Schema-invalid(4)/unsupported(5) never reach here — TR-03 refuses those (degrade rows §11).",
+      "enum": ["complete", "incomplete", "absent"]
+    },
+    "correlated": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["event_name", "journey_id", "step_index", "behavior_ids"],
+        "properties": {
+          "event_name": { "type": "string", "minLength": 1 },
+          "journey_id": { "type": "string", "minLength": 1 },
+          "step_index": { "type": "integer", "minimum": 0 },
+          "behavior_ids": { "type": "array", "items": { "type": "string" } },
+          "runtime_vital_class": { "type": ["string", "null"] },
+          "manifest_vital_class": { "type": ["string", "null"] }
+        }
+      }
+    },
+    "no_join": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["reason"],
+        "properties": {
+          "event_name": { "type": ["string", "null"] },
+          "reason": { "enum": ["unmapped-in-prod", "dark-in-prod", "manifest-absent"] }
+        }
+      }
+    },
+    "class_drift": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["event_name", "journey_id", "runtime_vital_class", "manifest_vital_class"],
+        "properties": {
+          "event_name": { "type": "string", "minLength": 1 },
+          "journey_id": { "type": "string", "minLength": 1 },
+          "runtime_vital_class": { "type": ["string", "null"] },
+          "manifest_vital_class": { "type": ["string", "null"] }
+        }
+      }
+    },
+    "core_steps_absent_in_window": {
+      "description": "Informational ONLY — a manifest CORE step with no emission in the bounded window. NEVER a violation (degrade rule 4).",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["journey_id", "step_index", "event_name", "note"],
+        "properties": {
+          "journey_id": { "type": "string" },
+          "step_index": { "type": "integer", "minimum": 0 },
+          "event_name": { "type": ["string", "null"] },
+          "note": { "type": "string" }
+        }
+      }
+    },
+    "backref_cross_check": {
+      "description": "The [det-cond] audit-backref agreement check. SKIPPED until codebase-health CH-02 ships (the v2 journeys.json manifest_journey_id backref does not exist in the built suite).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "note"],
+      "properties": {
+        "status": { "enum": ["skipped", "agreed", "disagreed"] },
+        "note": { "type": "string" }
+      }
+    },
+    "notes": {
+      "type": "array",
+      "items": { "type": "string" }
+    }
+  }
+}

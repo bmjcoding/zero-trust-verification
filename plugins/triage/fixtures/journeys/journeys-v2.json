@@ -1,0 +1,23 @@
+{
+  "schema_version": 2,
+  "_triage_note": "TRIAGE-OWNED FIXTURE — NOT end-to-end suite proof. This is a hand-authored copy of the shape codebase-health CH-02 WOULD emit (journeys.json v2 with a manifest_journey_id backref). CH-02 is UNBUILT, so the triage correlation NEVER reads a real audit v2 artifact; the backref cross-check is a [det-cond] SKIP with `[note] backref-unavailable (CH-02 unbuilt)`. This fixture exists only to make that skip banner concrete.",
+  "source_run": { "kind": "audit", "date": "2026-07-06", "git_sha": "fixturedeadbeef" },
+  "journeys": [
+    {
+      "name": "Payment capture",
+      "manifest_journey_id": "J-pay-001",
+      "source": "app/payments.py:12",
+      "criticality": "CORE",
+      "verdict": "WORKS",
+      "steps": [
+        {
+          "path": "app/payments.py",
+          "symbol": "capture",
+          "event_name": "pay.captured",
+          "vital_class": "money",
+          "emission_grade": "OBSERVED"
+        }
+      ]
+    }
+  ]
+}

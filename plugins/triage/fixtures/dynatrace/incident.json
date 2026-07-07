@@ -1,0 +1,27 @@
+{
+  "records": [
+    {
+      "timestamp": "2026-07-06T12:00:00.000000Z",
+      "event_name": "pay.captured",
+      "vital.class": "money",
+      "service": "payments",
+      "environment": "prod",
+      "emitter": "payments-svc",
+      "loglevel": "ERROR",
+      "count": 3,
+      "trace_id": "5b8aa5a2d2c872e8321cf37308d69df2",
+      "span_id": "051581bf3cb55c13"
+    },
+    {
+      "timestamp": "2026-07-06T12:02:00.000000Z",
+      "event_name": "pay.refunded",
+      "vital.class": "external-side-effect",
+      "service": "payments",
+      "environment": "prod",
+      "emitter": "payments-svc",
+      "loglevel": "ERROR",
+      "count": 1
+    }
+  ],
+  "metadata": { "grail": { "canonicalQuery": "fetch logs | filter ..." } }
+}
