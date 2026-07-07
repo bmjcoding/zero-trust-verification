@@ -1,18 +1,19 @@
 #!/usr/bin/env bash
 # suite_self_test.sh — ONE command that proves the whole Zero-Trust Verification
-# suite (ADR 0001/0019: one product, five independently installable plugins). It runs,
+# suite (ADR 0001/0019/0020: one product, six independently installable plugins). It runs,
 # in order, and reports a single green/red:
 #
 #   1. cross-plugin vendoring lints (scripts/lint_consistency.sh) — GREEN run
 #   2. vendoring-lint RED-tests — plant a drift per byte-identity/integrity rule
 #      (V1 schema, V3 validator + its exemption, V4 claim-overlap, V5 escalation,
 #      V6 marketplace incl. name<->source swap and a rogue plugin, V7 mutation
-#      adapter map/resolver/producer+consumer tokens, V8 OWM manifest-parse fork)
+#      adapter map/resolver/producer+consumer tokens, V8 OWM manifest-parse fork,
+#      V9 triage telemetry-contract byte-identity)
 #      and assert the lint catches it, plus a few false-POSITIVE guards — so no
 #      vendor lint is vacuous and none reds on a benign reformat/prose mention
 #   3. the root manifest-validator self-test (scripts/self_test.sh)
 #   4. every plugin's own self-test: autopilot, spec-gen, codebase-health, marshal,
-#      org-memory
+#      org-memory, triage
 #
 # HONESTY: a plugin self-test can `exit 0` while SKIPPING guarded sections when an
 # optional dep is absent (autopilot's mock server, marshal's uv/jq loop backends,
@@ -115,19 +116,28 @@ expect_no_fail() {  # <rule> <sandbox-root> <desc> — rule must NOT fire (no fa
 seed_esc() {
   local d="$1"
   mkdir -p "$d/plugins/autopilot/references" "$d/plugins/spec-gen/skills/spec" \
-           "$d/plugins/codebase-health/skills/cleanup-audit/references"
+           "$d/plugins/codebase-health/skills/cleanup-audit/references" \
+           "$d/plugins/triage/skills/triage"
   cp "$ROOT/plugins/autopilot/references/planner-prompt.md"     "$d/plugins/autopilot/references/"
   cp "$ROOT/plugins/autopilot/references/implementer-prompt.md" "$d/plugins/autopilot/references/"
   cp "$ROOT/plugins/spec-gen/skills/spec/SKILL.md"      "$d/plugins/spec-gen/skills/spec/"
   cp "$ROOT/plugins/codebase-health/skills/cleanup-audit/references/severity-rubric.md" \
      "$d/plugins/codebase-health/skills/cleanup-audit/references/"
+  cp "$ROOT/plugins/triage/skills/triage/SKILL.md"     "$d/plugins/triage/skills/triage/"
 }
-# seed the five plugin.json source dirs into a sandbox
+# seed the six plugin.json source dirs into a sandbox
 seed_plugins() {
   local d="$1" src
-  for src in plugins/spec-gen plugins/autopilot plugins/codebase-health plugins/marshal plugins/org-memory; do
+  for src in plugins/spec-gen plugins/autopilot plugins/codebase-health plugins/marshal plugins/org-memory plugins/triage; do
     mkdir -p "$d/$src/.claude-plugin"; cp "$ROOT/$src/.claude-plugin/plugin.json" "$d/$src/.claude-plugin/"
   done
+}
+# seed the two triage telemetry-contract copies (canonical + vendored) for the V9 red-test.
+seed_tel() {
+  local d="$1"
+  mkdir -p "$d/plugins/triage/reference"
+  cp "$ROOT/plugins/triage/reference/telemetry-contract.md" "$d/plugins/triage/reference/"
+  cp "$ROOT/plugins/triage/reference/backends.md"           "$d/plugins/triage/reference/"
 }
 # seed the V7 mutation-adapter-map artifacts (ADR 0016): the two vendored doc-block
 # copies + the two byte-identical resolver copies + the producer/consumer scripts.
@@ -237,14 +247,14 @@ by['marshal']['source'],by['spec-gen']['source']=by['spec-gen']['source'],by['ma
 json.dump(d,open('$dr/.claude-plugin/marketplace.json','w'),indent=2)"
   expect_fail V6 "$dr" "name<->source swap (spec-gen<->marshal)"
 
-  # V6 — a rogue SIXTH plugin with a non-existent source (org-memory is the legit 5th).
+  # V6 — a rogue SEVENTH plugin with a non-existent source (triage is the legit 6th).
   dr="$SANDBOX/v6r"; mkdir -p "$dr/.claude-plugin"; seed_plugins "$dr"
   python3 -c "
 import json
 d=json.load(open('$ROOT/.claude-plugin/marketplace.json'))
 d['plugins'].append({'name':'rogue-plugin','source':'./rogue'})
 json.dump(d,open('$dr/.claude-plugin/marketplace.json','w'),indent=2)"
-  expect_fail V6 "$dr" "rogue 6th plugin registered (org-memory is the legit 5th)"
+  expect_fail V6 "$dr" "rogue 7th plugin registered (triage is the legit 6th)"
 
   # V6 false-positive guard — a compact (whitespace-stripped) reserialization is fine.
   dr="$SANDBOX/v6c"; mkdir -p "$dr/.claude-plugin"; seed_plugins "$dr"
@@ -307,6 +317,42 @@ dr="$SANDBOX/v7p"; seed_mut "$dr"
 printf '\nSome extra prose AFTER the vendored block.\n' >> "$dr/plugins/autopilot/references/mutation-adapters.md"
 expect_no_fail V7 "$dr" "prose appended outside the vendored map markers"
 
+# V9 (register TR-08) — the triage telemetry-adapter observable contract must not
+# drift between the single source (telemetry-contract.md) and a vendored backend-
+# contract copy (backends.md). Plant a drift in the copy's block -> V9 fires; a
+# benign out-of-block append stays green (no false positive). V9 does not collide
+# with V7 (mutation) / V8 (OWM) / V10 (the parallel remediation-loop chip).
+dr="$SANDBOX/v9"; seed_tel "$dr"
+sed 's/Never a whole-fleet scan./Never a whole-fleet scan. DRIFTED./' "$dr/plugins/triage/reference/backends.md" > "$dr/t.tmp" \
+  && mv "$dr/t.tmp" "$dr/plugins/triage/reference/backends.md"
+expect_fail V9 "$dr" "drifted vendored telemetry-contract block"
+
+dr="$SANDBOX/v9p"; seed_tel "$dr"
+printf '\nSome extra prose AFTER the vendored telemetry-contract block.\n' >> "$dr/plugins/triage/reference/backends.md"
+expect_no_fail V9 "$dr" "prose appended outside the telemetry-contract markers"
+
+# V9 vendored spec-gen script drift (ADR 0001 §18 — closes the missing-pin gap): triage
+# vendors profile_resolve.py/resume_projection.py from spec-gen; drift the vendored copy
+# -> V9 fires. Seed the canonical + vendored pair (and telemetry-contract.md so V9 runs).
+dr="$SANDBOX/v9s"
+mkdir -p "$dr/plugins/spec-gen/scripts" "$dr/plugins/triage/scripts" "$dr/plugins/triage/reference"
+cp "$ROOT/plugins/triage/reference/telemetry-contract.md" "$dr/plugins/triage/reference/"
+cp "$ROOT/plugins/spec-gen/scripts/profile_resolve.py"   "$dr/plugins/spec-gen/scripts/"
+cp "$ROOT/plugins/spec-gen/scripts/resume_projection.py" "$dr/plugins/spec-gen/scripts/"
+cp "$ROOT/plugins/spec-gen/scripts/profile_resolve.py"   "$dr/plugins/triage/scripts/"
+cp "$ROOT/plugins/spec-gen/scripts/resume_projection.py" "$dr/plugins/triage/scripts/"
+printf '\n# drift\n' >> "$dr/plugins/triage/scripts/profile_resolve.py"
+expect_fail V9 "$dr" "drifted vendored spec-gen script (triage profile_resolve.py != canonical)"
+
+# V9 vendored-script false-positive guard — an unmodified vendored pair stays GREEN.
+dr="$SANDBOX/v9sp"
+mkdir -p "$dr/plugins/spec-gen/scripts" "$dr/plugins/triage/scripts" "$dr/plugins/triage/reference"
+cp "$ROOT/plugins/triage/reference/telemetry-contract.md" "$dr/plugins/triage/reference/"
+cp "$ROOT/plugins/spec-gen/scripts/profile_resolve.py"   "$dr/plugins/spec-gen/scripts/"
+cp "$ROOT/plugins/spec-gen/scripts/resume_projection.py" "$dr/plugins/spec-gen/scripts/"
+cp "$ROOT/plugins/spec-gen/scripts/profile_resolve.py"   "$dr/plugins/triage/scripts/"
+cp "$ROOT/plugins/spec-gen/scripts/resume_projection.py" "$dr/plugins/triage/scripts/"
+expect_no_fail V9 "$dr" "unmodified vendored spec-gen scripts (byte-identical to canonical)"
 # V10 (ADR 0017/0018 / register RL-13) — the remediation loop's two lint-pinned
 # tables. Plant a drift in EACH (escalate-class table + slug_provenance §12/taxonomy)
 # and assert V10 fires; a benign TSV comment must stay green. Numbered V10 (V9 is
@@ -356,6 +402,7 @@ run_ok "spec-gen"        bash "$ROOT/plugins/spec-gen/scripts/self_test.sh"
 run_ok "codebase-health" bash "$ROOT/tests/codebase-health/self_test.sh"
 run_ok "marshal"         bash "$ROOT/plugins/marshal/scripts/self_test.sh"
 run_ok "org-memory"      bash "$ROOT/plugins/org-memory/scripts/self_test.sh"
+run_ok "triage"          bash "$ROOT/plugins/triage/scripts/self_test.sh"
 
 # ==============================================================================
 # Summary
@@ -370,7 +417,7 @@ if [ -n "$FAILED" ]; then
   exit 1
 fi
 if [ -n "$SKIPPED" ]; then
-  echo "== suite_self_test: PASS — all components green (lints + red-tests + validator + all five plugins) =="
+  echo "== suite_self_test: PASS — all components green (lints + red-tests + validator + all six plugins) =="
   echo "   NOTE: optional sections were SKIPPED (missing dev tools) in:$SKIPPED — this run is not zero-skip; see the WARN lines above."
   if [ -n "${SUITE_STRICT:-}" ]; then
     echo "== SUITE_STRICT=1: a skipped section is a failure — exiting non-zero =="
@@ -379,5 +426,5 @@ if [ -n "$SKIPPED" ]; then
   echo "   (set SUITE_STRICT=1 to require a zero-skip proof.)"
   exit 0
 fi
-echo "== suite_self_test: PASS (lints + red-tests + validator + all five plugins, ZERO skips) =="
+echo "== suite_self_test: PASS (lints + red-tests + validator + all six plugins, ZERO skips) =="
 exit 0

@@ -1,0 +1,81 @@
+{
+  "resourceLogs": [
+    {
+      "resource": {
+        "attributes": [
+          { "key": "service.name", "value": { "stringValue": "payments" } },
+          { "key": "deployment.environment", "value": { "stringValue": "prod" } }
+        ]
+      },
+      "scopeLogs": [
+        {
+          "scope": { "name": "payments.capture" },
+          "logRecords": [
+            {
+              "timeUnixNano": "1783339200000000000",
+              "severityText": "ERROR",
+              "traceId": "5b8aa5a2d2c872e8321cf37308d69df2",
+              "spanId": "051581bf3cb55c13",
+              "attributes": [
+                { "key": "event.name", "value": { "stringValue": "pay.captured" } },
+                { "key": "vital.class", "value": { "stringValue": "money" } },
+                { "key": "emitter", "value": { "stringValue": "payments-svc" } },
+                { "key": "count", "value": { "intValue": "3" } }
+              ]
+            },
+            {
+              "timeUnixNano": "1783339260000000000",
+              "severityText": "WARN",
+              "attributes": [
+                { "key": "vital.class", "value": { "stringValue": "money" } },
+                { "key": "emitter", "value": { "stringValue": "payments-svc" } }
+              ]
+            },
+            {
+              "timeUnixNano": "1783339320000000000",
+              "severityText": "ERROR",
+              "attributes": [
+                { "key": "event.name", "value": { "stringValue": "pay.refunded" } },
+                { "key": "vital.class", "value": { "stringValue": "external-side-effect" } },
+                { "key": "emitter", "value": { "stringValue": "payments-svc" } }
+              ]
+            },
+            {
+              "timeUnixNano": "1783209600000000000",
+              "severityText": "ERROR",
+              "attributes": [
+                { "key": "event.name", "value": { "stringValue": "pay.captured" } },
+                { "key": "vital.class", "value": { "stringValue": "money" } },
+                { "key": "emitter", "value": { "stringValue": "payments-svc" } }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "resource": {
+        "attributes": [
+          { "key": "service.name", "value": { "stringValue": "triage" } },
+          { "key": "deployment.environment", "value": { "stringValue": "prod" } }
+        ]
+      },
+      "scopeLogs": [
+        {
+          "scope": { "name": "triage.emitter" },
+          "logRecords": [
+            {
+              "timeUnixNano": "1783339440000000000",
+              "severityText": "INFO",
+              "attributes": [
+                { "key": "event.name", "value": { "stringValue": "triage.incident.emitted" } },
+                { "key": "vital.class", "value": { "stringValue": "state-transition" } },
+                { "key": "emitter", "value": { "stringValue": "triage-agent" } }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

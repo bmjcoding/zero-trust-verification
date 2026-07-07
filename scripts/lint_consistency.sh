@@ -26,9 +26,14 @@
 #   V5 — the ADR 0002 escalation-criterion block, vendored VERBATIM into every
 #        tier's prompt (autopilot planner/implementer, spec-gen SKILL, audit
 #        severity-rubric); byte-identical AND present in all three tiers.
-#   V6 — the product marketplace (ADR 0001/0011/0019): ONE root .claude-plugin/
-#        marketplace.json is the single entry point registering all five plugins,
+#   V6 — the product marketplace (ADR 0001/0011/0019/0020): ONE root .claude-plugin/
+#        marketplace.json is the single entry point registering all six plugins,
 #        each with a source dir carrying its own .claude-plugin/plugin.json.
+#   V9 — the triage telemetry-adapter observable contract (ADR 0006/0013; register
+#        TR-08): reference/telemetry-contract.md is the single source; any vendored
+#        backend-contract copy is byte-identical (the host-contract precedent). V9
+#        because V7 (mutation map) / V8 (OWM) are taken; V10 is the parallel
+#        remediation-loop chip's rule — no collision.
 #   V8 — OWM vendoring lint (ADR 0019, register OWM-10): org-memory's manifest-parse
 #        path uses the CANONICAL validate_manifest toolchain (never a forked parser),
 #        and its format-recognizer references name the single-source docs; if the
@@ -185,7 +190,7 @@ fi
 # <!-- vendored:escalation-criterion:begin/end -->. Two guarantees:
 #   (a) PRESENCE — the block lives in each EXPECTED prompt (pinned below), so a
 #       removal or a move to the wrong file is caught, not just a byte drift;
-#   (b) IDENTITY — every well-formed copy (the expected four AND any stray copy
+#   (b) IDENTITY — every well-formed copy (the expected five AND any stray copy
 #       elsewhere) is byte-identical. A file that only *mentions* a marker in prose
 #       without a matching begin/end PAIR is documentation, not a copy (no false
 #       positive); an EXPECTED prompt with unpaired markers IS flagged.
@@ -195,10 +200,11 @@ v5_extract() { awk -v b="$v5_begin" -v e="$v5_end" '$0 ~ b {f=1; next} $0 ~ e {f
 v5_expected="plugins/autopilot/references/planner-prompt.md
 plugins/autopilot/references/implementer-prompt.md
 plugins/spec-gen/skills/spec/SKILL.md
-plugins/codebase-health/skills/cleanup-audit/references/severity-rubric.md"
+plugins/codebase-health/skills/cleanup-audit/references/severity-rubric.md
+plugins/triage/skills/triage/SKILL.md"
 v5_is_expected() {  # <relpath> -> 0 if one of the pinned prompts
   case "$1" in
-    plugins/autopilot/references/planner-prompt.md|plugins/autopilot/references/implementer-prompt.md|plugins/spec-gen/skills/spec/SKILL.md|plugins/codebase-health/skills/cleanup-audit/references/severity-rubric.md) return 0 ;;
+    plugins/autopilot/references/planner-prompt.md|plugins/autopilot/references/implementer-prompt.md|plugins/spec-gen/skills/spec/SKILL.md|plugins/codebase-health/skills/cleanup-audit/references/severity-rubric.md|plugins/triage/skills/triage/SKILL.md) return 0 ;;
     *) return 1 ;;
   esac
 }
@@ -244,14 +250,14 @@ while IFS= read -r f; do
     ok V5 "additional escalation copy byte-identical: $rel"
   fi
 done < <(find "$ROOT" -path "$ROOT/.git" -prune -o -path "$ROOT/.claude" -prune -o -name node_modules -prune -o -name '*.md' -print 2>/dev/null | sort)
-[ "$v5_bad" -eq 0 ] && ok V5 "escalation-criterion block present + byte-identical across all three tiers' pinned prompts (ADR 0002)"
+[ "$v5_bad" -eq 0 ] && ok V5 "escalation-criterion block present + byte-identical across the five pinned escalation-bearing prompts (ADR 0002; +triage TR-06)"
 
-# ── V6: one product-entry marketplace registering EXACTLY the five installable
-#        plugins (ADR 0001 / 0011 / 0019). The repo-root .claude-plugin/marketplace.json
-#        is the single entry point; the registered set must be exactly the five,
+# ── V6: one product-entry marketplace registering EXACTLY the six installable
+#        plugins (ADR 0001 / 0011 / 0019 / 0020). The repo-root .claude-plugin/marketplace.json
+#        is the single entry point; the registered set must be exactly the six,
 #        each NAME paired with its OWN source dir, and each source dir must carry a
 #        .claude-plugin/plugin.json whose name matches. Structural, per-object
-#        validation via python3 (catches a name<->source swap or a rogue 6th
+#        validation via python3 (catches a name<->source swap or a rogue 7th
 #        plugin that independent greps miss); a reduced grep check if python3 is
 #        absent. Formatting-insensitive.
 MKT="$ROOT/.claude-plugin/marketplace.json"
@@ -278,6 +284,7 @@ expected = {
     "codebase-health": "./plugins/codebase-health",
     "marshal": "./plugins/marshal",
     "org-memory": "./plugins/org-memory",
+    "triage": "./plugins/triage",
 }
 try:
     d = json.load(open(mkt))
@@ -289,7 +296,7 @@ for p in (d.get("plugins") or []):
 for n in sorted(set(expected) - set(got)):
     print("plugin '%s' not registered in root marketplace" % n)
 for n in sorted(set(got) - set(expected)):
-    print("unexpected plugin '%s' registered (source=%s) - the product is exactly five" % (n, got[n]))
+    print("unexpected plugin '%s' registered (source=%s) - the product is exactly six" % (n, got[n]))
 for n, src in expected.items():
     if n in got and got[n] != src:
         print("plugin '%s' registered source '%s' != expected '%s' (name<->source mismatch)" % (n, got[n], src))
@@ -319,7 +326,7 @@ PYV6
 $v6_out
 V6OUT
     else
-      ok V6 "root marketplace registers exactly the five plugins; name<->source pairing + each plugin.json name verified (structural)"
+      ok V6 "root marketplace registers exactly the six plugins; name<->source pairing + each plugin.json name verified (structural)"
     fi
   else
     # reduced fallback (python3 absent): name+source presence + installability only
@@ -336,8 +343,9 @@ autopilot|./plugins/autopilot
 codebase-health|./plugins/codebase-health
 marshal|./plugins/marshal
 org-memory|./plugins/org-memory
+triage|./plugins/triage
 V6PLUGINS
-    [ "$v6_bad" -eq 0 ] && ok V6 "five plugins registered + installable (reduced grep check; python3 absent)"
+    [ "$v6_bad" -eq 0 ] && ok V6 "six plugins registered + installable (reduced grep check; python3 absent)"
   fi
 fi
 
@@ -473,6 +481,63 @@ else
   violation V7 "consumer token mutant-on-core-path missing from check_mutation_survivors.sh (ADR 0016 / MT-09)"; v7_bad=1
 fi
 [ "$v7_bad" -eq 0 ] && ok V7 "mutation adapter map + resolver byte-identical, sole-source, producer/consumer tokens pinned (ADR 0016 — cannot drift)"
+
+# ── V9: the triage telemetry-adapter observable contract (ADR 0006/0013; register
+#        TR-08). plugins/triage/reference/telemetry-contract.md is the SINGLE SOURCE
+#        of the <!-- vendored:telemetry-contract --> block; any vendored backend-
+#        contract copy (reference/backends.md, …) carries it byte-identical — the
+#        host-contract precedent, the V5/V7 marker-block mechanism. A lone/unpaired
+#        marker in prose is documentation, not a copy (no false positive).
+#        NUMBERED V9: V7 (mutation adapter map) and V8 (OWM vendoring) are TAKEN; V10
+#        is the parallel remediation-loop chip's rule — this must NOT renumber or collide.
+v9_begin='vendored:telemetry-contract:begin'
+v9_end='vendored:telemetry-contract:end'
+v9_extract() { awk -v b="$v9_begin" -v e="$v9_end" '$0 ~ b {f=1; next} $0 ~ e {f=0} f' "$1"; }
+v9_canon_file="$ROOT/plugins/triage/reference/telemetry-contract.md"
+if [ ! -f "$v9_canon_file" ]; then
+  ok V9 "triage plugin not present; no telemetry-contract to pin (register TR-08)"
+else
+  v9_bad=0; v9_canon_txt=""
+  nb=$(grep -c "$v9_begin" "$v9_canon_file" 2>/dev/null || true)
+  ne=$(grep -c "$v9_end" "$v9_canon_file" 2>/dev/null || true)
+  if [ "${nb:-0}" -eq 0 ] || [ "${ne:-0}" -eq 0 ] || [ "$nb" != "$ne" ]; then
+    violation V9 "canonical telemetry-contract lacks a well-formed vendored block: ${v9_canon_file#$ROOT/} (register TR-08)"; v9_bad=1
+  else
+    v9_canon_txt="$(v9_extract "$v9_canon_file")"
+  fi
+  # every OTHER file carrying a WELL-FORMED telemetry-contract block must match the canonical.
+  while IFS= read -r f; do
+    [ -n "$f" ] || continue
+    [ "$f" = "$v9_canon_file" ] && continue
+    nb=$(grep -c "$v9_begin" "$f" 2>/dev/null || true)
+    [ "${nb:-0}" -gt 0 ] || continue
+    ne=$(grep -c "$v9_end" "$f" 2>/dev/null || true)
+    { [ "${ne:-0}" -gt 0 ] && [ "$nb" = "$ne" ]; } || continue   # unpaired marker -> prose, skip
+    rel="${f#$ROOT/}"
+    blk="$(v9_extract "$f")"
+    if [ -n "$v9_canon_txt" ] && [ "$blk" != "$v9_canon_txt" ]; then
+      violation V9 "vendored telemetry-contract copy DRIFTED from canonical: $rel (register TR-08 — byte-identical; the host-contract precedent)"; v9_bad=1
+    else
+      ok V9 "vendored telemetry-contract copy byte-identical: $rel"
+    fi
+  done < <(find "$ROOT" -path "$ROOT/.git" -prune -o -path "$ROOT/.claude" -prune -o -name node_modules -prune -o -name '*.md' -print 2>/dev/null | sort)
+  # (2) triage vendors two spec-gen scripts (profile_resolve.py, resume_projection.py;
+  #     register TR-04/TR-07) — pinned byte-identical or they silently drift (ADR 0001
+  #     §18 vendoring mandate). The plugin needs them to resume standalone (ADR 0011);
+  #     an UNPINNED vendored copy is the drift-fork this lint exists to prevent.
+  for v9rel in scripts/profile_resolve.py scripts/resume_projection.py; do
+    v9c="$ROOT/plugins/spec-gen/$v9rel"; v9v="$ROOT/plugins/triage/$v9rel"
+    if [ ! -f "$v9v" ]; then :
+    elif [ ! -f "$v9c" ]; then
+      violation V9 "canonical plugins/spec-gen/$v9rel missing (triage vendors it; ADR 0001)"; v9_bad=1
+    elif cmp -s "$v9c" "$v9v"; then
+      ok V9 "triage vendored spec-gen script byte-identical: plugins/triage/$v9rel"
+    else
+      violation V9 "triage vendored spec-gen script DRIFTED from canonical: plugins/triage/$v9rel (ADR 0001 §18 — byte-for-byte from plugins/spec-gen/$v9rel)"; v9_bad=1
+    fi
+  done
+  [ "$v9_bad" -eq 0 ] && ok V9 "triage vendored artifacts (telemetry-contract block + spec-gen resume scripts) single-source + byte-identical (register TR-04/07/08, ADR 0001)"
+fi
 
 # ── V10: the remediation loop's two lint-pinned tables (ADR 0017 / 0018; register
 #        RL-02/RL-03/RL-13). The loop is WIRING and holds no quality opinion — but
