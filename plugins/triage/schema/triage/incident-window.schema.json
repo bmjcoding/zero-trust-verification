@@ -1,0 +1,61 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://zero-trust-verification/schema/triage/incident-window/v1",
+  "title": "Normalized incident-window record (TR-02)",
+  "description": "The vendor-neutral shape EVERY telemetry backend's `window` subcommand emits, one JSON object per NDJSON line. It carries EXACTLY the manifest §12 discovered-side field names so TR-03 joins one schema regardless of source (OTLP-JSON / CloudWatch / Dynatrace). `event_name` is the §12 join key. A record MISSING `event_name` is still schema-valid (it is bucketed DARK-in-prod by TR-03, never dropped). There is deliberately NO manifest_journey_id — telemetry has no design-time IDs; TR-03 DERIVES the journey by matching event_name. `emitter` is consumed by TR-loop-guard to exclude self-emitted events. Enums (vital_class, env, severity, required-string types) are the Norway-guard: a boolean/null in a string slot is schema-invalid, asserted via `uv run` jsonschema (ADR 0014/0015).",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["service", "env", "timestamp", "emitter"],
+  "properties": {
+    "event_name": {
+      "description": "The §12 join key — the SAME string the implementer emits at runtime and the manifest declares on the vital step. Absent => DARK-in-prod (unjoinable), bucketed by TR-03, never dropped.",
+      "type": "string",
+      "minLength": 1
+    },
+    "vital_class": {
+      "description": "§4/§12 vital classification, verbatim from the manifest step enum. `null` (explicit) is a non-vital emission; absent is treated as unknown by TR-03.",
+      "enum": ["money", "state-transition", "external-side-effect", "auth", null]
+    },
+    "service": {
+      "description": "The producing service (backend-normalized).",
+      "type": "string",
+      "minLength": 1
+    },
+    "env": {
+      "description": "Deployment environment — the §4 `environments` primitive reserved set (a boolean/typo here is schema-invalid: the env-reserved Norway-guard).",
+      "enum": ["dev", "test", "prod"]
+    },
+    "timestamp": {
+      "description": "RFC3339 emission time. Used for windowing/ordering ONLY; TR-loop-guard's dedupe key deliberately EXCLUDES it so incident retries collapse.",
+      "type": "string",
+      "minLength": 1
+    },
+    "trace_id": {
+      "description": "OTEL trace id (ADR 0006 correlation). Optional; passthrough.",
+      "type": "string"
+    },
+    "span_id": {
+      "description": "OTEL span id (ADR 0006 correlation). Optional; passthrough.",
+      "type": "string"
+    },
+    "severity": {
+      "description": "Normalized severity. Contextualizes (never invents) the criticality ladder in TR-03.",
+      "enum": ["info", "warn", "error", "critical"]
+    },
+    "count": {
+      "description": "Occurrence count within the bounded window (spike contextualization).",
+      "type": "integer",
+      "minimum": 0
+    },
+    "attributes": {
+      "description": "Backend passthrough bag — IGNORED by the join. Present so no field is silently dropped on normalization.",
+      "type": "object",
+      "additionalProperties": true
+    },
+    "emitter": {
+      "description": "The producing service/agent identity. TR-loop-guard drops records whose emitter matches the triage tier's own identities (config loop_guard.self_emitters) so the tier cannot triage its own emissions.",
+      "type": "string",
+      "minLength": 1
+    }
+  }
+}
