@@ -55,6 +55,16 @@ export LC_ALL=C
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+# Outcome-measurement modes (ADR 0023, report-only). A first-arg dispatch, BEFORE
+# any merge-pass setup, so the outcome modes never touch the merge queue and a
+# no-arg invocation runs the serial pass exactly as before (backward compatible).
+# These modes open no PR, file no finding, gate nothing — they read history and
+# the last audit's output and write only the outcome store.
+case "${1:-}" in
+  outcome-capture) shift; exec bash "$HERE/outcome_capture.sh" "$@" ;;
+  outcome-digest)  shift; exec bash "$HERE/outcome_digest.sh"  "$@" ;;
+esac
+
 MARSHAL_HOST="${MARSHAL_HOST:-$HERE/../../autopilot/scripts/host.sh}"
 TRUNK="${MARSHAL_MAIN:-main}"
 FILE_BUDGET="${MARSHAL_REBASE_FILE_BUDGET:-2}"
