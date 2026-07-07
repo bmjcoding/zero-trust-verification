@@ -4,7 +4,7 @@
   "owner": {
     "name": "bailey"
   },
-  "description": "Zero-Trust Verification suite: a five-plugin software-quality system — spec generation (shift-left interrogation), autopilot implementation drain, codebase-health audit, the Merge Marshal coordination backstop, and Org-Wide Memory (a read-only, refuse-by-default index over repo-resident memory) — integrated through a shared machine-readable Verification Manifest (ADR 0001, amended by ADR 0011 to four plugins and ADR 0019 to five plugins). This root marketplace is the product entry point; every plugin is independently installable, pins schema_version, and degrades gracefully when the manifest is absent.",
+  "description": "Zero-Trust Verification suite: a six-plugin software-quality system — spec generation (shift-left interrogation), autopilot implementation drain, codebase-health audit, the Merge Marshal coordination backstop, Org-Wide Memory (a read-only, refuse-by-default index over repo-resident memory), and Production-Telemetry Triage (a read-only, bounded-window source that turns an emitted production incident into a resumable incident-Spec feeding spec-gen's resume path) — integrated through a shared machine-readable Verification Manifest (ADR 0001, amended by ADR 0011 to four plugins, ADR 0019 to five plugins, and ADR 0020 to six plugins). This root marketplace is the product entry point; every plugin is independently installable, pins schema_version, and degrades gracefully when the manifest is absent.",
   "plugins": [
     {
       "name": "spec-gen",
@@ -117,6 +117,33 @@
         "refuse-by-default",
         "supersession",
         "derived-view"
+      ]
+    },
+    {
+      "name": "triage",
+      "source": "./plugins/triage",
+      "description": "Production-Telemetry Triage: a read-only, bounded-window SOURCE that turns an emitted production incident into a resumable incident-Spec feeding spec-gen's RESUME path — never a patch, never an auto-merge (ADR 0020, report-only first). Ingests vitals through one vendor-neutral telemetry adapter (default OTEL/OTLP-JSON; CloudWatch/Dynatrace behind the same surface, config-profile-selected — ADR 0006/0013), takes a mechanically BOUNDED window (never a full-retention/whole-fleet scan), drops self-emitted events, and correlates the runtime event_name to the Verification Manifest's journey + behavior IDs via the §12 join key (DERIVED, not a backref — CH-02 unbuilt). Emits a completeness:incomplete incident-Spec that references EXISTING behavior IDs and mints none, honoring an open-incident dedupe loop-guard. The sixth independently installable plugin — a new source at the ADLC left edge, not a fourth Tier and not a new quality opinion; degrades to less action on any gap.",
+      "version": "0.1.0",
+      "author": {
+        "name": "bailey"
+      },
+      "license": "MIT",
+      "category": "code-quality",
+      "keywords": [
+        "triage",
+        "production-telemetry",
+        "observability",
+        "otel",
+        "otlp",
+        "incident-spec",
+        "verification-manifest",
+        "vendor-neutral",
+        "bounded-window",
+        "read-only",
+        "report-only",
+        "agent-first",
+        "spec-gen-resume",
+        "host-agnostic"
       ]
     }
   ]

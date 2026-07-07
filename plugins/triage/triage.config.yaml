@@ -1,0 +1,48 @@
+# triage.config.yaml — committed, per-repo Production-Telemetry Triage config.
+#
+# This file is the SECOND resolution tier for the telemetry backend (TR-01):
+#   1. $TRIAGE_TELEMETRY_BACKEND  (OTEL_FILE | CLOUDWATCH | DYNATRACE) — authoritative
+#   2. telemetry.backend below
+#   3. else REFUSE (ADR 0002 external-fact escalation — no origin-sniff analog exists
+#      for a telemetry vendor, unlike host.sh, so absence is never a guessed default).
+#
+# Everything here is CONFIG, not architecture (ADR 0006): a deployment selects a
+# backend and a window ceiling; the caller never names a vendor.
+
+telemetry:
+  # Default is the hermetic, community OTLP/OTEL-JSON file backend — the same
+  # backend the self-test runs on. CloudWatch/Dynatrace are backend selections,
+  # not caller-path branches.
+  backend: OTEL_FILE
+  # otel_file backend: path to the OTLP/OTEL-JSON logs file (overridable by
+  # $TRIAGE_OTEL_FILE). Left blank here; deployments point it at their export.
+  otel_file: ""
+
+window:
+  # BOUNDED-WINDOW-ONLY cost invariant (TR-01, the mutation-testing analog): a
+  # window query MUST carry --since/--until, MUST NOT exceed max_span, and MUST be
+  # scoped by --service or --event on an unbounded-retention backend. This is a
+  # refuse-condition, never a default-to-everything.
+  max_span: 24h
+  # Backends whose retention is unbounded require an explicit --service or --event
+  # scope (a whole-fleet scan is refused). The hermetic otel_file backend reads a
+  # bounded file, so it is not on this list.
+  unbounded_retention_backends: [CLOUDWATCH, DYNATRACE]
+
+loop_guard:
+  # NO SELF-INGESTION (TR-loop-guard): window records whose `emitter` matches any
+  # identity here are dropped before correlation, so the tier can never triage its
+  # own emissions or a prior incident-Spec's tooling.
+  self_emitters:
+    - triage-agent
+    - zero-trust-verification/triage
+  # The triage-owned ledger of open incident-Specs (incident-key -> PR number),
+  # appended by the TR-07 handoff. The loop-guard confirms each is still OPEN via
+  # `host.sh pr-state` (this is what catches a still-DRAFT incident-Spec that
+  # `pr-list-ready` deliberately omits) before suppressing a duplicate.
+  ledger: triage/open-incidents.tsv
+
+emit:
+  # Where incident-Specs are written (the ONE artifact class this read-only tier
+  # produces, alongside a draft PR). Never a patch, never a fix.
+  out_dir: triage/incidents

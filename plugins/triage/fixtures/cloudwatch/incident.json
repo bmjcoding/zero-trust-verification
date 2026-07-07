@@ -1,0 +1,27 @@
+{
+  "status": "Complete",
+  "statistics": { "recordsMatched": 2, "recordsScanned": 128 },
+  "results": [
+    [
+      { "field": "@timestamp", "value": "2026-07-06 12:00:00.000" },
+      { "field": "event_name", "value": "pay.captured" },
+      { "field": "vital_class", "value": "money" },
+      { "field": "service", "value": "payments" },
+      { "field": "env", "value": "prod" },
+      { "field": "emitter", "value": "payments-svc" },
+      { "field": "severity", "value": "ERROR" },
+      { "field": "count", "value": "3" },
+      { "field": "trace_id", "value": "5b8aa5a2d2c872e8321cf37308d69df2" }
+    ],
+    [
+      { "field": "@timestamp", "value": "2026-07-06 12:02:00.000" },
+      { "field": "event_name", "value": "pay.refunded" },
+      { "field": "vital_class", "value": "external-side-effect" },
+      { "field": "service", "value": "payments" },
+      { "field": "env", "value": "prod" },
+      { "field": "emitter", "value": "payments-svc" },
+      { "field": "severity", "value": "ERROR" },
+      { "field": "count", "value": "1" }
+    ]
+  ]
+}
