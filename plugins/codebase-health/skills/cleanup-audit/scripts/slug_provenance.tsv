@@ -1,0 +1,50 @@
+# slug_provenance.tsv — lint-pinned slug → determinism-provenance table (RL-02).
+#
+# HARDENED (Defect A): determinism-provenance is NOT a stored state.json field
+# (`expected_by` lives only in the fixture EXPECTED_FINDINGS.yaml). The
+# eligibility gate (finding_eligible.sh) reads THIS table instead — a value that
+# actually exists — seeded from the SPEC_1.4.0 §12 determinism sweep
+# (docs/specs/codebase-health-spec-1.4.0.md §12). Root lint V10 pins it:
+#   (a) every slug below exists in the audit taxonomy;
+#   (b) each provenance matches §12 (drift → red).
+#
+# provenance ∈ {deterministic, agent}:
+#   deterministic — a regex/tool/fixture layer scores the finding mechanically;
+#                   eligible to become autonomous rework (subject to the floor).
+#   agent         — judgment is genuinely required (§12 "kept agent-scored");
+#                   INELIGIBLE(agent-evidence-only): an agent opinion without
+#                   deterministic evidence never auto-files rework (ADR 0004).
+#
+# RECONCILIATION NOTE (log-only-refund): the RL register's example list called
+# `log-only-refund` "deterministic (-seed)". §12 J5 keeps it AGENT-scored (the
+# LOG-ONLY-vs-DARK distinction is a semantic emission judgment; only its seed
+# half — refund_payment ∈ vital_candidates ∧ ∉ telemetry — is deterministic).
+# We follow §12 (which V10 pins): agent. The loop therefore leaves it
+# comment-only, exactly the ADR-0017 Defect-H posture for agent-scored money
+# slugs — it does NOT autonomously escalate an agent-scored money-path fix.
+#
+# OMITTED-ON-PURPOSE: `misleading-name` (MN1) and `semantic-drift` (rot semantic
+# layer) are agent-scored but have "no lexical [slug] form" (§12 MN1). They are
+# left out rather than pinned to a phantom slug; an unknown slug fails safe to
+# INELIGIBLE(unknown-provenance) — behaviorally identical to agent-evidence-only
+# (no drain either way). Adding them later is a red-first TSV change, not a fix.
+#
+# Columns (TAB-separated): slug   provenance   §12-anchor
+dark-money-movement	deterministic	J3/§12-flip
+memory-rot-dangling-ref	deterministic	CH-05-det-layer
+marker	deterministic	A1-A7
+suppression	deterministic	G1-G4
+dead-code	deterministic	ND1/vulture
+giant-file	deterministic	GF1
+commented-code	deterministic	CO1
+test-skip	deterministic	TQ6-TQ7
+vacuous-test	deterministic	TQ2-TQ3
+log-only-refund	agent	J5
+log-and-swallow	agent	LG3
+convoluted-branching	agent	JC1
+non-idempotent-handler	agent	TX1
+missing-dedup-guard	agent	TX
+unsafe-retry	agent	TX2
+double-submit-window	agent	TX
+missing-compensation	agent	TX3
+missing-audit-trail	agent	TX
