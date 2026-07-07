@@ -633,6 +633,116 @@ else
   [ "$v10_bad" -eq 0 ] && ok V10 "remediation escalate-class table (ADR-0002 superset of TX catalog) + slug_provenance §12 taxonomy pinned (register RL-02/03/13)"
 fi
 
+# ── V11: outcome-store vendoring + the H1 anti-laundering guard (ADR 0023; register
+#        OM-09). Outcome measurement writes a shared store from TWO producers (the
+#        Marshal outcome-capture/digest modes + the audit outcome-emit step); they
+#        must not drift on the store contract, and NO agent-graded number may be
+#        laundered as deterministic. Three guarantees:
+#   (a) schema/outcome/v1.schema.json is the single canonical outcome-store schema;
+#       any vendored copy shipped for standalone install (Marshal/audit) is
+#       byte-identical (the V1/V8 mechanism).
+#   (b) the <!-- vendored:outcome-store-contract --> block has ONE source
+#       (docs/specs/outcome-store-contract.md); every well-formed vendored copy is
+#       byte-identical (the V5/V7/V9 marker mechanism; a lone/unpaired marker in
+#       prose is documentation, not a copy — no false positive).
+#   (c) the H1 anti-laundering guard, mechanized over the register: the real-repo
+#       emission-share acceptance is tagged [audit-run], and NO [det] acceptance
+#       claims a real-repo agent-graded number.
+#        NUMBERED V11: V7 (mutation) / V8 (OWM) / V9 (triage) / V10 (remediation) are
+#        TAKEN; this rule must NOT renumber or collide with them.
+OUTCANON="$ROOT/schema/outcome/v1.schema.json"
+if [ ! -f "$OUTCANON" ]; then
+  ok V11 "no outcome-store schema present; nothing to pin (ADR 0023)"
+else
+  v11_bad=0
+  # (a) vendored outcome-store schema copies byte-identical to the canonical.
+  o_copies=0
+  while IFS= read -r c; do
+    [ -n "$c" ] || continue
+    [ "$c" = "$OUTCANON" ] && continue
+    o_copies=$((o_copies+1))
+    if cmp -s "$OUTCANON" "$c"; then
+      ok V11 "vendored outcome-store schema byte-identical: ${c#$ROOT/}"
+    else
+      violation V11 "vendored outcome-store schema DRIFTED from canonical: ${c#$ROOT/} (ADR 0023 — vendor byte-for-byte from schema/outcome/v1.schema.json)"; v11_bad=1
+    fi
+  done < <(find "$ROOT" -path "$ROOT/.git" -prune -o -path "$ROOT/.claude" -prune -o -name node_modules -prune -o -path '*/outcome/v1.schema.json' -print 2>/dev/null)
+  [ "$o_copies" -eq 0 ] && ok V11 "single canonical outcome-store schema; no vendored copies to drift (ADR 0023)"
+
+  # (a2) STRUCTURAL H1 guard: the schema must BIND each metric name to its honesty
+  #      class (emission_share -> agent-graded; the DORA family -> deterministic), so a
+  #      mislabeled/laundered row is schema-INVALID at the store boundary. This is the
+  #      robust enforcement (the register grep in (c) is a keyword backstop only). A
+  #      future edit that drops the binding is caught here.
+  if grep -q '"emission_share"' "$OUTCANON" && grep -q '"agent-graded"' "$OUTCANON" \
+     && grep -q '"deploy_frequency"' "$OUTCANON" && grep -q 'allOf' "$OUTCANON"; then
+    ok V11 "schema structurally binds metric name -> honesty_class (emission_share => agent-graded; DORA => deterministic) — a laundered row is schema-invalid"
+  else
+    violation V11 "outcome-store schema lost its name<->honesty_class binding (H1 structural guard); a mislabeled emission_share/DORA row could enter the store (ADR 0023)"; v11_bad=1
+  fi
+
+  # (b) the vendored outcome-store-contract block: single source + byte-identical.
+  v11_begin='vendored:outcome-store-contract:begin'
+  v11_end='vendored:outcome-store-contract:end'
+  v11_extract() { awk -v b="$v11_begin" -v e="$v11_end" '$0 ~ b {f=1; next} $0 ~ e {f=0} f' "$1"; }
+  v11_canon_file="$ROOT/docs/specs/outcome-store-contract.md"
+  v11_canon_txt=""
+  if [ ! -f "$v11_canon_file" ]; then
+    ok V11 "no canonical outcome-store-contract doc; contract-block pin skipped (ADR 0023)"
+  else
+    nb=$(grep -c "$v11_begin" "$v11_canon_file" 2>/dev/null || true)
+    ne=$(grep -c "$v11_end" "$v11_canon_file" 2>/dev/null || true)
+    if [ "${nb:-0}" -eq 0 ] || [ "${ne:-0}" -eq 0 ] || [ "$nb" != "$ne" ]; then
+      violation V11 "canonical outcome-store-contract doc lacks a well-formed vendored block: ${v11_canon_file#$ROOT/} (ADR 0023)"; v11_bad=1
+    else
+      v11_canon_txt="$(v11_extract "$v11_canon_file")"
+    fi
+    while IFS= read -r f; do
+      [ -n "$f" ] || continue
+      [ "$f" = "$v11_canon_file" ] && continue
+      nb=$(grep -c "$v11_begin" "$f" 2>/dev/null || true)
+      [ "${nb:-0}" -gt 0 ] || continue
+      ne=$(grep -c "$v11_end" "$f" 2>/dev/null || true)
+      { [ "${ne:-0}" -gt 0 ] && [ "$nb" = "$ne" ]; } || continue   # unpaired marker -> prose, skip
+      rel="${f#$ROOT/}"
+      blk="$(v11_extract "$f")"
+      if [ -n "$v11_canon_txt" ] && [ "$blk" != "$v11_canon_txt" ]; then
+        violation V11 "vendored outcome-store-contract block DRIFTED from canonical: $rel (ADR 0023 — byte-identical; the V5/V7/V9 precedent)"; v11_bad=1
+      else
+        ok V11 "vendored outcome-store-contract block byte-identical: $rel"
+      fi
+    done < <(find "$ROOT" -path "$ROOT/.git" -prune -o -path "$ROOT/.claude" -prune -o -name node_modules -prune -o -name '*.md' -print 2>/dev/null | sort)
+  fi
+
+  # (c) the H1 anti-laundering guard over the register (skipped if the register is
+  #     absent, e.g. in a schema/block-only sandbox red-test).
+  REG="$ROOT/docs/specs/outcome-measurement-register.md"
+  if [ -f "$REG" ]; then
+    # the real-repo emission-share acceptance MUST carry the [audit-run] tag.
+    if grep -F '[audit-run]' "$REG" | grep -Eiq 'emission[ -]?share'; then
+      ok V11 "register: the real-repo emission share is tagged [audit-run] (H1 honesty residual present)"
+    else
+      violation V11 "register: no [audit-run] acceptance for the real-repo emission share (H1 residual missing — register OM-09)"; v11_bad=1
+    fi
+    # NO [det]/[deterministic] ACCEPTANCE may claim a real/live/production-repo
+    # agent-graded number (the laundering H1 exists to prevent). A [det] line about the
+    # FIXTURE arithmetic is legitimate; one mentioning BOTH agent-graded AND a real repo
+    # is not. Blockquote (`>`) lines are DESIGN RATIONALE, not acceptances (the H1 note
+    # there correctly says the real-repo metric is [audit-run]) — excluded. This is a
+    # keyword BACKSTOP over the register prose, broadened past the exact red-test
+    # phrasing; the STRUCTURAL guarantee is the schema binding in (a2), not this grep.
+    launder="$(grep -iE '\[det\]|\[deterministic\]' "$REG" | grep -v '^[[:space:]]*>' \
+               | grep -iE 'agent[ -]?graded' \
+               | grep -iE '(real|live|production)[ -]?(repo|repository)' || true)"
+    if [ -n "$launder" ]; then
+      violation V11 "register: a [det] acceptance claims a real/live/production-repo agent-graded number (H1 laundering): ${launder}"; v11_bad=1
+    else
+      ok V11 "register: no [det] acceptance claims a real-repo agent-graded number (H1 keyword backstop holds; schema binding in (a2) is the structural guarantee)"
+    fi
+  fi
+  [ "$v11_bad" -eq 0 ] && ok V11 "outcome-store schema + contract block single-source byte-identical + H1 anti-laundering guard holds (ADR 0023 / register OM-09)"
+fi
+
 echo
 if [ "$FAIL" -eq 0 ]; then echo "== lint_consistency: all cross-plugin contract rules pass =="; else echo "== lint_consistency: violations found =="; fi
 exit "$FAIL"
