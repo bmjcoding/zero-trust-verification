@@ -29,8 +29,10 @@ never auto-merges.
 6. `scripts/emit_incident_spec.py` — from a CONFIDENT join, emit the incident-Spec
    referencing EXISTING behavior IDs (mint none); REFUSE a no-join; honor the
    open-incident dedupe.
-7. `scripts/resume_handoff.sh` — prove the manifest is resumable-incomplete
-   (validator exit 3) and open the DRAFT PR proposal.
+7. `scripts/resume_handoff.sh --manifest <m> --incident-id <id> --key <incident_key>
+   --branch <b>` — prove the manifest is resumable-incomplete (validator exit 3) and
+   open the DRAFT PR proposal. `--key` (the emit step's `incident_key`) is REQUIRED so
+   the open incident is recorded in the loop-guard ledger and a re-fire is deduped.
 
 Degrade to LESS action on any gap (no manifest / unknown profile / empty window):
 say so, escalate the gap, and do not fabricate a join.
