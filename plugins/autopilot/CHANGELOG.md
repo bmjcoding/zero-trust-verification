@@ -11,7 +11,9 @@ of the audit-w345 drain (Waves 3–5, 2026-07-07/08) reviewed against the repo a
 landed: two P0 validator/planner gaps that let a broken main ship, the Bitbucket
 DC split-SSH-endpoint host bug that forced a manual workaround on 20+ REST calls,
 and the honesty gaps around CI build-status polling, session death mid-CI-poll,
-and dirty-tree fires.
+and dirty-tree fires. A 4-dimension adversarial merge review of the branch
+(0 BLOCKER / 3 MAJOR / 8 MINOR, each independently verified) was then folded in
+pre-merge; the entries below describe the post-review state.
 
 ### Added
 
@@ -22,21 +24,35 @@ and dirty-tree fires.
   Subtask is emitted; `[]` is legal only after an empty inventory. The field is
   in the AP-3 reviewer projection (new NO-GO condition 9: absent field = the
   inventory never ran) and feeds the D6.1 scoped test set. Pinned by **L18**
-  (extended to `invalidated_seams`; planted-drift red-test in self_test).
+  (extended to `invalidated_seams`; the projection-side pin is anchored to the
+  canonical allow-list ENTRY shape so prose mentions can't satisfy it, and the
+  planted-drift red-test scrubs only the entry line — the L18b overclaim caught
+  in review).
 - **Shared-helper blast radius (retro-1 F2, P0).** Quality validator check 2b +
   D6.1: a change to a shared mock/test helper expands `gates.test_scoped`
   `{paths}` to every test file importing the touched module — repo-wide, even
   for single-edit Subtasks — and D5 now states validators are NEVER skipped for
-  small diffs. [doc-only]
+  small diffs. The trigger is being imported by tests, not residence in the
+  test tree: src-shipped test fakes (the `<pkg>/testing.py` pattern) qualify
+  too (review finding — the residence-restricted trigger reopened the F2
+  broken-trunk window for src-resident fakes). [doc-only]
 - **`CI_STATUS_REPORTING` probe key (retro-1 F7).** G1.5 samples the host
-  build-status API over recent trunk commits (never just the tip) and emits
-  `true|false|unknown`; `CI_PRESENT=true` + `CI_STATUS_REPORTING=false` (CI runs
-  but never posts to the endpoint) auto-seeds `ci.skip_wait: true` — the CI gate
-  degrades honestly at GENERATE-time instead of polling a void to
-  `ci-stuck-pending` mid-drain. Backend-error ≠ silent-endpoint (unavailable
-  never reads as `false`), `unknown` never auto-flips (loop-safety invariant 2).
-  Proven by **W345-F7a–F7d** via the new `AUTOPILOT_PROBE_BITBUCKET` injection
-  seam.
+  build-status API over recent trunk commits AND the 5 most recent PR head shas
+  (`refs/pull-requests/*/from` | `refs/pull/*/head`) — never just the tip, and
+  never trunk-only: PR-only-reporting CI on squash/rebase-merge repos (the
+  suite's primary Bitbucket DC shape) posts statuses to PR heads that trunk
+  sampling can never see, and a trunk-only sample would misread that WORKING
+  endpoint as silent (review MAJOR). Emits `true|false|unknown`;
+  `CI_PRESENT=true` + `CI_STATUS_REPORTING=false` (CI runs but never posts to
+  the endpoint) auto-seeds `ci.skip_wait: true` — the CI gate degrades honestly
+  at GENERATE-time instead of polling a void to `ci-stuck-pending` mid-drain.
+  Backend-error ≠ silent-endpoint (unavailable never reads as `false`),
+  `unknown` never auto-flips (loop-safety invariant 2). Proven by
+  **W345-F7a–F7g** via the new `AUTOPILOT_PROBE_BITBUCKET` injection seam:
+  **F7c** reds on deleting the backend-error→unavailable guard (the vacuous-F7c
+  review MAJOR — now CI-config-present + always-erroring backend), **F7e** the
+  no-CI case, **F7f** reds on a tip-only (`-5`→`-1`) sampling regression,
+  **F7g** reds on dropping the PR-head sample; all four mutations verified.
 - **`gates.format` + format-before-every-commit (retro-2 rec 2).** Optional
   runbook gate (Python default `ruff format {files}`); implementer commit rule 7
   runs it on exactly the staged files before EACH commit, absorbing the
@@ -51,7 +67,12 @@ and dirty-tree fires.
   Generated artifacts (wire-format fingerprints, generated clients) declare a
   regen ritual + additive-vs-breaking classification; a diff touching a declared
   path without `regen:` evidence blocks — an auto-regen can no longer fold
-  silently into a PR. [doc-only]
+  silently into a PR. Wired end-to-end after review (the contract shipped with
+  enforcement but no producer): validator input 7 hands validators the runbook
+  path + frontmatter check 7 keys on; implementer input 6 + commit rule 8
+  produce the `regen: additive|breaking` line at commit time (`breaking`
+  requires operator sign-off pre-commit — amending landed commits is forbidden,
+  so a missing line costs a full fix cycle). [doc-only]
 - **Foreign dirty-tree handling (retro-1 F6).** D1.2 stashes foreign dirty
   tracked paths under a per-fire label (drain-state paths escalate to
   `dirty-drain-state` instead), D8 pops it before exit; a pop conflict preserves
@@ -60,10 +81,17 @@ and dirty-tree fires.
 - **Stale-ACTIVE reclaim (retro-2 finding 6 / rec 5, applied at RESUME).** A
   session dying between D7.5 and D8 strands the tracker `ACTIVE`; the dead
   session cannot flip its own status at D8, so Resume step 2 now reclaims an
-  ACTIVE tracker whose session lock is null/expired — flipping to `PAUSED` with
-  `status_reason: "session_ended_between_ci_polls"` (or `session_ended_mid_fire`)
-  and proceeding through the normal PAUSED path. D8 documents the terminal-fire
-  contract. [doc-only]
+  ACTIVE tracker whose session lock is null/expired **AND** shows a
+  dead-session signal — `last_heartbeat_at` > 90 min stale (the D1.3 crash
+  standard) or `awaiting_ci: true` with no in-flight Subtask work — flipping to
+  `PAUSED` with `status_reason: "session_ended_between_ci_polls"` (or
+  `session_ended_mid_fire`) and proceeding through the normal PAUSED path.
+  Lock expiry alone never reclaims (review MAJOR: the lock refreshes only at
+  fire start, so a normal live fire outlives it — expiry-only reclaim let
+  `--resume` hijack a live fire into a concurrent drain); with a fresh
+  heartbeat Resume refuses and says when to retry. D8 documents the
+  terminal-fire contract; the SKILL.md modes-table RESUME row carries the
+  reclaim contract (it previously read PAUSED-only). [doc-only]
 - **Merge-authorization semantics (retro-1 F1 + Bitbucket merge pattern).**
   SKILL.md documents `--yolo`'s authorization scope explicitly: autonomous drain
   + PR opening, never merge authority; an operator-confirmed merge under
@@ -80,10 +108,16 @@ and dirty-tree fires.
 
 - **Bitbucket DC split-SSH-endpoint host derivation (retro-2 rec 1).** A BB_HOST
   derived from an SSH origin (`bb-ssh.example.com`) now strips the `-ssh`
-  suffix from the first hostname label to reach the REST host; https-derived
-  hosts are never rewritten, and `AUTOPILOT_BITBUCKET_HOST` overrides all
-  derivation. New internal `repo-coords` debug subcommand makes the derivation
-  testable offline. Proven by **W345-BB1–BB5**.
+  suffix from the first hostname label to reach the REST host — including
+  dotless single-label intranet hosts (`bitbucket-ssh` → `bitbucket`; review
+  finding: the dot-anchored pattern never fired on them, contradicting the
+  header's first-label claim); https-derived hosts are never rewritten, and
+  `AUTOPILOT_BITBUCKET_HOST` overrides all derivation. New internal
+  `repo-coords` debug subcommand makes the derivation testable offline. Proven
+  by **W345-BB1–BB6** (BB6 asserts the extracted value — a substring check
+  would vacuously match the unstripped host). The self-test preamble unsets an
+  inherited `AUTOPILOT_BITBUCKET_HOST` so the documented persistent operator
+  override cannot false-red BB1–BB4 on a correct tree.
 
 ## [3.0.1] - 2026-07-05
 
