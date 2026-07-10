@@ -1,4 +1,4 @@
-# Runbook Template (autopilot v3.0.1)
+# Runbook Template (autopilot v3.1.0)
 
 > Loading preamble reminder: the runbook is the operator's contract with
 > autopilot. Read it in full before every drain; do not cache stale
@@ -61,9 +61,26 @@ gates:                                   # v2.4.0: language-agnostic gate comman
   typecheck: "mypy {paths}"
   lint: "ruff check {paths}"             # scoped to changed files — never repo-wide (brownfield debt
                                          # elsewhere must not block a Subtask)
+  format: "ruff format {files}"          # OPTIONAL: the implementer's format-before-every-commit
+                                         # gate (implementer-prompt commit rule 7). Omit when the
+                                         # repo has no formatter — gates.lint / gates.precommit stay
+                                         # the backstop. Defining it absorbs the formatting-only
+                                         # validator fix cycle (~a whole fix pass of mechanical churn).
   precommit: "pre-commit run --files {files}"
 contract_paths: []                       # optional globs marking wire-shape/contract modules; the
                                          # planner adds the `contract` test gate for Subtasks touching them
+regen_rituals: []                        # optional: generated-artifact regen rituals. Entry shape:
+                                         #   - paths: "<glob>"       # the generated artifact(s)
+                                         #     ritual: "<doc-or-skill that performs/reviews the regen>"
+                                         #     classification: additive-vs-breaking   # `breaking`
+                                         #                     # requires operator sign-off
+                                         # Producer: implementer commit rule 8 writes the `regen:`
+                                         # classification line into the regenerating commit's body
+                                         # (implementer-prompt.md; the entries are implementer input 6).
+                                         # Enforcement: the integration validator blocks a diff touching
+                                         # a matching path without that evidence (validator-prompts.md,
+                                         # integration check 7, fed by validator input 7) — an auto-regen
+                                         # must never fold silently into a PR.
 ci:
   platform: bitbucket-dc                 # informational only; host.sh detects the backend (bitbucket-dc | github) from origin at runtime (ADR 0013)
   skip_wait: false                       # AP-23: when true, do not poll for build; treat push as terminal. Auto-flipped true by G1.5 when CI_PRESENT=false.
@@ -141,6 +158,25 @@ Bullet list of work explicitly out of scope. The planner uses this to reject can
 - **As-built docs** — the journey-doc / README deltas the Story must ship inside
   its own Story PR when the Story's behaviors are journey-bearing per the manifest.
 
+### Authoring guidance — byte-stability refactors (scope-expansion clauses)
+
+A `kind: refactor` Subtask that imposes byte-stability constraints (an output
+file must not change; a binder/signature stays frozen) frequently discovers
+mid-flight that satisfying the constraint requires touching a file outside its
+strict `owned_files[]` — and burns zero-commit `[BLOCKED: ownership-overflow]`
+cycles before anyone authorizes the expansion. Two authoring patterns prevent
+that (the planner-prompt kind-selection rules carry the same guidance; this
+section exists for operators hand-authoring runbooks):
+
+1. **Pre-declare the conditional surface.** Include the likely-touched adjacent
+   files in `owned_files[]` up front and note in `acceptance_criteria`:
+   `owned_files may expand to include <X, Y> if <constraint> requires` — the D3
+   plan refinement can then expand within the declared envelope without a
+   blocked fire.
+2. **Plan it as `kind: code`.** When the true surface is genuinely unknowable up
+   front, `kind: code` (TDD-style scope discovery) is more honest than a pure
+   `kind: refactor` with a guessed file list.
+
 ### Repo constraints (detected)
 
 > This block is written by G1.5 (`scripts/repo_shape_probe.sh`) on the first
@@ -155,6 +191,10 @@ probed_at: <iso8601>
 probed_from: G1.5
 TRUNK: main                              # detected trunk branch name; used to shape autopilot/<slug>/... branches
 CI_PRESENT: true|false|unknown           # `unknown` does NOT auto-flip ci.skip_wait
+CI_STATUS_REPORTING: true|false|unknown  # does CI post to the host build-status API? `false` =
+                                         # CI config exists but the endpoint never populates
+                                         # (sampled over recent trunk commits); `unknown` does
+                                         # NOT auto-flip anything
 FORCE_PUSH_ALLOWED: true|false|unknown   # `unknown` does NOT auto-flip branching.no_force_push
 JIRA_HOOK_ENFORCED: true|false|unknown   # `unknown` does NOT auto-flip enforce_jira_key
 notes: |
@@ -166,6 +206,10 @@ Auto-seed rules (applied only on `unknown` → `true|false` transitions, never
 on `unknown` values themselves):
 
 - `CI_PRESENT=false` → `ci.skip_wait: true`
+- `CI_PRESENT=true` **and** `CI_STATUS_REPORTING=false` → `ci.skip_wait: true`
+  (CI runs but never posts to the host build-status API — a `skip_wait: false`
+  runbook would poll a void forever. The local test gates remain the merge
+  gate, and the degradation is declared here instead of discovered mid-drain.)
 - `FORCE_PUSH_ALLOWED=false` → `branching.no_force_push: true`
 - `JIRA_HOOK_ENFORCED=true` → `enforce_jira_key: true`
 
