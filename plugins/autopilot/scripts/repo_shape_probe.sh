@@ -12,7 +12,9 @@
 #   CI_PRESENT=true|false|unknown
 #   CI_STATUS_REPORTING=true|false|unknown
 #       Does the CI that runs actually REPORT to the host build-status API?
-#       Sampled over recent trunk commits (not just the tip). `false` means CI
+#       Sampled over recent trunk commits AND recent PR head shas (never just
+#       the tip — PR-only-reporting CI posts statuses to PR heads that
+#       squash/rebase merges never bring onto trunk). `false` means CI
 #       config exists but the endpoint never populates — a `ci.skip_wait: false`
 #       runbook would poll a void forever, so the dispatcher auto-seeds
 #       `ci.skip_wait: true` on CI_PRESENT=true + CI_STATUS_REPORTING=false
@@ -157,7 +159,7 @@ if (( DRY_RUN == 1 )); then
     echo "probe[dry-run]: would fetch origin <trunk>"
     echo "probe[dry-run]: would create + push temp branch $FP_BRANCH (commit A), rewrite to divergent commit B, force-push, then delete local+remote"
     echo "probe[dry-run]: would create + push temp branch $JH_BRANCH (one commit without a JIRA key), then delete local+remote"
-    echo "probe[dry-run]: would sample the host build-status API over recent trunk commits (CI presence + status-reporting)"
+    echo "probe[dry-run]: would sample the host build-status API over recent trunk commits + recent PR head shas (CI presence + status-reporting)"
     echo "probe[dry-run]: no network or git-state operation is performed in this mode"
   } >&2
 fi
@@ -208,7 +210,8 @@ TRUNK="$(detect_trunk)"
 explain "TRUNK=$TRUNK (from symbolic-ref/ls-remote/fallback)"
 
 # --- Build-status sampling (feeds the CI presence + reporting probes) ---------
-# BS_SAMPLE classifies the host build-status API over recent trunk commits:
+# BS_SAMPLE classifies the host build-status API over recent trunk commits AND
+# recent PR head shas:
 #   definite     — at least one sampled commit returned SUCCESSFUL|FAILED|INPROGRESS
 #   silent       — every sampled commit returned UNKNOWN: the endpoint is reachable
 #                  but never populated (CI may run — e.g. an external pipeline —
@@ -216,7 +219,11 @@ explain "TRUNK=$TRUNK (from symbolic-ref/ls-remote/fallback)"
 #   unavailable  — backend missing/unusable, trunk sha unresolvable, or --dry-run
 # The sample deliberately goes BEYOND the tip: the tip's build may simply not
 # have reported yet, and one commit is too small a base to declare an endpoint
-# silent.
+# silent. It also deliberately goes BEYOND trunk: PR-only-reporting CI (very
+# common — Jenkins/pipelines building PR/branch heads, statuses keyed to the PR
+# head sha) leaves squash/rebase-merged trunk commits status-less, and a
+# trunk-only sample would misread that WORKING endpoint as silent and auto-seed
+# `ci.skip_wait: true`, silently disabling a working D7.5 gate.
 sample_build_status() {
   if (( DRY_RUN == 1 )); then printf 'unavailable'; return 0; fi
   [[ -x "$BITBUCKET" ]] || { printf 'unavailable'; return 0; }
@@ -228,7 +235,14 @@ sample_build_status() {
   fi
   shas=$(git rev-list "origin/${TRUNK}" -5 2>/dev/null || true)
   [[ -n "$shas" ]] || shas="$trunk_sha"
-  for sha in $shas; do
+  # PR-only-reporting CI: also sample the 5 most recent PR head shas (Bitbucket
+  # DC advertises refs/pull-requests/<id>/from; GitHub refs/pull/<id>/head).
+  # On squash/rebase-merge repos these are the ONLY shas the endpoint ever
+  # populates. Empty on repos with no PRs — the trunk sample stands alone there.
+  local pr_shas
+  pr_shas=$(git ls-remote origin 'refs/pull-requests/*/from' 'refs/pull/*/head' 2>/dev/null \
+    | awk '{ n=split($2, a, "/"); print a[n-1], $1 }' | sort -rn | head -5 | awk '{print $2}')
+  for sha in $shas $pr_shas; do
     bs=$("$BITBUCKET" build-status --sha "$sha" 2>/dev/null); rc=$?
     # Backend error (auth, origin-parse, transport) is UNAVAILABLE, never
     # SILENT — only a successful read of an empty status set counts as silence.

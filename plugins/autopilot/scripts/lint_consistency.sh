@@ -282,8 +282,18 @@ grep -q 'autopilot/<slug>/<story-id>' "$ROOT/references/drain-lifecycle.md" || {
 l18_bad=0
 l18_proj="$ROOT/references/plan-reviewer-projection.md"
 l18_plan="$ROOT/references/planner-prompt.md"
+# Projection side: pin the CANONICAL allow-list entry shape (line-anchored
+# `field: [` / `field: <`), never a bare whole-file `field:` grep — prose
+# mentions elsewhere in the projection (e.g. NO-GO rule 9's "`invalidated_seams:
+# []` is a legal explicit declaration") must not satisfy the pin when the
+# allow-list entry itself is dropped (audit-w345 review: a stale-template
+# regeneration of the schema block kept the prose and stripped the entry).
 for field in behavior_ids predicted_hours invalidated_seams; do
-  grep -q "${field}:" "$l18_proj" || { violation L18 "AP-3 allow-list missing '${field}:' (plan review can't see it)"; l18_bad=1; }
+  case "$field" in
+    predicted_hours) proj_shape="predicted_hours: <" ;;
+    *)               proj_shape="${field}: \[" ;;
+  esac
+  grep -qE "^[[:space:]]*${proj_shape}" "$l18_proj" || { violation L18 "AP-3 allow-list missing the '${field}:' entry (plan review can't see it; prose mentions don't count)"; l18_bad=1; }
   grep -q "${field}:" "$l18_plan" || { violation L18 "planner schema missing '${field}:'"; l18_bad=1; }
 done
 (( l18_bad == 0 )) && ok L18

@@ -55,7 +55,7 @@ Run `bash ${SKILL_DIR}/scripts/repo_shape_probe.sh` after the G1 refuses have cl
 
 - `TRUNK=<branch>` (falls back to `main` if `refs/remotes/origin/HEAD` is unset)
 - `CI_PRESENT=true|false|unknown` — a definite build-status sample on a recent trunk commit, or presence of `bitbucket-pipelines.yml`, `.github/workflows/*.y(a)ml`, `Jenkinsfile`, or `.gitlab-ci.yml` at trunk tip
-- `CI_STATUS_REPORTING=true|false|unknown` — does the CI that runs actually post to the host build-status API? Sampled over recent trunk commits (not just the tip). `false` = CI config exists but the endpoint never populates — the `ci.skip_wait: false` poll target would never resolve (a real pipeline can run without ever advertising to the host's build-status API)
+- `CI_STATUS_REPORTING=true|false|unknown` — does the CI that runs actually post to the host build-status API? Sampled over recent trunk commits AND recent PR head shas (never just the tip: PR-only-reporting CI posts statuses to PR heads that squash/rebase merges never bring onto trunk). `false` = CI config exists but the endpoint never populates on any sampled sha — the `ci.skip_wait: false` poll target would never resolve (a real pipeline can run without ever advertising to the host's build-status API)
 - `FORCE_PUSH_ALLOWED=true|false|unknown` — determined by pushing a temp branch `autopilot/probe-force-push-<PID>` with a `+` refspec and inspecting the rejection message via `match_rejection`
 - `JIRA_HOOK_ENFORCED=true|false|unknown` — determined by pushing a temp branch `autopilot/probe-jira-hook-<PID>` whose HEAD commit subject deliberately omits a JIRA key and inspecting the rejection message
 
