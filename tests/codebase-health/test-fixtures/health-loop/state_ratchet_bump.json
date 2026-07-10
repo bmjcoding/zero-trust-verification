@@ -1,0 +1,114 @@
+{
+  "schema_version": 2,
+  "runs": [
+    {
+      "run": 1,
+      "kind": "audit",
+      "date": "2026-07-01",
+      "git_sha": "abc1234",
+      "target": ".",
+      "marker_count": 5,
+      "suppression_count": 2,
+      "flaky_count": 1,
+      "test_vacuity_count": 0,
+      "test_skip_count": 1,
+      "stdout_logging_count": 3,
+      "giant_file_count": 0,
+      "commented_code_count": 1,
+      "findings_by_severity": {
+        "CRITICAL": 0,
+        "HIGH": 2,
+        "MED": 0,
+        "LOW": 2
+      }
+    },
+    {
+      "run": 2,
+      "kind": "verify",
+      "date": "2026-07-02",
+      "git_sha": "def5678",
+      "target": ".",
+      "marker_count": 7,
+      "suppression_count": 2,
+      "flaky_count": 1,
+      "test_vacuity_count": 0,
+      "test_skip_count": 1,
+      "stdout_logging_count": 3,
+      "giant_file_count": 0,
+      "commented_code_count": 1,
+      "findings_by_severity": {
+        "CRITICAL": 0,
+        "HIGH": 2,
+        "MED": 0,
+        "LOW": 2
+      }
+    }
+  ],
+  "findings": {
+    "aaaa11111111": {
+      "tag": "DC-L1",
+      "slug": "dead-helper",
+      "category": "dead-code",
+      "lenses": [],
+      "path": "src/util.py",
+      "symbol": "old_helper",
+      "aliases": [],
+      "severity": "LOW",
+      "title": "delete dead helper",
+      "status": "FIXED",
+      "first_seen": 1,
+      "last_seen": 1,
+      "evidence": "no callers",
+      "verified_by": "docs/FIX_LOG.md#DC-L1 + commit 111aaa"
+    },
+    "bbbb22222222": {
+      "tag": "DC-L2",
+      "slug": "stale-docstring",
+      "category": "dead-code",
+      "lenses": [],
+      "path": "src/util.py",
+      "symbol": "<module>",
+      "aliases": [],
+      "severity": "LOW",
+      "title": "stale docstring",
+      "status": "WONTFIX",
+      "first_seen": 1,
+      "last_seen": 1,
+      "evidence": "names removed flag",
+      "verified_by": null
+    },
+    "cccc33333333": {
+      "tag": "IL-H1",
+      "slug": "fake-validator",
+      "category": "incomplete-logic/B",
+      "lenses": [],
+      "path": "src/auth.py",
+      "symbol": "validate_api_key",
+      "aliases": [],
+      "severity": "HIGH",
+      "title": "fake validator accepts anything",
+      "status": "OPEN",
+      "first_seen": 1,
+      "last_seen": 1,
+      "evidence": "returns bool(key)",
+      "verified_by": null
+    },
+    "dddd44444444": {
+      "tag": "SEC-H1",
+      "slug": "tls-verify-off",
+      "category": "security",
+      "lenses": [],
+      "path": "src/client.py",
+      "symbol": "fetch",
+      "aliases": [],
+      "severity": "HIGH",
+      "title": "verify=False on outbound call",
+      "status": "OPEN",
+      "first_seen": 1,
+      "last_seen": 1,
+      "evidence": "verify=False",
+      "verified_by": null
+    }
+  },
+  "not_covered": []
+}
