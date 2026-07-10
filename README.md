@@ -27,12 +27,13 @@ This suite answers that with a single discipline: **verify against the spec's de
 
 Each installs and runs standalone. Together they are the whole lifecycle, from a raw idea to a merged, verified change — and back again when production tells you something.
 
-## Four capabilities woven through, not bolted on
+## Five capabilities woven through, not bolted on
 
 Some of the suite's most valuable behavior ships as *modes and skills of the plugins above*, not as new checkers — a deliberate choice (ADR 0003: no extra tier just to add a feature):
 
 - **Mutation testing as a first-class gate** — a surviving mutant on a *changed line* is a vacuous test. It blocks at write-time (autopilot **D6.5**, in a throwaway worktree so the live checkout is never mutated) and reports comment-only on CORE paths at the PR Gate (ingest-only). One adapter map, byte-identical across producer and consumer. ([ADR 0016](./docs/adr/0016-mutation-testing-first-class-gate.md))
 - **Remediation loop** — a codebase-health skill (`/remediate`) that routes *confirmed, deterministically-scored* audit findings into a findings-register → spec-gen → an autonomous drain → a PR awaiting human review, behind a three-guard ratchet (idempotency, depth ceiling, no tail-chasing). Advisory-first; never auto-merges. ([ADR 0017](./docs/adr/0017-remediation-loop-wiring.md), [ADR 0018](./docs/adr/0018-remediation-ratchet-guards.md))
+- **Health-loop** — the attended campaign counterpart (`/health-loop`): one prompt drains a whole audit wave by wave — slice `SPEC.md`, drain through autopilot, merge (operator-approved per wave, or delegated for SAFE waves under a double-keyed hatch with a deterministic P1–P4 evidence bar), then `/verify --strict` gates every boundary. Merge-before-verify is a correctness rule, not ceremony; REGRESSED or a ratchet increase halts the campaign; nothing is ever re-fixed by the loop. ([ADR 0024](./docs/adr/0024-health-loop-attended-wave-drain.md))
 - **Suite outcome measurement** — report-only, permanently. DORA metrics (a Marshal mode) and the *journey-instrumentation share* (an audit emit step) land in a shared store with a mandatory honesty-class badge on every number, so an agent-graded metric can never be laundered as deterministic. ([ADR 0023](./docs/adr/0023-outcome-measurement-report-only.md))
 - **System-design coverage** — *declare-then-verify*: the manifest declares where a control lives (`locus: app | gateway | mesh | sidecar | …`); the audit verifies only in-repo (`locus: app`) claims and reports the rest **out-of-scope-by-declaration** — never a false "missing rate limit." ([ADR 0021](./docs/adr/0021-manifest-control-locus.md), [ADR 0022](./docs/adr/0022-out-of-scope-by-declaration.md))
 
