@@ -35,7 +35,9 @@ posture.
 - **Stateless.** Position is recomputed from `SPEC.md` × `state.json` ×
   tracker `STATUS` on every invocation; ending the session mid-campaign is
   safe. `audit/loop_log.md` journals authorizations/approvals/retries,
-  append-only, never control flow.
+  append-only. It is never read to compute position — but it IS the
+  authoritative record for budgets and the key-2 grant (which waves may be
+  delegation-approved); a missing journal means no grant, fail closed.
 
 ## Modes
 
@@ -43,9 +45,9 @@ posture.
 |---|---|
 | `/health-loop` | Start or resume the campaign: run/reuse the audit, then act on the first non-complete wave (see the reference's dispatch table). |
 | `/health-loop --dry-run` | Print the wave plan, per-wave policy routing, and what the next invocation WOULD do. Touches nothing. The safe first look. |
-| `/health-loop --auto-waves 1,4` | Per-run override of `wave_policy` (journaled). `--pause-waves all` forces every wave to ask. |
+| `/health-loop --auto-waves 1,4` | Per-run override of `wave_policy` for GENERATE-time pauses (journaled). It can never widen merge delegation by itself: under `merge: preauthorized`, adding a wave to the delegated set requires a fresh key-2 confirmation naming it (see the reference's auto-class definition). `--pause-waves all` forces every wave to ask. |
 | `/health-loop --use-existing-audit` | Skip the kickoff freshness check and drain the `SPEC.md` on disk (journaled). |
-| `/health-loop --from-wave 3` | Treat waves < 3 as out of scope for this campaign (journaled; their fingerprints are not gated). |
+| `/health-loop --from-wave 3` | Treat waves < 3 as out of scope for this campaign (journaled). Their fingerprints are not gated and the final verify reports them as out-of-scope, never as failures. |
 
 There is no `--resume` flag because every invocation is a resume.
 
@@ -59,14 +61,18 @@ There is no `--resume` flag because every invocation is a resume.
    question naming the auto-class waves (key 2) and journal it verbatim.
 3. **Dispatch on the first non-complete wave** — per the reference table:
    generate (`spec_wave.sh slice` → `/autopilot --generate @audit/waves/wave-<N>.md
-   --slug audit-w<N> --yolo`), or relay a live/blocked drain, or run the merge
+   --slug=audit-w<N> --yolo`), or relay a live/blocked drain, or run the merge
    step, or run `/verify --strict` + `wave_gate.sh` and route 0/2/3/4 →
    advance / Pause B / halt / stop.
 4. **End the turn at every pause and at drain-in-flight** — autopilot's cadence
    owns the drain; the operator owns approvals; the next invocation recomputes.
-5. **Campaign end** — final `/verify --strict` over the original fingerprint
-   set; report DRAINED per-wave. Re-running a drained campaign is a no-op that
-   says so.
+5. **Campaign end** — final `/verify --strict` over the campaign's fingerprint
+   set (out-of-scope waves under `--from-wave` reported, never failed); report
+   DRAINED per-wave. Re-running a drained campaign is a no-op that says so.
+
+Requires autopilot (drain, `host.sh`, lock checks) and marshal (merge
+execution) installed; the loop refuses and names the missing plugin rather
+than improvise either role. See the reference's "Cross-plugin dependencies".
 
 ## Which loop?
 

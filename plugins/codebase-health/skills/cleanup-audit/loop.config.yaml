@@ -16,8 +16,9 @@ wave_policy:
   "4": pause    # performance (flip to auto after a soak if your Wave 4s are mechanical)
   "5": pause    # architecture — never ships auto by default
 
-# Any item at or above this severity in an auto-class wave forces a pause
-# anyway. CRITICAL always pauses regardless of this value.
+# Any item at or above this severity in an auto-class wave forces the
+# generate-time question AND disqualifies the wave from delegated merge
+# approval. CRITICAL always pauses regardless of this value.
 severity_ceiling_for_auto: HIGH
 
 # Merge-approval authority at each drained wave (ADR 0024 decision 4):
@@ -26,6 +27,10 @@ severity_ceiling_for_auto: HIGH
 #                    confirmation (key 2), the loop may `host.sh pr-approve`
 #                    auto-class waves as the operator's logged delegate — only
 #                    after wave_preauth_check.sh passes P1–P4 per Story PR.
+#                    Auto-class FOR DELEGATION = wave_policy auto (after
+#                    per-run overrides) ∩ the waves the key-2 grant NAMED ∩ no
+#                    item ≥ severity_ceiling_for_auto; --auto-waves alone never
+#                    widens delegation (fresh key-2 required per added wave).
 #                    The Marshal still executes every merge after its
 #                    composed-state build. Execution autonomy is never granted.
 merge: pause

@@ -34,7 +34,7 @@ the Marshal's composed build to shave latency off a correctness boundary.
 **2. No autopilot changes.** Waves are markdown sections; slicing them is a
 deterministic text operation, not an extraction behavior. `spec_wave.sh`
 (codebase-health) slices `SPEC.md` into per-wave docs fed to
-`/autopilot --generate @audit/waves/wave-<N>.md --slug audit-w<N> --yolo` as
+`/autopilot --generate @audit/waves/wave-<N>.md --slug=audit-w<N> --yolo` as
 ordinary bare-markdown input. A `--wave` flag inside autopilot was rejected: it
 would touch the pinned flag registry, the extractor prompt, the self-test, and
 the lint of the suite's most safety-critical plugin to save one awk script, and
@@ -66,7 +66,11 @@ suite's "no auto-merge" language, and it relaxes *approval*, never execution:
   amortized to wave boundaries.
 - Hatch (`merge: preauthorized`, double-keyed): key 1 is the per-repo config
   flip; key 2 is an explicit per-run confirmation at kickoff naming the
-  auto-class waves. Under both keys, for auto-class waves only, the loop runs
+  auto-class waves. **Auto-class for delegation** = wave_policy `auto` (after
+  per-run overrides) ∩ the key-2-named set ∩ no item ≥
+  `severity_ceiling_for_auto`; a mid-campaign `--auto-waves` override can
+  never widen delegation past the grant — adding a wave requires a fresh,
+  journaled key-2 confirmation. Under both keys, for auto-class waves only, the loop runs
   `host.sh pr-approve` as the operator's *logged delegate* — but only after
   `wave_preauth_check.sh` proves deterministic evidence on disk (P1 tracker
   DRAINED; P2 every Story Subtask `[x]`; P3 no `[BLOCKED:]` history for the
@@ -85,9 +89,12 @@ invocation recomputes it from disk, so crash recovery, resume-in-a-fresh-session
 (the loop spans hours; context exhaustion is expected), and re-invocation are
 the same operation, and a `loop_state.json` that could drift from the three
 real sources cannot exist. The one thing that needs memory — kickoff
-authorizations, delegated approvals, the single drift-regen retry per wave —
-goes to `audit/loop_log.md`, append-only, never read for control flow (the
-autopilot `force_audit` posture).
+authorizations, delegated approvals, the drift-regen retry count, the campaign
+wall-clock anchor — goes to `audit/loop_log.md`, append-only. The invariant is
+scoped precisely: the journal is never read to compute *position*, but it IS
+read — as the only possible source — to enforce budgets and the key-2 grant.
+A missing or unreadable journal means no grant and no regen budget: fail
+closed, never a wider delegation.
 
 **6. Depth 0: the loop never re-fixes.** PARTIAL, STALE, and REGRESSED verdicts
 pause or halt; they are never re-sliced into a new drain. Remediation Guard 2
