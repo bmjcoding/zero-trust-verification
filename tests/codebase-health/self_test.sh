@@ -1496,6 +1496,179 @@ else
   fail "RL-12: remediation_scope_guard.sh absent (red-first)"
 fi
 
+HL_FIX="$HARNESS_DIR/test-fixtures/health-loop"
+HL_SPEC="$HL_FIX/SPEC.md"
+SW="$SKILL_SCRIPTS/spec_wave.sh"
+
+echo "== HL-01. spec_wave.sh: deterministic SPEC.md wave parsing (ADR 0024) =="
+if [ -f "$SW" ]; then
+  bash "$SW" waves "$HL_SPEC" > "$WORK/hl_waves.out" 2>&1; rc=$?
+  [ "$rc" -eq 0 ] && ok "HL-01: waves exits 0 on a wave-structured spec" || fail "HL-01: waves exits 0 on a wave-structured spec (rc=$rc)"
+  [ "$(wc -l < "$WORK/hl_waves.out" | tr -d ' ')" = "4" ] && ok "HL-01: waves enumerates all 4 wave headers" || fail "HL-01: waves enumerates all 4 wave headers"
+  assert_grep "$WORK/hl_waves.out" "^1	.*	2$" "HL-01: Wave 1 counted with 2 items"
+  assert_grep "$WORK/hl_waves.out" "^4	.*	0$" "HL-01: Wave 4 counted with 0 items"
+  bash "$SW" waves "$HL_FIX/pr_body.md" > /dev/null 2>&1; rc=$?
+  [ "$rc" -eq 3 ] && ok "HL-01: wave-less doc refused (exit 3, never guessed)" || fail "HL-01: wave-less doc refused (exit 3, got $rc)"
+
+  SLICE="$(bash "$SW" slice "$HL_SPEC" 1 --out "$WORK/hl_waves" 2>"$WORK/hl_slice.err")"; rc=$?
+  if [ "$rc" -eq 0 ] && [ -f "$SLICE" ]; then
+    ok "HL-01: slice writes wave-1.md and prints its path"
+    assert_grep "$SLICE" '^### \[DC-L1\] delete dead helper$' "HL-01: slice carries Wave 1 items byte-preserved"
+    assert_grep "$SLICE" '^## Summary$'                       "HL-01: slice carries the Summary section"
+    assert_not_grep "$SLICE" 'IL-H1|SEC-H1'                   "HL-01: slice excludes other waves' items"
+  else
+    fail "HL-01: slice writes wave-1.md and prints its path (rc=$rc)"
+  fi
+  bash "$SW" slice "$HL_SPEC" 9 --out "$WORK/hl_waves" > /dev/null 2>&1; rc=$?
+  [ "$rc" -eq 4 ] && ok "HL-01: absent wave refused (exit 4)" || fail "HL-01: absent wave refused (exit 4, got $rc)"
+  bash "$SW" slice "$HL_SPEC" 4 --out "$WORK/hl_waves" > /dev/null 2>&1; rc=$?
+  if [ "$rc" -eq 6 ] && [ ! -f "$WORK/hl_waves/wave-4.md" ]; then
+    ok "HL-01: zero-item wave refused loudly (exit 6, no empty slice written)"
+  else
+    fail "HL-01: zero-item wave refused loudly (exit 6, got $rc)"
+  fi
+
+  bash "$SW" fingerprints "$HL_SPEC" 1 > "$WORK/hl_fp1.out" 2>&1; rc=$?
+  if [ "$rc" -eq 0 ] && [ "$(printf 'aaaa11111111\nbbbb22222222' )" = "$(cat "$WORK/hl_fp1.out")" ]; then
+    ok "HL-01: fingerprints emits Wave 1's two fingerprints exactly"
+  else
+    fail "HL-01: fingerprints emits Wave 1's two fingerprints exactly (rc=$rc: $(tr '\n' ' ' < "$WORK/hl_fp1.out"))"
+  fi
+  bash "$SW" fingerprints "$HL_FIX/SPEC_missing_fp.md" 1 > "$WORK/hl_fpmiss.out" 2>&1; rc=$?
+  [ "$rc" -eq 5 ] && ok "HL-01: fingerprint-less item is a spec defect (exit 5)" || fail "HL-01: fingerprint-less item is a spec defect (exit 5, got $rc)"
+  assert_grep "$WORK/hl_fpmiss.out" 'MISSING.*DC-L1' "HL-01: the fingerprint-less item is NAMED (silent truncation is a defect)"
+
+  bash "$SW" forward-deps "$HL_SPEC" 2 > /dev/null 2>&1; rc=$?
+  [ "$rc" -eq 0 ] && ok "HL-01: backward dep (Wave 2 -> Wave 1) is fine" || fail "HL-01: backward dep (Wave 2 -> Wave 1) is fine (got $rc)"
+  bash "$SW" forward-deps "$HL_FIX/SPEC_forward_dep.md" 1 > "$WORK/hl_fwd.out" 2>&1; rc=$?
+  [ "$rc" -eq 1 ] && ok "HL-01: planted forward dep refused (exit 1)" || fail "HL-01: planted forward dep refused (exit 1, got $rc)"
+  assert_grep "$WORK/hl_fwd.out" 'IL-H1 wave=2'   "HL-01: forward dep names the offending TAG and its wave"
+  assert_grep "$WORK/hl_fwd.out" '2FA-H2 wave=2'  "HL-01: DIGIT-leading forward-dep TAG is caught too"
+  assert_grep "$WORK/hl_fwd.out" 'NOPE-X9 unresolved' "HL-01: dep resolving to NO item refuses loudly (never silently dropped)"
+  bash "$SW" fingerprints "$HL_SPEC" 9 > /dev/null 2>&1; rc=$?
+  [ "$rc" -eq 4 ] && ok "HL-01: fingerprints on absent wave refused (exit 4)" || fail "HL-01: fingerprints on absent wave refused (exit 4, got $rc)"
+  bash "$SW" forward-deps "$HL_SPEC" 9 > /dev/null 2>&1; rc=$?
+  [ "$rc" -eq 4 ] && ok "HL-01: forward-deps on absent wave refused (exit 4)" || fail "HL-01: forward-deps on absent wave refused (exit 4, got $rc)"
+  mkdir -p "$WORK/hl_spec_copy" && cp "$HL_SPEC" "$WORK/hl_spec_copy/SPEC.md"
+  DEF="$(bash "$SW" slice "$WORK/hl_spec_copy/SPEC.md" 1 2>/dev/null)"; rc=$?
+  if [ "$rc" -eq 0 ] && [ "$DEF" = "$WORK/hl_spec_copy/waves/wave-1.md" ] && [ -f "$DEF" ]; then
+    ok "HL-01: slice default --out is <spec-dir>/waves/"
+  else
+    fail "HL-01: slice default --out is <spec-dir>/waves/ (rc=$rc, got: $DEF)"
+  fi
+  : > "$WORK/hl_afile"
+  bash "$SW" slice "$HL_SPEC" 1 --out "$WORK/hl_afile/waves" > /dev/null 2>&1; rc=$?
+  [ "$rc" -eq 7 ] && ok "HL-01: unwritable out dir fails closed (exit 7), never mislabeled" || fail "HL-01: unwritable out dir fails closed (exit 7, got $rc)"
+else
+  fail "HL-01: spec_wave.sh absent (red-first)"
+fi
+
+echo "== HL-02. wave_gate.sh: ADVANCE/INCOMPLETE/REGRESSION/UNREADABLE exit contract =="
+WG="$SKILL_SCRIPTS/wave_gate.sh"
+if [ -f "$WG" ]; then
+  printf 'aaaa11111111\nbbbb22222222\n' > "$WORK/hl_wave1.fps"
+  printf 'cccc33333333\n'               > "$WORK/hl_wave2.fps"
+  cp "$HL_FIX/state_green.json" "$WORK/hl_state_green.json"
+
+  bash "$WG" "$WORK/hl_state_green.json" "$WORK/hl_wave1.fps" > "$WORK/hl_gate1.out" 2>&1; rc=$?
+  [ "$rc" -eq 0 ] && ok "HL-02: green wave -> ADVANCE (exit 0)" || fail "HL-02: green wave -> ADVANCE (exit 0, got $rc)"
+  assert_grep "$WORK/hl_gate1.out" 'VERDICT=ADVANCE' "HL-02: ADVANCE verdict printed"
+  bash "$WG" "$WORK/hl_state_green.json" "$WORK/hl_wave1.fps" > "$WORK/hl_gate1b.out" 2>&1
+  cmp -s "$WORK/hl_gate1.out" "$WORK/hl_gate1b.out" && ok "HL-02: gate is idempotent (same output twice)" || fail "HL-02: gate is idempotent (same output twice)"
+  cmp -s "$HL_FIX/state_green.json" "$WORK/hl_state_green.json" && ok "HL-02: gate never writes state.json (byte-identical after two runs)" || fail "HL-02: gate never writes state.json (byte-identical after two runs)"
+
+  bash "$WG" "$HL_FIX/state_green.json" "$WORK/hl_wave2.fps" > /dev/null 2>&1; rc=$?
+  [ "$rc" -eq 2 ] && ok "HL-02: OPEN finding -> INCOMPLETE (exit 2)" || fail "HL-02: OPEN finding -> INCOMPLETE (exit 2, got $rc)"
+  bash "$WG" "$HL_FIX/state_partial.json" "$WORK/hl_wave1.fps" > "$WORK/hl_gatep.out" 2>&1; rc=$?
+  [ "$rc" -eq 2 ] && ok "HL-02: PARTIAL never rounds up (exit 2)" || fail "HL-02: PARTIAL never rounds up (exit 2, got $rc)"
+  assert_grep "$WORK/hl_gatep.out" 'INCOMPLETE bbbb22222222 PARTIAL' "HL-02: the PARTIAL fingerprint is NAMED"
+  bash "$WG" "$HL_FIX/state_regressed_elsewhere.json" "$WORK/hl_wave1.fps" > "$WORK/hl_gater.out" 2>&1; rc=$?
+  [ "$rc" -eq 3 ] && ok "HL-02: REGRESSED on a NON-listed fingerprint still halts (global scan, exit 3)" || fail "HL-02: REGRESSED on a NON-listed fingerprint still halts (exit 3, got $rc)"
+  assert_grep "$WORK/hl_gater.out" 'REGRESSED cccc33333333' "HL-02: the regressed fingerprint is NAMED"
+  bash "$WG" "$HL_FIX/state_regressed_listed.json" "$WORK/hl_wave1.fps" > /dev/null 2>&1; rc=$?
+  [ "$rc" -eq 3 ] && ok "HL-02: REGRESSED on a LISTED fingerprint halts (exit 3)" || fail "HL-02: REGRESSED on a LISTED fingerprint halts (exit 3, got $rc)"
+  bash "$WG" "$HL_FIX/state_no_verify.json" "$WORK/hl_wave1.fps" > "$WORK/hl_gatenv.out" 2>&1; rc=$?
+  [ "$rc" -eq 0 ] && ok "HL-02: no verify run yet -> statuses alone govern (exit 0, noted)" || fail "HL-02: no verify run yet -> exit 0 (got $rc)"
+  assert_grep "$WORK/hl_gatenv.out" 'no kind=verify run' "HL-02: missing verify run is NOTED, not silent"
+  bash "$WG" "$HL_FIX/state_absent_count.json" "$WORK/hl_wave1.fps" > "$WORK/hl_gateab.out" 2>&1; rc=$?
+  [ "$rc" -eq 0 ] && ok "HL-02: count absent in baseline is never read as 0 (exit 0, noted per count)" || fail "HL-02: absent count never read as 0 (exit 0, got $rc)"
+  assert_grep "$WORK/hl_gateab.out" 'flaky_count absent in one run' "HL-02: the absent count is NAMED"
+  bash "$WG" "$HL_FIX/state_ratchet_verify_baseline.json" "$WORK/hl_wave1.fps" > "$WORK/hl_gatevb.out" 2>&1; rc=$?
+  [ "$rc" -eq 3 ] && ok "HL-02: verify-only target still ratchets against the prior same-target verify (exit 3)" || fail "HL-02: verify-only target still ratchets (exit 3, got $rc)"
+  assert_grep "$WORK/hl_gatevb.out" 'baseline is the prior same-target verify run' "HL-02: the fallback baseline is NOTED"
+  bash "$WG" "$HL_FIX/state_ratchet_bump.json" "$WORK/hl_wave1.fps" > "$WORK/hl_gaterat.out" 2>&1; rc=$?
+  [ "$rc" -eq 3 ] && ok "HL-02: ratchet increase halts (exit 3)" || fail "HL-02: ratchet increase halts (exit 3, got $rc)"
+  assert_grep "$WORK/hl_gaterat.out" 'marker_count 5->7' "HL-02: the increased count is NAMED"
+  bash "$WG" "$HL_FIX/state_stdout_only_bump.json" "$WORK/hl_wave1.fps" > "$WORK/hl_gateso.out" 2>&1; rc=$?
+  [ "$rc" -eq 0 ] && ok "HL-02: stdout_logging_count bump is report-only, never gates (exit 0)" || fail "HL-02: stdout_logging_count bump is report-only (exit 0, got $rc)"
+  assert_grep "$WORK/hl_gateso.out" 'report-only' "HL-02: report-only bump is still REPORTED"
+  bash "$WG" "$HL_FIX/state_corrupt.json" "$WORK/hl_wave1.fps" > /dev/null 2>&1; rc=$?
+  [ "$rc" -eq 4 ] && ok "HL-02: corrupt state fails closed (exit 4)" || fail "HL-02: corrupt state fails closed (exit 4, got $rc)"
+  printf 'eeee55555555\n' > "$WORK/hl_stray.fps"
+  bash "$WG" "$HL_FIX/state_green.json" "$WORK/hl_stray.fps" > /dev/null 2>&1; rc=$?
+  [ "$rc" -eq 4 ] && ok "HL-02: spec<->state desync (unknown fingerprint) fails closed (exit 4)" || fail "HL-02: unknown fingerprint fails closed (exit 4, got $rc)"
+  : > "$WORK/hl_empty.fps"
+  bash "$WG" "$HL_FIX/state_green.json" "$WORK/hl_empty.fps" > /dev/null 2>&1; rc=$?
+  [ "$rc" -eq 64 ] && ok "HL-02: empty fingerprint list is a usage error (exit 64)" || fail "HL-02: empty fingerprint list is a usage error (exit 64, got $rc)"
+  # Scope guard (RL-12 posture): the gate is a pure reader — no state writes, no detectors.
+  assert_not_grep "$SKILL_SCRIPTS/wave_gate.py" 'write_text|json\.dump|run_audit\.sh|mutmut|cosmic-ray|stryker|pitest|cargo-mutants' "HL-02: wave_gate.py has no write path and spawns no detector (invariants 1/7)"
+else
+  fail "HL-02: wave_gate.sh absent (red-first)"
+fi
+
+echo "== HL-03. wave_preauth_check.sh: delegated-approval preconditions (P1-P4) =="
+PC="$SKILL_SCRIPTS/wave_preauth_check.sh"
+if [ -f "$PC" ]; then
+  # Hermetic story repo: base commit on main, Story branch inside + one rogue branch outside the predicted surface.
+  R="$WORK/hl_repo"
+  git init -q -b main "$R" 2>/dev/null || { git init -q "$R" && git -C "$R" checkout -q -b main; }
+  GC="git -C $R -c user.email=hl@test -c user.name=hl -c commit.gpgsign=false"
+  mkdir -p "$R/src" "$R/tests" "$R/docs" "$R/.autopilot/runbooks"
+  echo 'def old_helper(): pass' > "$R/src/util.py"; echo 'ok' > "$R/tests/test_util.py"
+  $GC add -A >/dev/null && $GC commit -qm 'base'
+  $GC checkout -qb autopilot/audit-w1/delete-dead-helper
+  echo '# cleaned' > "$R/src/util.py"; echo 'assert True' > "$R/tests/test_util.py"
+  echo 'tracker delta' > "$R/.autopilot/runbooks/audit-w1.tracker.md"
+  $GC add -A >/dev/null && $GC commit -qm 'feat: delete-dead-helper.1 GREEN'
+  $GC checkout -qb autopilot/audit-w1/rogue
+  echo 'surprise' > "$R/src/rogue.py"
+  $GC add -A >/dev/null && $GC commit -qm 'feat: rogue GREEN'
+  # patch(1) droppings: FIX_LOG.md itself is allowed (exact), its .orig sibling is NOT
+  $GC checkout -q autopilot/audit-w1/delete-dead-helper
+  $GC checkout -qb autopilot/audit-w1/patchdroppings
+  echo 'DC-L1 fixed, commit 111aaa, 5/5' > "$R/docs/FIX_LOG.md"
+  echo 'leftover' > "$R/docs/FIX_LOG.md.orig"
+  $GC add -A >/dev/null && $GC commit -qm 'feat: delete-dead-helper.2 GREEN'
+  $GC checkout -q main
+
+  pc() { bash "$PC" --repo "$R" --base main --pr-body "$HL_FIX/pr_body.md" "$@"; }
+  pc --tracker "$HL_FIX/tracker_drained.md" --story delete-dead-helper --branch autopilot/audit-w1/delete-dead-helper > "$WORK/hl_pc_ok.out" 2>&1; rc=$?
+  [ "$rc" -eq 0 ] && ok "HL-03: clean drained Story passes all preconditions (exit 0)" || fail "HL-03: clean drained Story passes (exit 0, got $rc: $(cat "$WORK/hl_pc_ok.out"))"
+  assert_grep "$WORK/hl_pc_ok.out" '^OK story=delete-dead-helper' "HL-03: OK line names the story"
+  pc --tracker "$HL_FIX/tracker_human_needed.md" --story delete-dead-helper --branch autopilot/audit-w1/delete-dead-helper > "$WORK/hl_pc_p1.out" 2>&1; rc=$?
+  [ "$rc" -eq 1 ] && assert_grep "$WORK/hl_pc_p1.out" '.refuse. P1' "HL-03: non-DRAINED tracker refused (P1)" || fail "HL-03: non-DRAINED tracker refused (P1, got $rc)"
+  pc --tracker "$HL_FIX/tracker_open_subtask.md" --story delete-dead-helper --branch autopilot/audit-w1/delete-dead-helper > "$WORK/hl_pc_p2.out" 2>&1; rc=$?
+  [ "$rc" -eq 1 ] && assert_grep "$WORK/hl_pc_p2.out" '.refuse. P2' "HL-03: open Subtask refused (P2)" || fail "HL-03: open Subtask refused (P2, got $rc)"
+  pc --tracker "$HL_FIX/tracker_drained.md" --story no-such-story --branch autopilot/audit-w1/delete-dead-helper > "$WORK/hl_pc_p2b.out" 2>&1; rc=$?
+  [ "$rc" -eq 1 ] && assert_grep "$WORK/hl_pc_p2b.out" '.refuse. P2.*unknown Story proves nothing' "HL-03: unknown story refused (P2, zero rows)" || fail "HL-03: unknown story refused (P2, got $rc)"
+  pc --tracker "$HL_FIX/tracker_resolved_block.md" --story delete-dead-helper --branch autopilot/audit-w1/delete-dead-helper > "$WORK/hl_pc_p3.out" 2>&1; rc=$?
+  [ "$rc" -eq 1 ] && assert_grep "$WORK/hl_pc_p3.out" '.refuse. P3' "HL-03: resolved-block history refused (P3 — a human eye, not a delegate)" || fail "HL-03: resolved-block history refused (P3, got $rc)"
+  pc --tracker "$HL_FIX/tracker_drained.md" --story delete-dead-helper --branch autopilot/audit-w1/rogue > "$WORK/hl_pc_p4.out" 2>&1; rc=$?
+  [ "$rc" -eq 1 ] && assert_grep "$WORK/hl_pc_p4.out" '.refuse. P4.*src/rogue\.py' "HL-03: file outside predicted surface refused and NAMED (P4)" || fail "HL-03: rogue file refused (P4, got $rc)"
+  pc --tracker "$HL_FIX/tracker_drained.md" --story delete-dead-helper --branch autopilot/audit-w1/patchdroppings > "$WORK/hl_pc_orig.out" 2>&1; rc=$?
+  [ "$rc" -eq 1 ] && assert_grep "$WORK/hl_pc_orig.out" '.refuse. P4.*docs/FIX_LOG\.md\.orig' "HL-03: allow-list is exact-match — FIX_LOG.md.orig does NOT ride the FIX_LOG.md allowance (P4)" || fail "HL-03: FIX_LOG.md.orig refused (P4, got $rc: $(cat "$WORK/hl_pc_orig.out"))"
+  pc --tracker "$HL_FIX/tracker_sibling_block.md" --story delete-dead-helper --branch autopilot/audit-w1/delete-dead-helper > "$WORK/hl_pc_sib.out" 2>&1; rc=$?
+  [ "$rc" -eq 0 ] && ok "HL-03: sibling story's resolved block does not refuse this story (P3 boundary-anchored)" || fail "HL-03: sibling block must not refuse (exit 0, got $rc: $(cat "$WORK/hl_pc_sib.out"))"
+  bash "$PC" --repo "$R" --base main --pr-body "$HL_FIX/tracker_drained.md" --tracker "$HL_FIX/tracker_drained.md" --story delete-dead-helper --branch autopilot/audit-w1/delete-dead-helper > /dev/null 2>&1; rc=$?
+  [ "$rc" -eq 4 ] && ok "HL-03: PR body without file-surface markers fails closed (exit 4)" || fail "HL-03: markerless PR body fails closed (exit 4, got $rc)"
+  bash "$PC" --tracker "$HL_FIX/tracker_drained.md" --story > /dev/null 2>&1; rc=$?
+  [ "$rc" -eq 64 ] && ok "HL-03: trailing option with no value exits 64 (never hangs)" || fail "HL-03: trailing option exits 64 (got $rc)"
+  pc --tracker "$HL_FIX/tracker_drained.md" --story delete-dead-helper --branch autopilot/audit-w1/delete-dead-helper --allow-prefix "" > /dev/null 2>&1; rc=$?
+  [ "$rc" -eq 64 ] && ok "HL-03: empty --allow-prefix exits 64 (an empty prefix would disable P4)" || fail "HL-03: empty --allow-prefix exits 64 (got $rc)"
+else
+  fail "HL-03: wave_preauth_check.sh absent (red-first)"
+fi
+
 echo
 echo "== self-test: $PASS passed, $FAIL failed =="
 [ "$FAIL" -eq 0 ]
