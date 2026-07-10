@@ -4,6 +4,36 @@ All notable changes to the Zero-Trust Verification suite are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/); the suite tag
 is the release marker, and individual plugins carry their own `plugin.json` version.
 
+## [Unreleased]
+
+### Added — /health-loop attended wave drain (ADR 0024)
+
+One prompt runs audit → per-wave autopilot drain → merge → `/verify --strict` →
+gate → next wave, until the original audit is drained. Shipping across three
+PRs — substrate (#36), the loop (this entry), and enforcement (root lint V13 +
+the e2e loop fixture) in the final PR:
+
+- **Deterministic substrate** (#36) — `spec_wave.sh` (SPEC.md wave parser:
+  waves/slice/fingerprints/forward-deps, fail-closed exit contract),
+  `wave_gate.sh` + `.py` (pure-reader advance gate over `audit/state.json`:
+  0 ADVANCE / 2 INCOMPLETE / 3 REGRESSION-or-RATCHET with a GLOBAL regressed
+  scan / 4 UNREADABLE; ratchet mirrors `/verify`, `stdout_logging_count` stays
+  report-only), `wave_preauth_check.sh` (P1–P4 evidence bar for delegated
+  wave-PR approval, exact-match allow-list). Self-test HL-01..HL-03, 57
+  assertions incl. planted red paths for every pre-merge adversarial-review
+  finding (0 BLOCKER / 3 MAJOR / 4 MINOR / 2 NIT — all fixed with red-tests).
+- **The loop** — `commands/health-loop.md` + `references/health-loop.md` +
+  `loop.config.yaml` (wave policy, severity ceiling, `merge: pause |
+  preauthorized` double-keyed hatch, depth-0 partial policy, budgets);
+  merge-before-verify as a correctness rule; stateless position + append-only
+  `audit/loop_log.md` journal; `/remediate` coexistence (drip vs drain,
+  Guard-1 stamping with `health-loop:` ref prefix). ADR 0024.
+
+No changes to autopilot, marshal, spec-gen, or `/verify`. Autopilot HC §4
+(never merges) untouched — the hatch delegates *approval* only, behind
+deterministic preconditions, and the Marshal's composed-state build executes
+every merge.
+
 ## [1.2.0] — 2026-07-10
 
 Field-hardening release: the first e2e production drain of the suite (audit-w345,
