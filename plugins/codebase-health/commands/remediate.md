@@ -75,6 +75,17 @@ precedent). Each fire is **stateless and idempotent** — it re-derives eligible
 findings from `state.json` and open remediation PRs from the host adapter
 (`pr-list-ready`, ADR 0009) — so a missed or overlapping fire is harmless (Guard 3).
 
+## Which loop?
+
+`/remediate` is the **drip**; `/health-loop` (ADR 0024) is the **drain** — an
+operator-initiated, wave-granular campaign over `audit/SPEC.md` with per-wave
+merge approval and `/verify --strict` gates. Use `/remediate` for ambient,
+unattended, finding-granular rework (its ADR-0004 eligibility filters exist for
+exactly that); use `/health-loop` to drain a whole audit attended. They do not
+collide: the health-loop stamps its fingerprints into the same `remediation`
+sub-object Guard 1 reads (`ref` prefixed `health-loop:`), so this loop SKIPs
+them as already-filed.
+
 ## Non-goals (v1)
 
 No new detector, no new severity scale, no mutation-testing run (scoped or

@@ -1,5 +1,41 @@
 # Changelog
 
+## Unreleased — /health-loop attended wave drain (ADR 0024, register HL-01..HL-03)
+
+The audit tier gains its campaign mode: `/health-loop` drains a whole
+`audit/SPEC.md` wave by wave — per-wave autopilot drain, merge (operator-
+approved, or delegated for auto-class waves under the double-keyed
+`merge: preauthorized` hatch), `/verify --strict` + `wave_gate.sh` at every
+boundary — until the original audit is drained. Merge-before-verify is a
+correctness rule (`/verify` grades the checkout); depth 0 (the loop never
+re-fixes); stateless position (SPEC.md × state.json × tracker STATUS) with an
+append-only `audit/loop_log.md` journal. No changes to `/verify`, autopilot,
+or the Marshal.
+
+- **`spec_wave.sh`** (HL-01) — deterministic SPEC.md wave parser:
+  `waves` / `slice` (byte-preserving, `audit/waves/wave-<N>.md`) /
+  `fingerprints` / `forward-deps` (refuses forward AND unresolvable deps,
+  digit-leading TAGs caught); exits 3 wave-less / 4 absent / 5 fingerprint-less
+  / 6 empty / 7 unwritable — all loud, never guessed.
+- **`wave_gate.sh` + `wave_gate.py`** (HL-02) — pure-reader advance gate over
+  `state.json`: 0 ADVANCE / 2 INCOMPLETE / 3 REGRESSION-or-RATCHET (REGRESSED
+  scanned globally, never wave-scoped) / 4 UNREADABLE incl. spec↔state desync /
+  64 usage. Ratchet mirrors `/verify`: prior same-target baseline preferring
+  the last audit run (falling back to a prior verify), absent counts never read
+  as 0, `stdout_logging_count` report-only. Never writes state (grep-pinned).
+- **`wave_preauth_check.sh`** (HL-03) — the P1–P4 evidence bar a Story PR must
+  clear before the loop may exercise delegated approval: tracker DRAINED, every
+  Story Subtask `[x]`, no `[BLOCKED:]` history for the story, changed files ⊆
+  the Runbook PR's predicted file surface (exact-match allow-list — patch
+  droppings like `FIX_LOG.md.orig` never ride an allowance). Disk evidence
+  only; never calls the host. D6.2 commit-shape deliberately NOT re-run
+  (per-Subtask ranges; a whole-Story re-audit would false-flag tdd-scope-leak).
+- **`/health-loop` command** + `references/health-loop.md` +
+  `loop.config.yaml` — posture, dispatch table, merge step, gate routing,
+  failure ownership, `/remediate` "Which loop?" boundary (drip vs drain,
+  Guard-1 stamping with `health-loop:` ref prefix; unattended firing stays
+  behind `/remediate`'s ADR-0004 eligibility path).
+
 ## Unreleased — PR Gate + Verification-Manifest integration (register CH-01..CH-10)
 
 The audit tier gains its step-4-checker deltas: a diff-scoped **PR Gate mode**
