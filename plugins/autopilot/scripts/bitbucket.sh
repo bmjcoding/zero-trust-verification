@@ -145,7 +145,9 @@ fi
 #      for deployments whose REST host cannot be derived from origin at all.
 #   2. https origin — the URL host verbatim (it already serves REST).
 #   3. ssh origin   — the URL host with a `-ssh` suffix stripped from the FIRST
-#      hostname label (`bb-ssh.example.com` -> `bb.example.com`). Bitbucket DC
+#      hostname label (`bb-ssh.example.com` -> `bb.example.com`; dotless
+#      search-domain-resolved intranet hosts too: `bitbucket-ssh` ->
+#      `bitbucket`). Bitbucket DC
 #      deployments commonly publish a dedicated SSH endpoint host alongside the
 #      HTTPS/REST host; REST calls against the `-ssh` host always fail, so a
 #      host derived from an SSH remote must map back to the REST host. (Field
@@ -158,8 +160,11 @@ elif [[ "$ORIGIN_URL" =~ https?://([^/]+)/ ]]; then
   BB_HOST="${BASH_REMATCH[1]}"
 elif [[ "$ORIGIN_URL" =~ @([^:/]+)[:/] ]]; then
   BB_HOST="${BASH_REMATCH[1]}"
-  # Split-SSH-endpoint convention (see the precedence note above).
-  BB_HOST="$(printf '%s' "$BB_HOST" | sed -E 's/^([^.]+)-ssh\./\1./')"
+  # Split-SSH-endpoint convention (see the precedence note above). The `(\.|$)`
+  # alternation covers dotless single-label intranet hosts (`bitbucket-ssh`),
+  # where the whole host IS the first label — a dot-anchored pattern never
+  # fired on them and left every REST call pointed at the SSH endpoint.
+  BB_HOST="$(printf '%s' "$BB_HOST" | sed -E 's/^([^.]+)-ssh(\.|$)/\1\2/')"
 else
   die_state "host-parse" "cannot parse host from origin URL"
 fi
