@@ -11,6 +11,7 @@ Every validator receives:
 4. The implementer's TDD sequence summary (from `references/implementer-prompt.md` final report)
 5. Repo root path
 6. The runbook's `gates:` command table (all tool invocations below show the Python defaults in parentheses; run YOUR runbook's commands)
+7. The runbook's path (`.autopilot/runbooks/<slug>.md`) and its frontmatter — integration check 7 reads `regen_rituals:` from it (absent or `[]` → that check self-skips)
 
 
 ## Common: output format
@@ -166,7 +167,7 @@ Run the test gate. Confirm new tests exist. Report failures.
 2. **Run the scoped suite over changed modules.** `gates.test_scoped` with `{paths}` = the changed-module set: `git diff --name-only origin/<base>..HEAD | xargs -n1 dirname | sort -u` (NOT the whole repo). Failures → finding.
 
 
-2b. **Shared-helper blast radius.** If any changed file is a shared mock/test helper or fixture (a test-tree module — fake, stub, fixture factory, conftest-registered helper — imported by tests beyond the changed dirs), expand `{paths}` to every test file importing the touched module (Python default: `grep -rlE 'import <mod>|from <mod>' <test-tree>`) and run `gates.test_scoped` over that set too. This applies even to single-file, single-edit changes — a repo-wide helper regression is exactly the failure a touched-files-only scope misses, and it lands broken on trunk where the NEXT Subtask's implementer finds it. Failures → `severity: high, blocking: true`.
+2b. **Shared-helper blast radius.** If any changed file is a shared mock/test helper or fixture **imported by tests beyond the changed dirs** — the trigger is being imported by tests, NOT where the module lives: a test-tree module (fake, stub, fixture factory, conftest-registered helper) AND a src-shipped test fake (the `<pkg>/testing.py` pattern, e.g. a `FakeSsmCache` exported for consumers) both qualify — expand `{paths}` to every test file importing the touched module (Python default: `grep -rlE 'import <mod>|from <mod>' <test-tree>`) and run `gates.test_scoped` over that set too. This applies even to single-file, single-edit changes — a repo-wide helper regression is exactly the failure a touched-files-only scope misses, and it lands broken on trunk where the NEXT Subtask's implementer finds it. Failures → `severity: high, blocking: true`.
     Additionally, if the Subtask schema declares `invalidated_seams[]`, `{paths}` includes every listed seam-test module.
 
 
