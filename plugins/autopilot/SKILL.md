@@ -145,7 +145,7 @@ Each fire is one Subtask end-to-end. Per-fire scope is HARD: one Subtask — its
 
 | Step | Purpose | Key contract |
 |---|---|---|
-| D1 | Hydrate + WIP recovery | Session lock (AP-4), branch shape (AP-7), heartbeat crash detect, WIP dispatch table, AP-20 drift-notes hydration, AP-23 D1.0.4 pending-deltas migration + crash recovery |
+| D1 | Hydrate + WIP recovery | Session lock (AP-4), branch shape (AP-7), heartbeat crash detect, WIP dispatch table, AP-20 drift-notes hydration, AP-23 D1.0.4 pending-deltas migration + crash recovery, D1.2 foreign-dirty stash |
 | D2 | Select next Subtask | Topo-walk DAG; escalate at counter cap (AP-2); write `in_progress` (batched under `branching.no_force_push`) |
 | D3 | Plan + Plan review | D3.0 audited-SHA verification (AP-5); D3.1 Plan agent; D3.2 review on schema projection (AP-3) |
 | D4 | Implement (TDD vertical slice) | Spawn `general-purpose` with `references/implementer-prompt.md`; per-cycle commits (AP-1); JIRA-key prefix under AP-22 |
@@ -153,7 +153,7 @@ Each fire is one Subtask end-to-end. Per-fire scope is HARD: one Subtask — its
 | D6 | Test gate + commit-shape audit | Scoped `gates:` commands (AP-15); TDD shape + cycle budget from `git log` (AP-1) |
 | D7 | Pre-push rebase + commit + PR | D7.0 rebase; D7.1 stage; D7.1a AP-23 tracker-delta fold; D7.2 push; D7.3 PR (`host.sh pr-open`); D7.3a stacked-merge strategy (AP-10); D7.4 tracker update (batched under `branching.no_force_push`) |
 | D7.5 | CI poll (cross-fire) | `ci_check.sh --once`; short-circuits when `ci.skip_wait: true` |
-| D8 | Adaptive cron re-arm | Cadence dispatch per `references/cadence-dispatch.md`; session-lock release on terminal STATUS; PAUSED spec dedup (AP-17) |
+| D8 | Adaptive cron re-arm | Cadence dispatch per `references/cadence-dispatch.md`; session-lock release on terminal STATUS; terminal-fire contract (stale-ACTIVE reclaim is Resume's); PAUSED spec dedup (AP-17) |
 
 
 ### RESUME mode

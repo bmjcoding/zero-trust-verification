@@ -609,7 +609,7 @@ Tracker tracks `consecutive_impl_blocks: N` and `consecutive_ci_blocks: N` at th
 G5 already-shipped Subtasks do NOT affect either counter — they're marked Done at GENERATE-time before any drain has started.
 
 
-External faults (`foreign-commits-on-branch`, `trunk-renamed`, `runbook-pr-blocked`, `unexpected-branch-shape`, `ci-check-usage-error`, `claim-eligibility-usage-error`) route straight to `HUMAN_NEEDED` and never touch counters.
+External faults (`foreign-commits-on-branch`, `trunk-renamed`, `runbook-pr-blocked`, `unexpected-branch-shape`, `dirty-drain-state`, `ci-check-usage-error`, `claim-eligibility-usage-error`) route straight to `HUMAN_NEEDED` and never touch counters.
 
 
 The caps are runbook-configured: `budget.max_impl_blocks` (default 3) and `budget.max_ci_blocks` (default 2 — CI flakes are usually environmental; retrying past 2 burns budget). At `consecutive_impl_blocks >= budget.max_impl_blocks` OR `consecutive_ci_blocks >= budget.max_ci_blocks`:
