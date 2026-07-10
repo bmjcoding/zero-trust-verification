@@ -645,6 +645,49 @@ make_remote_and_clone ciwf
 out=$(run_probe "$CLONE")
 assert_contains T24 "workflow manifest detected" "CI_PRESENT=true" "$out"
 
+# --- CI_STATUS_REPORTING probe (audit-w345 retro F7: CI runs but never posts to
+# the host build-status API — ci.skip_wait: false polls a void forever). The
+# backend is stubbed via the AUTOPILOT_PROBE_BITBUCKET injection seam so the
+# sampling paths run hermetically (same pattern as the gh argv shim).
+STUB_SILENT="$SANDBOX/bb_stub_silent.sh"
+cat > "$STUB_SILENT" <<'STUBEOF'
+#!/usr/bin/env bash
+[[ "${1:-}" == "build-status" ]] && { echo UNKNOWN; exit 0; }
+exit 1
+STUBEOF
+chmod +x "$STUB_SILENT"
+STUB_DEFINITE="$SANDBOX/bb_stub_definite.sh"
+cat > "$STUB_DEFINITE" <<'STUBEOF'
+#!/usr/bin/env bash
+[[ "${1:-}" == "build-status" ]] && { echo SUCCESSFUL; exit 0; }
+exit 1
+STUBEOF
+chmod +x "$STUB_DEFINITE"
+
+# W345-F7a — CI config present + endpoint silent across the trunk sample →
+# CI_STATUS_REPORTING=false (the honest ci.skip_wait auto-seed signal).
+out=$( cd "$SANDBOX/ciwf-clone" && AUTOPILOT_PROBE_BITBUCKET="$STUB_SILENT" bash "$HERE/repo_shape_probe.sh" 2>/dev/null )
+assert_contains W345-F7a "silent endpoint + CI files -> reporting=false" "CI_STATUS_REPORTING=false" "$out"
+assert_contains W345-F7a "CI presence still true from manifests" "CI_PRESENT=true" "$out"
+impure=$(grep -cvE '^[A-Z_]+=[A-Za-z0-9._/-]+$' <<<"$out" || true)
+assert_eq W345-F7a "probe stdout stays KEY=VALUE-pure with the new key" "0" "$impure"
+
+# W345-F7b — a definite build state proves both presence AND reporting, even
+# with no CI config files at trunk.
+out=$( cd "$SANDBOX/permissive-clone" && AUTOPILOT_PROBE_BITBUCKET="$STUB_DEFINITE" bash "$HERE/repo_shape_probe.sh" 2>/dev/null )
+assert_contains W345-F7b "definite build state -> reporting=true" "CI_STATUS_REPORTING=true" "$out"
+assert_contains W345-F7b "definite build state -> CI_PRESENT=true" "CI_PRESENT=true" "$out"
+
+# W345-F7c — no CI at all (no config files, backend errors) -> reporting stays
+# unknown, NEVER false (a backend error must not read as a silent endpoint).
+out=$(run_probe "$SANDBOX/permissive-clone")
+assert_contains W345-F7c "no CI: reporting honestly unknown" "CI_STATUS_REPORTING=unknown" "$out"
+
+# W345-F7d — dry-run emits unknown for the new key (invariant 2: unknown never
+# auto-flips; dry-run performs no sampling).
+out=$( cd "$SANDBOX/permissive-clone" && bash "$HERE/repo_shape_probe.sh" --dry-run 2>/dev/null )
+assert_contains W345-F7d "dry-run reporting=unknown" "CI_STATUS_REPORTING=unknown" "$out"
+
 echo "== detect_concurrent_drain.sh (T12-T16) =="
 
 DCD="$HERE/detect_concurrent_drain.sh"
@@ -2050,6 +2093,35 @@ assert_contains H50 "unrecognised origin names the override knob" "AUTOPILOT_HOS
 ( cd "$GH_REPO_DIR" && bash "$HERE/host.sh" bogus-sub >/dev/null 2>&1 ); rc=$?
 assert_eq H50 "unknown subcommand -> usage 64" "64" "$rc"
 
+echo "== bitbucket.sh repo-coords / BB_HOST derivation (W345-BB) =="
+
+# audit-w345 retro rec 1: Bitbucket DC deployments commonly publish a dedicated
+# SSH endpoint host (`bb-ssh.example.com`) beside the HTTPS/REST host
+# (`bb.example.com`); a BB_HOST derived from an SSH remote must strip the
+# `-ssh` suffix or every REST call needs a manual workaround. Deterministic —
+# repo-coords is offline (no HTTP).
+coords() { ( cd "$1" && bash "$HERE/bitbucket.sh" repo-coords 2>/dev/null ); }
+
+SSH_REPO="$SANDBOX/sshhost-repo"; git init -q "$SSH_REPO"
+git -C "$SSH_REPO" remote add origin "ssh://git@bb-ssh.example.com:7999/PROJ/myrepo.git"
+out="$(coords "$SSH_REPO")"
+assert_contains W345-BB1 "ssh origin: -ssh suffix stripped from BB_HOST" "BB_HOST=bb.example.com" "$out"
+assert_contains W345-BB1 "ssh origin: project key parsed" "PROJECT_KEY=PROJ" "$out"
+assert_contains W345-BB1 "ssh origin: repo slug parsed" "REPO_SLUG=myrepo" "$out"
+
+SCP_REPO="$SANDBOX/scphost-repo"; git init -q "$SCP_REPO"
+git -C "$SCP_REPO" remote add origin "git@bb-ssh.example.com:PROJ/myrepo.git"
+assert_contains W345-BB2 "scp-form origin: -ssh suffix stripped" "BB_HOST=bb.example.com" "$(coords "$SCP_REPO")"
+
+assert_contains W345-BB3 "https origin: host verbatim (already the REST host)" "BB_HOST=bb.example.com" "$(coords "$API_REPO")"
+
+HTTPS_SSHNAME="$SANDBOX/httpssshname-repo"; git init -q "$HTTPS_SSHNAME"
+git -C "$HTTPS_SSHNAME" remote add origin "https://bb-ssh.example.com/scm/PROJ/myrepo.git"
+assert_contains W345-BB4 "https origin is NEVER stripped (strip is ssh-branch-only)" "BB_HOST=bb-ssh.example.com" "$(coords "$HTTPS_SSHNAME")"
+
+out=$( cd "$SSH_REPO" && AUTOPILOT_BITBUCKET_HOST=rest.example.com bash "$HERE/bitbucket.sh" repo-coords 2>/dev/null )
+assert_contains W345-BB5 "AUTOPILOT_BITBUCKET_HOST override wins over derivation" "BB_HOST=rest.example.com" "$out"
+
 echo "== consistency lint (L1-L23) =="
 
 if bash "$HERE/lint_consistency.sh" >/dev/null 2>&1; then
@@ -2090,6 +2162,18 @@ if bash "$planted18/scripts/lint_consistency.sh" >/dev/null 2>&1; then
   fail L18 "L18 did NOT red an AP-3 allow-list missing behavior_ids"
 else
   pass L18 "L18 reds an AP-3 allow-list that drops behavior_ids"
+fi
+
+# L18 must also red a projection that drops the v3.1.0 seam-inventory field
+# (invalidated_seams pinned in planner schema AND allow-list — audit-w345 F3).
+planted18b="$SANDBOX/planted-lint-18b"
+cp -R "$ROOT" "$planted18b"
+grep -v 'invalidated_seams' "$planted18b/references/plan-reviewer-projection.md" > "$planted18b/references/proj18b.tmp"
+mv "$planted18b/references/proj18b.tmp" "$planted18b/references/plan-reviewer-projection.md"
+if bash "$planted18b/scripts/lint_consistency.sh" >/dev/null 2>&1; then
+  fail L18 "L18 did NOT red an AP-3 allow-list missing invalidated_seams"
+else
+  pass L18 "L18 reds an AP-3 allow-list that drops invalidated_seams"
 fi
 
 # L19 must red a doc that reasserts the retired rolling-tracker-PR framing:

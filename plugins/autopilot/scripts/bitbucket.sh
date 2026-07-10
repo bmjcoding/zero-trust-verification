@@ -63,6 +63,12 @@
 # All subcommands derive PROJECT_KEY and REPO_SLUG from `git remote get-url origin`.
 # Expected origin shape: https://<host>/scm/<project>/<repo>.git
 #
+# BB_HOST derivation (non-sidecar REST target): AUTOPILOT_BITBUCKET_HOST env
+# override > https-origin host verbatim > ssh-origin host with the first
+# label's `-ssh` suffix stripped (the Bitbucket DC split-SSH-endpoint
+# convention — the REST API is never served on the SSH host). See the
+# derivation block below; `repo-coords` (internal) prints the result.
+#
 # Auth routing:
 #   - If sidecar_detect.sh reports MODE=sidecar AND a Bitbucket platform id
 #     ("bitbucketdc" per sidecar-contract.md, or legacy "bitbucket") is in
@@ -98,6 +104,7 @@ usage() {
   cat >&2 <<EOF
 usage: bitbucket.sh <subcommand> [args]
 subcommands: pr-open pr-ready pr-state pr-comment pr-approve pr-decline pr-merge pr-merge-strategies build-status pr-list-ready
+internal:    repo-coords (debug: prints derived PROJECT_KEY/REPO_SLUG/BB_HOST; not part of the host-adapter contract)
 EOF
   exit 64
 }
@@ -133,11 +140,26 @@ else
   die_state "origin-parse" "cannot parse origin URL: $ORIGIN_URL"
 fi
 
-# Bitbucket DC host (for non-sidecar mode).
-if [[ "$ORIGIN_URL" =~ https?://([^/]+)/ ]]; then
+# Bitbucket DC host (for non-sidecar mode). Precedence:
+#   1. $AUTOPILOT_BITBUCKET_HOST — explicit operator override; the escape hatch
+#      for deployments whose REST host cannot be derived from origin at all.
+#   2. https origin — the URL host verbatim (it already serves REST).
+#   3. ssh origin   — the URL host with a `-ssh` suffix stripped from the FIRST
+#      hostname label (`bb-ssh.example.com` -> `bb.example.com`). Bitbucket DC
+#      deployments commonly publish a dedicated SSH endpoint host alongside the
+#      HTTPS/REST host; REST calls against the `-ssh` host always fail, so a
+#      host derived from an SSH remote must map back to the REST host. (Field
+#      evidence: 20+ REST calls per drain needed a manual workaround before
+#      this strip.) A deployment whose REST host genuinely contains `-ssh.`
+#      sets AUTOPILOT_BITBUCKET_HOST instead.
+if [[ -n "${AUTOPILOT_BITBUCKET_HOST:-}" ]]; then
+  BB_HOST="$AUTOPILOT_BITBUCKET_HOST"
+elif [[ "$ORIGIN_URL" =~ https?://([^/]+)/ ]]; then
   BB_HOST="${BASH_REMATCH[1]}"
 elif [[ "$ORIGIN_URL" =~ @([^:/]+)[:/] ]]; then
   BB_HOST="${BASH_REMATCH[1]}"
+  # Split-SSH-endpoint convention (see the precedence note above).
+  BB_HOST="$(printf '%s' "$BB_HOST" | sed -E 's/^([^.]+)-ssh\./\1./')"
 else
   die_state "host-parse" "cannot parse host from origin URL"
 fi
@@ -846,11 +868,20 @@ cmd_pr_list_ready() {
   rm -f "$resp_f"
 }
 
+# repo-coords: internal debug/self-test surface (NOT part of the host-adapter
+# contract; host.sh does not delegate it). Prints the derived repo coordinates
+# so origin-URL/host derivation — including the SSH `-ssh` suffix strip and the
+# AUTOPILOT_BITBUCKET_HOST override — is deterministically testable offline.
+cmd_repo_coords() {
+  printf 'PROJECT_KEY=%s\nREPO_SLUG=%s\nBB_HOST=%s\n' "$PROJECT_KEY" "$REPO_SLUG" "$BB_HOST"
+}
+
 # --- Dispatch -----------------------------------------------------------------
 
 (( $# >= 1 )) || usage
 SUB="$1"; shift
 case "$SUB" in
+  repo-coords)          cmd_repo_coords "$@" ;;
   pr-open)              cmd_pr_open "$@" ;;
   pr-ready)             cmd_pr_ready "$@" ;;
   pr-state)             cmd_pr_state "$@" ;;

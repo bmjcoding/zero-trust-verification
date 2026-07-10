@@ -108,6 +108,13 @@ Read in parallel:
 Update `last_heartbeat_at: <now>` (AP-6 first heartbeat of the fire).
 
 
+**Foreign dirty-tree handling.** `git status --short` may show unstaged/untracked changes to files OUTSIDE the drain's surface — session-level orphan edits (e.g. a memory/notes file another workflow keeps dirty) that G1's clean-tree refusal could not see because they appeared after invocation. Handle them once per fire, by rule, instead of re-deriving an ad-hoc workaround every 5 minutes:
+
+- Dirty paths touching the tracker, the runbook, or any in-flight Subtask's `owned_files[]` → `STATUS: HUMAN_NEEDED — dirty-drain-state` citing the paths, `CronDelete`, exit. (External fault: no counter increment — someone edited drain state out-of-band.)
+- Any other dirty TRACKED path: before the fire's first branch checkout/rebase, stash exactly those paths with a labeled stash — `git stash push -m "autopilot/<slug> foreign-dirty <iso8601>" -- <paths>` — and record a one-line `## Drift Notes` entry naming the stash label and paths. At D8, before exiting the fire, `git stash pop` the labeled stash; if the pop conflicts, LEAVE it stashed and extend the Drift Note with the stash ref (`stash@{n}`) — foreign work is preserved or restored, never dropped (invariant 7's delta-preservation discipline applied to operator files).
+- Untracked files never block branch operations; leave them alone.
+
+
 **Runtime budget check.** If `now - drain_started_at > budget.max_runtime_minutes`, write `STATUS: HUMAN_NEEDED — runtime-budget-expired`, `CronDelete`, exit. (`drain_started_at` is seeded by the first fire.)
 
 
@@ -136,7 +143,7 @@ If `in_progress.last_heartbeat_at > 90 min old` → treat as crashed; apply RESU
 | `subtask_id` set, Story branch missing or empty | ABANDON — clear `in_progress`, write `[BLOCKED: orphan-resume]` (impl) on that Subtask, continue to D2 with the next Subtask. |
 
 
-Refuse the fire if `STATUS != ACTIVE`. On terminal statuses the cron has already been deleted (Hard Contract §9); if a fire runs anyway (manual invocation, stray cron), no-op WITHOUT re-arming. Recovery from `PAUSED` is exclusively via `/autopilot --resume` — do not hand-flip `STATUS` back to `ACTIVE` (Resume refuses an already-ACTIVE tracker, so a hand-flip strands the drain with no cron and no resume path).
+Refuse the fire if `STATUS != ACTIVE`. On terminal statuses the cron has already been deleted (Hard Contract §9); if a fire runs anyway (manual invocation, stray cron), no-op WITHOUT re-arming. Recovery from `PAUSED` is exclusively via `/autopilot --resume` — do not hand-flip `STATUS` back to `ACTIVE` (Resume refuses a live-locked ACTIVE tracker and reclaims only a stale one — see Resume step 2's stale-ACTIVE reclaim; a hand-flip to ACTIVE strands the drain with no cron and no resume path).
 
 
 External churn > 100 commits since drain start → write `## Drift Notes` warning to tracker; don't auto-restart.
@@ -261,6 +268,9 @@ Refresh `last_heartbeat_at` in the tracker (AP-6). Under `branching.no_force_pus
 ## Step D5 — Validate (parallel)
 
 
+Validators are NEVER skipped — not for single-edit Subtasks, not for "trivial" refactors. The touched-files view is exactly what misses a repo-wide regression (a shared test-helper edit that breaks unowned test files reaches trunk on local gates alone); the quality validator's shared-helper blast-radius check exists for precisely the smallest diffs.
+
+
 Spawn THREE `general-purpose` agents in ONE message (parallel) with role prompts from `references/validator-prompts.md`:
 
 
@@ -307,6 +317,12 @@ Run the runbook's `gates:` commands (see `references/runbook-template.md` §gate
 - `gates.precommit` (default `pre-commit run --files {files}`; NEVER `--no-verify`)
 
 
+**Scoped-test blast radius — shared helpers + invalidated seams.** `{paths}` for `gates.test_scoped` is normally the changed-module scope. Two declared expansions apply:
+
+- **Shared mock/test helpers:** when the Subtask touched a test-tree module imported by tests beyond the changed dirs (fakes, fixture factories, conftest-registered helpers), `{paths}` = ALL test files importing the touched helper(s) — repo-wide import scan, not just the touched files. This holds even for a single-edit Subtask; a repo-wide helper regression escapes the touched-file net otherwise.
+- **Invalidated seams:** when the Subtask schema declares `invalidated_seams[]` (planner Rule 13), `{paths}` additionally includes every listed seam-test module — the tests whose monkeypatches bind to the import paths this Subtask changed.
+
+
 ### D6.2 — TDD audit via git log (AP-1)
 
 
@@ -329,6 +345,8 @@ Expected shape for `kind: code | test-only` (the script enforces exactly this):
 - Under `enforce_jira_key: true`, every commit subject must include `[<JIRA-KEY>]` in the required position.
 - Optional `refactor: <id> — ...` commits at the end.
 - No `chore:` / `fix:` / `docs:` mixed in (those signal scope leak).
+
+**Compressed-cycle exception (new-file relocation).** When the implementer's report declares `Compressed cycle: new-file-relocation` (implementer-prompt.md §Compressed-cycle exception — legitimate only when every impl file is `# NEW` and the behaviors are relocated, already-tested behavior), the expected shape is ONE `test: <id>.1 RED` + ONE `feat: <id>.1 GREEN` pair covering all behaviors. The design validator's behavior-coverage check (every behavior in `behaviors_to_test[]` backed by a test) remains fully in force — the exception compresses the COMMIT shape, never the coverage.
 
 
 Failure modes:
@@ -533,6 +551,14 @@ Always the last action before exiting a fire. Cadence dispatch is defined once i
 
 On terminal STATUS (`DRAINED | PAUSED | HUMAN_NEEDED | STOPPED`), clear `session_lock` and `session_lock_expires_at` so a `--resume` can claim cleanly.
 
+Before exiting the fire, `git stash pop` the fire's labeled foreign-dirty stash if D1.2 created one (pop-conflict → leave stashed + extend the Drift Note; see D1.2 §Foreign dirty-tree handling).
+
+
+### Terminal-fire contract — session death while awaiting CI
+
+
+A fire that exits with `in_progress.awaiting_ci: true` leaves `STATUS: ACTIVE` by design — the in-session cron continues the D7.5 poll on the next fire. If the SESSION dies between such fires (or mid-fire, between D7.5 and D8), no code path in the dead session can flip the status: the tracker is stranded `ACTIVE` with a session lock that self-expires within 30 minutes. That stranding is expected, not a defect — recovery is owned by Resume step 2's **stale-ACTIVE reclaim** (below), which flips `ACTIVE → PAUSED` with `status_reason: "session_ended_between_ci_polls"` and proceeds through the normal PAUSED path. Operators never hand-edit `STATUS` for this case.
+
 
 ### PAUSED spec deduplication (AP-17)
 
@@ -555,7 +581,9 @@ Steps in order:
 1. **Validate inputs.** Confirm runbook exists at the given path; derive `<slug>` from the filename; confirm `.autopilot/runbooks/<slug>.tracker.md` exists. Refuse if either is missing.
 2. **Validate STATUS.** Read `STATUS:` from the tracker frontmatter.
    - `PAUSED` → continue to the drift check below.
-   - `ACTIVE` → refuse with `Resume refused: drain already ACTIVE. Either a fire is in flight or the previous session is still draining.`
+   - `ACTIVE` → inspect the session lock before refusing (**stale-ACTIVE reclaim**):
+     - `session_lock` held and unexpired → refuse with `Resume refused: drain already ACTIVE. Either a fire is in flight or the previous session is still draining.`
+     - `session_lock` null or expired → the owning session died mid-drain without reaching a terminal STATUS (the classic case: between D7.5 and D8 while `awaiting_ci: true` — see D8 §Terminal-fire contract). Flip `STATUS: ACTIVE → PAUSED` with `status_reason: "session_ended_between_ci_polls"` when `in_progress.awaiting_ci: true` (otherwise `status_reason: "session_ended_mid_fire"`), append a `## Drift Notes` entry recording the reclaim, and continue to the drift check below as the normal PAUSED path.
    - `DRAINED | HUMAN_NEEDED | STOPPED` → refuse with `Resume refused: drain is in terminal state <STATUS>. Use --generate to start a new drain.`
 2a. **Refuse manifest-revision drift (MS §6 / AV3-04).** `bash ${SKILL_DIR}/scripts/manifest_revision_gate.sh resume-check .autopilot/runbooks/<slug>.tracker.md` — on exit 2 (`status_reason: manifest-revision-drift`) plain resume is REFUSED: it would re-plan nothing against the new revision. Print the revision-regen pointer and stop. Recovery is `--generate --merge` **revision-regen mode**: it re-plans the open (`[ ]`) Subtasks against the new `manifest_revision`, **preserves `[x] Done` history** (a Hard Contract 8 carve-out — regen is neither overwrite nor plain merge; §6's ID-stability guarantees the surviving Behavior IDs re-plan without rework), supersedes the old Runbook PR (AV3-08), and closes the orphaned draft Story PRs it lists. On exit 0 continue.
 3. **Validate session lock.** If `session_lock` is set and not expired, refuse with `Resume refused: session lock held by <session>; expires <iso8601>.`
