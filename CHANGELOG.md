@@ -4,7 +4,13 @@ All notable changes to the Zero-Trust Verification suite are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/); the suite tag
 is the release marker, and individual plugins carry their own `plugin.json` version.
 
-## [Unreleased]
+## [1.2.0] — 2026-07-10
+
+Field-hardening release: the first e2e production drain of the suite (audit-w345,
+Waves 3–5, on a Bitbucket DC + Jenkins host) fed two retros back through the
+improve-validate cycle; all 13 recommendations plus the 11 confirmed findings of the
+pre-merge adversarial review are absorbed. Additive contract surface only — existing
+runbooks, manifests, and drains are unaffected.
 
 ### Changed
 
@@ -105,5 +111,6 @@ marketplace entry point; `scripts/suite_self_test.sh` proves the whole suite in 
 red-tests). Substrate is shell + Python-on-uv (ADR 0015); host-agnostic through one adapter
 (GitHub + Bitbucket Data Center; ADR 0013). 22 ADRs with adversarial dissent preserved.
 
+[1.2.0]: https://github.com/bmjcoding/zero-trust-verification/releases/tag/v1.2.0
 [1.1.0]: https://github.com/bmjcoding/zero-trust-verification/releases/tag/v1.1.0
 [1.0.0]: https://github.com/bmjcoding/zero-trust-verification/releases/tag/v1.0.0
