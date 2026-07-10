@@ -14,10 +14,15 @@ is the release marker, and individual plugins carry their own `plugin.json` vers
   split-SSH-endpoint host fix (`AUTOPILOT_BITBUCKET_HOST` override + `repo-coords`
   debug), `CI_STATUS_REPORTING` probe with honest `ci.skip_wait` degradation,
   `gates.format` format-before-commit, AP-1 new-file-relocation compressed-cycle
-  exception, `regen_rituals`, foreign-dirty-tree stashing, Resume stale-ACTIVE
-  reclaim, and documented `--yolo` merge-authorization semantics (Hard Contract 4
-  unchanged). Plugin self-test 319 → 377 assertions, zero-skip; suite lint V1–V12
-  green. See `plugins/autopilot/CHANGELOG.md` §3.1.0.
+  exception, `regen_rituals` (producer-wired: implementer commit rule 8 +
+  validator input 7), foreign-dirty-tree stashing, Resume stale-ACTIVE reclaim
+  (gated on a dead-session signal, never lock expiry alone), and documented
+  `--yolo` merge-authorization semantics (Hard Contract 4 unchanged). All 11
+  confirmed findings of the pre-merge adversarial review (3 MAJOR / 8 MINOR)
+  folded in, including PR-head build-status sampling and the dotless `-ssh`
+  host strip. Plugin self-test 319 → 383 assertions, zero-skip,
+  mutation-verified red-tests; suite lint V1–V12 green. See
+  `plugins/autopilot/CHANGELOG.md` §3.1.0.
 
 ## [1.1.0] — 2026-07-07
 
