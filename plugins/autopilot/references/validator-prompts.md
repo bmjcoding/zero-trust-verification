@@ -70,7 +70,10 @@ import cycles, file paths match what the Subtask claimed.
 6. **No import cycles.** Load the touched package from a clean shell (Python default: `python -c "import <package>"`); RecursionError / circular-import warnings / cycle-detector output → finding.
 
 
-7. **As-built docs are Story deliverables (AV3-14).** When any of the Story's behaviors is **journey-bearing** — the Behavior maps (directly or via inheritance) to an `active` manifest journey — the Story PR MUST ship the as-built doc edits declared in the Story's `As-built docs` ledger slot (journey docs, README deltas) IN THE SAME Story PR, not a follow-up. On the Story's completing Subtask, verify the accumulated Story diff (`git diff origin/<base>..<story-branch>`) touches each declared as-built doc. Journey-bearing Story with a missing as-built doc → `severity: high, blocking: true`. (Non-journey-bearing Stories and manifest-less drains are exempt.)
+7. **Generated-artifact regen rituals (runbook `regen_rituals:`).** If the runbook frontmatter declares `regen_rituals:` entries and the diff touches a path matching an entry's glob (e.g. a wire-format fingerprint file, a generated client, a serialized schema snapshot), the Subtask must carry that entry's declared evidence: a `regen: additive` or `regen: breaking` classification line in the commit body or PR body, with the entry's sign-off rule satisfied for `breaking` (a breaking regeneration without operator sign-off violates the ADR 0002 escalation boundary — an irreversible outward-facing commitment auto-folded into a PR). Missing classification on a matching path → `severity: high, blocking: true`. No `regen_rituals:` declared → skip this check.
+
+
+8. **As-built docs are Story deliverables (AV3-14).** When any of the Story's behaviors is **journey-bearing** — the Behavior maps (directly or via inheritance) to an `active` manifest journey — the Story PR MUST ship the as-built doc edits declared in the Story's `As-built docs` ledger slot (journey docs, README deltas) IN THE SAME Story PR, not a follow-up. On the Story's completing Subtask, verify the accumulated Story diff (`git diff origin/<base>..<story-branch>`) touches each declared as-built doc. Journey-bearing Story with a missing as-built doc → `severity: high, blocking: true`. (Non-journey-bearing Stories and manifest-less drains are exempt.)
 
 
 ### NOT YOUR JOB
@@ -161,6 +164,10 @@ Run the test gate. Confirm new tests exist. Report failures.
 
 
 2. **Run the scoped suite over changed modules.** `gates.test_scoped` with `{paths}` = the changed-module set: `git diff --name-only origin/<base>..HEAD | xargs -n1 dirname | sort -u` (NOT the whole repo). Failures → finding.
+
+
+2b. **Shared-helper blast radius.** If any changed file is a shared mock/test helper or fixture (a test-tree module — fake, stub, fixture factory, conftest-registered helper — imported by tests beyond the changed dirs), expand `{paths}` to every test file importing the touched module (Python default: `grep -rlE 'import <mod>|from <mod>' <test-tree>`) and run `gates.test_scoped` over that set too. This applies even to single-file, single-edit changes — a repo-wide helper regression is exactly the failure a touched-files-only scope misses, and it lands broken on trunk where the NEXT Subtask's implementer finds it. Failures → `severity: high, blocking: true`.
+    Additionally, if the Subtask schema declares `invalidated_seams[]`, `{paths}` includes every listed seam-test module.
 
 
 3. **Run linters — scoped to the changed files.** `gates.lint` with `{paths}` = changed files (Python default: `ruff check <changed-files>`), and `gates.typecheck` on the changed modules (delta only). Scoped, never repo-wide: pre-existing lint debt elsewhere in a brownfield repo is not this Subtask's finding. Findings → severity by category (lint = low, type = medium).

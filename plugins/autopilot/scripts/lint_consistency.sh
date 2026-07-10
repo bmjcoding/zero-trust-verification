@@ -276,12 +276,13 @@ grep -q 'autopilot/<slug>/<story-id>' "$ROOT/references/drain-lifecycle.md" || {
 # --- L18: AP-3 projection allow-list tracks the AV3 planner schema (AV3-02/07) -
 # The reviewer projection (AP-3) is what plan review judges from; a planner-schema
 # field the projection omits is invisible to the reviewer. Pin the AV3 additions —
-# behavior_ids (AV3-02) and predicted_hours (AV3-07) — in BOTH the planner schema
-# and the projection allow-list so they cannot drift apart.
+# behavior_ids (AV3-02), predicted_hours (AV3-07) — and the v3.1.0 seam-inventory
+# field invalidated_seams in BOTH the planner schema and the projection allow-list
+# so they cannot drift apart.
 l18_bad=0
 l18_proj="$ROOT/references/plan-reviewer-projection.md"
 l18_plan="$ROOT/references/planner-prompt.md"
-for field in behavior_ids predicted_hours; do
+for field in behavior_ids predicted_hours invalidated_seams; do
   grep -q "${field}:" "$l18_proj" || { violation L18 "AP-3 allow-list missing '${field}:' (plan review can't see it)"; l18_bad=1; }
   grep -q "${field}:" "$l18_plan" || { violation L18 "planner schema missing '${field}:'"; l18_bad=1; }
 done

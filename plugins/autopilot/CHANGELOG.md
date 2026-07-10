@@ -4,6 +4,87 @@ All notable changes to the autopilot skill. Format follows Keep a Changelog; ver
 
 **Release gate (v2.4.0, GAPS M3/M6).** Every behavioral claim in a release entry MUST cite the `scripts/self_test.sh` assertion id (Txx) or `scripts/lint_consistency.sh` rule id (Lxx) that proves it, or be tagged `[doc-only]`. Both scripts must pass before tagging. Any drain failure attributable to the skill must land a failing self-test assertion before (or with) its fix — a gap found once may not recur silently. (This gate exists because v2.1.0–v2.3.0 shipped multiple claimed-but-unimplemented behaviors; see docs/GAPS_SPEC.md §B.)
 
+## [3.1.0] - 2026-07-10
+
+**audit-w345 e2e retro absorption.** Every fix/pattern from the two field retros
+of the audit-w345 drain (Waves 3–5, 2026-07-07/08) reviewed against the repo and
+landed: two P0 validator/planner gaps that let a broken main ship, the Bitbucket
+DC split-SSH-endpoint host bug that forced a manual workaround on 20+ REST calls,
+and the honesty gaps around CI build-status polling, session death mid-CI-poll,
+and dirty-tree fires.
+
+### Added
+
+- **`invalidated_seams:` planner field + Monkeypatch inventory (retro-1 F3 / retro-2 finding 4).**
+  The planner schema gains `invalidated_seams[]` — the test modules whose
+  mocks/monkeypatches bind to the owned files' import seams — populated by a
+  mandatory inventory grep (planner Rule 13) before any refactor / symbol-move
+  Subtask is emitted; `[]` is legal only after an empty inventory. The field is
+  in the AP-3 reviewer projection (new NO-GO condition 9: absent field = the
+  inventory never ran) and feeds the D6.1 scoped test set. Pinned by **L18**
+  (extended to `invalidated_seams`; planted-drift red-test in self_test).
+- **Shared-helper blast radius (retro-1 F2, P0).** Quality validator check 2b +
+  D6.1: a change to a shared mock/test helper expands `gates.test_scoped`
+  `{paths}` to every test file importing the touched module — repo-wide, even
+  for single-edit Subtasks — and D5 now states validators are NEVER skipped for
+  small diffs. [doc-only]
+- **`CI_STATUS_REPORTING` probe key (retro-1 F7).** G1.5 samples the host
+  build-status API over recent trunk commits (never just the tip) and emits
+  `true|false|unknown`; `CI_PRESENT=true` + `CI_STATUS_REPORTING=false` (CI runs
+  but never posts to the endpoint) auto-seeds `ci.skip_wait: true` — the CI gate
+  degrades honestly at GENERATE-time instead of polling a void to
+  `ci-stuck-pending` mid-drain. Backend-error ≠ silent-endpoint (unavailable
+  never reads as `false`), `unknown` never auto-flips (loop-safety invariant 2).
+  Proven by **W345-F7a–F7d** via the new `AUTOPILOT_PROBE_BITBUCKET` injection
+  seam.
+- **`gates.format` + format-before-every-commit (retro-2 rec 2).** Optional
+  runbook gate (Python default `ruff format {files}`); implementer commit rule 7
+  runs it on exactly the staged files before EACH commit, absorbing the
+  formatting-only validator fix cycle (~60K tokens per affected Subtask in the
+  field). [doc-only]
+- **AP-1 compressed-cycle exception (retro-1 F4).** New-file relocation of
+  already-tested behavior may compress to one RED + one GREEN pair (declared
+  `Compressed cycle: new-file-relocation` in the implementer report; D6.2
+  documents the accepted shape). Coverage is never compressed — every behavior
+  still needs a test. [doc-only]
+- **`regen_rituals:` runbook field + integration-validator check 7 (retro-1 F8).**
+  Generated artifacts (wire-format fingerprints, generated clients) declare a
+  regen ritual + additive-vs-breaking classification; a diff touching a declared
+  path without `regen:` evidence blocks — an auto-regen can no longer fold
+  silently into a PR. [doc-only]
+- **Foreign dirty-tree handling (retro-1 F6).** D1.2 stashes foreign dirty
+  tracked paths under a per-fire label (drain-state paths escalate to
+  `dirty-drain-state` instead), D8 pops it before exit; a pop conflict preserves
+  the stash + drift-notes it. Loop-safety invariant 4 records the stash as state
+  preservation, never an edit. [doc-only]
+- **Stale-ACTIVE reclaim (retro-2 finding 6 / rec 5, applied at RESUME).** A
+  session dying between D7.5 and D8 strands the tracker `ACTIVE`; the dead
+  session cannot flip its own status at D8, so Resume step 2 now reclaims an
+  ACTIVE tracker whose session lock is null/expired — flipping to `PAUSED` with
+  `status_reason: "session_ended_between_ci_polls"` (or `session_ended_mid_fire`)
+  and proceeding through the normal PAUSED path. D8 documents the terminal-fire
+  contract. [doc-only]
+- **Merge-authorization semantics (retro-1 F1 + Bitbucket merge pattern).**
+  SKILL.md documents `--yolo`'s authorization scope explicitly: autonomous drain
+  + PR opening, never merge authority; an operator-confirmed merge under
+  operator-as-reviewer is the operator's action (via `host.sh pr-merge`, logged
+  to `## Force Audit`), and policy/safety classifiers should judge scope against
+  these documented semantics, not the flag literal. Hard Contract 4 unchanged.
+  [doc-only]
+- **Byte-stability refactor authoring guidance (retro-2 rec 4).**
+  Runbook-template authoring section + planner kind-selection note: pre-declare
+  conditional `owned_files` expansion clauses, or plan as `kind: code` — the
+  w4-6.1/w3-5.1 zero-commit-BLOCK class. [doc-only]
+
+### Fixed
+
+- **Bitbucket DC split-SSH-endpoint host derivation (retro-2 rec 1).** A BB_HOST
+  derived from an SSH origin (`bb-ssh.example.com`) now strips the `-ssh`
+  suffix from the first hostname label to reach the REST host; https-derived
+  hosts are never rewritten, and `AUTOPILOT_BITBUCKET_HOST` overrides all
+  derivation. New internal `repo-coords` debug subcommand makes the derivation
+  testable offline. Proven by **W345-BB1–BB5**.
+
 ## [3.0.1] - 2026-07-05
 
 **autopilot v3 — P2 hardening.** Two fail-open edges surfaced by the v3

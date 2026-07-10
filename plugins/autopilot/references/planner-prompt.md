@@ -60,6 +60,13 @@ subtasks:
     source_ref: <doc-path>:<section>  # may be more specific than Story's source_ref
     owned_files:                 # MUST be verified (Read or Glob) before emit
       - <repo-relative-path>     # mark new files: "<path>  # NEW"
+    invalidated_seams:           # REQUIRED for kind: refactor and for any Subtask that
+      - <test-file-path>         #   moves/renames/deletes symbols or changes which module
+                                 #   a symbol is imported from: the test modules whose
+                                 #   mocks/monkeypatches bind to the owned files' import
+                                 #   seams (Rule 13 — Monkeypatch inventory). `[]` is legal
+                                 #   ONLY after the Rule 13 inventory grep returns empty.
+                                 #   Omit for kind: docs | config.
     depends_on: [<other-subtask-ids>]    # other Subtasks (this Story or others) that must land first
     test_gates: [<unit | contract | integration>]
     validators: [integration, design, quality]  # may add: security, sre — see selection rules
@@ -96,6 +103,7 @@ subtasks:
    - `code` — new feature, bug fix, behavior change. Has interface_change and behaviors_to_test.
    - `test-only` — adding tests against existing behavior (e.g., audit task). Has behaviors_to_test, no interface_change.
    - `refactor` — internal restructure, no API change. Both interface_change and behaviors_to_test are null. Acceptance criteria: "all existing tests still pass; LOC of refactored module decreased / coupling reduced / etc."
+     For a refactor that imposes byte-stability or binder/signature constraints likely to force adjacent-file touches: either pre-declare the conditional surface in `owned_files[]` up front (with an acceptance-criteria note: "owned_files may expand to include <X, Y> if <constraint> requires" — the D3 plan refinement can then expand within the declared envelope), or plan it as `kind: code` so TDD-style scope discovery applies. A strict-scope refactor that discovers its true surface mid-flight burns zero-commit BLOCK cycles.
    - `docs` — markdown / ADR / README only. test_gates may be empty.
    - `config` — build/packaging manifests, hook config, CI config (`pyproject.toml`, `package.json`, `.pre-commit-config.yaml`, pipeline files, ...). No TDD inner loop.
 
@@ -144,6 +152,9 @@ subtasks:
 
 
 12. **`predicted_hours:` is mandatory and sized-bounded (ADR 0012 / AV3-07).** Emit an honest integer wall-clock prediction for each Subtask. It MUST respect its `estimated_size` ceiling — S≤4, M≤16, L≤48 — and the Story's Subtasks MUST sum to ≤48 hours. If a Story would exceed 48, split it into sequential, independently mergeable Stories NOW (each its own Story branch/PR downstream); G4 refuses an oversized Story with `[GENERATE-FAILED: story-oversized: <story-id>]` and a size-inconsistent Subtask with `[GENERATE-FAILED: story-size-inconsistent: <subtask-id>]`, wasting the plan. The Marshal owns actuals; you own the declared prediction.
+
+
+13. **Monkeypatch inventory → `invalidated_seams:` (seam invalidation).** `owned_files[]` captures the WRITE surface; a refactor also has a READ surface — test modules elsewhere that bind to the owned files' seams via `monkeypatch.setattr(...)` / `patch(...)` (or your stack's equivalent) and via import path. A "swap which module a client is fetched from" refactor almost always breaks unowned test files even when a same-size dataclass-only refactor would not. Before emitting any `kind: refactor` Subtask, or any Subtask that deletes/moves public symbols or changes which module a symbol is imported from, run an exhaustive inventory grep over the test tree (Python default: `grep -rnE 'monkeypatch\.setattr\(|[^a-zA-Z]patch\(' <test-tree>` filtered to the owned modules/symbols), enumerate every hit, and declare the hits' test modules in `invalidated_seams[]`. Claiming "no monkeypatch sites" without running the inventory grep is a schema violation — the implementer's own grep will surface it and your plan gets re-engaged. Declared seams feed the D6.1 scoped test set so a seam regression is caught pre-merge instead of breaking trunk.
 
 
 ## COMPLETION

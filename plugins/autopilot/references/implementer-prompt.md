@@ -71,6 +71,22 @@ GREEN phase:
 ```
 
 
+**Compressed-cycle exception — new-file relocation (AP-1).** When the
+Subtask's work is materializing a NEW file by relocating existing,
+already-tested behavior (every impl file in `owned_files[]` is marked
+`# NEW` and the behaviors describe preserved/relocated behavior, not new
+behavior), a per-behavior intermediate RED is impossible — the file either
+exists carrying all its behaviors or does not exist at all. In exactly that
+case you MAY compress to ONE RED commit carrying the full behavior-coverage
+test set (`test: <subtask-id>.1 RED — <summary of covered behaviors>`)
+followed by ONE GREEN commit (`feat: <subtask-id>.1 GREEN — <summary>`).
+Every entry in `behaviors_to_test[]` MUST still be covered by a test, and
+you MUST declare `Compressed cycle: new-file-relocation` in the final
+report so D6.2 and the design validator audit the compressed shape instead
+of flagging missing per-behavior cycles. This exception never applies when
+behaviors can be driven one at a time.
+
+
 **Critical rules for the commits:**
 
 
@@ -80,6 +96,7 @@ GREEN phase:
 4. The first behavior is the **tracer bullet** — proves the path works end-to-end. Subsequent behaviors layer on, one at a time.
 5. Never `git commit --amend` once a cycle's commit has landed. Each cycle is a permanent record on the branch.
 6. Never `git rebase -i` to squash within a Subtask. The per-cycle commits are the evidence D6 audits.
+7. **Format before EVERY commit (when the runbook defines `gates.format`).** Immediately before each `git commit` — RED, GREEN, refactor, docs, config — run `gates.format` over exactly the files you are staging (Python default: `ruff format {files}`), then stage the result. Formatting is part of the write, never a follow-up fix cycle: a formatting-only validator finding downstream means this rule was skipped and burns a whole fix pass on mechanical churn. If the runbook defines no `gates.format`, skip silently (`gates.lint` / `gates.precommit` remain the backstop).
 
 
 After ALL behaviors are GREEN, do ONE refactor pass:
@@ -101,7 +118,7 @@ No TDD cycles. Workflow:
 2. Apply the refactor described in the Subtask's `acceptance_criteria`.
 3. Run tests after each meaningful refactor step.
 4. End with the same tests still GREEN.
-5. Single commit: `refactor: <subtask-id> — <change summary>`.
+5. Single commit: `refactor: <subtask-id> — <change summary>` (run `gates.format` on the staged files first — commit rule 7 applies to every kind).
 
 
 If existing tests fail BEFORE refactor → don't refactor; surface as
@@ -180,6 +197,10 @@ TDD sequence (in order applied):
 Refactor pass:
   - <change>  → commit: <short-sha>
   - <change>  → commit: <short-sha>
+
+
+Compressed cycle: <omit entirely, or exactly `new-file-relocation` when the
+AP-1 compressed-cycle exception was exercised — see Workflow §kind: code>
 
 
 Acceptance criteria self-check:
