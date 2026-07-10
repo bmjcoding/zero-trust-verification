@@ -43,7 +43,10 @@ D1/D2/D3.0 step text.
 G1–G8 write only the runbook + tracker (and probe temp branches). D1–D3, D5,
 D6, D7.5, D8 write only tracker/runbook state. Product-code edits happen ONLY
 in D4 (implementer subagent) and D7.0 (conflict resolution), both inside the
-Subtask's `owned_files[]` ownership window.
+Subtask's `owned_files[]` ownership window. (The D1.2 foreign-dirty stash is
+state preservation, not an edit: foreign paths are stashed under a label and
+popped at D8 — or, on pop conflict, preserved in the stash and drift-noted —
+never modified, never dropped.)
 *Enforced by:* Hard Contract §10 (orchestrator-direct allow-list) + the
 implementer's file-ownership rules + the integration validator's out-of-scope
 check (high, blocking).

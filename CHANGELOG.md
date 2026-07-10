@@ -4,6 +4,26 @@ All notable changes to the Zero-Trust Verification suite are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/); the suite tag
 is the release marker, and individual plugins carry their own `plugin.json` version.
 
+## [Unreleased]
+
+### Changed
+
+- **autopilot 3.0.1 → 3.1.0** — absorbs the audit-w345 e2e field retros (Waves 3–5,
+  2026-07-07/08): seam-inventory planning (`invalidated_seams` + monkeypatch
+  inventory, L18-pinned), shared-helper blast-radius validation, Bitbucket DC
+  split-SSH-endpoint host fix (`AUTOPILOT_BITBUCKET_HOST` override + `repo-coords`
+  debug), `CI_STATUS_REPORTING` probe with honest `ci.skip_wait` degradation,
+  `gates.format` format-before-commit, AP-1 new-file-relocation compressed-cycle
+  exception, `regen_rituals` (producer-wired: implementer commit rule 8 +
+  validator input 7), foreign-dirty-tree stashing, Resume stale-ACTIVE reclaim
+  (gated on a dead-session signal, never lock expiry alone), and documented
+  `--yolo` merge-authorization semantics (Hard Contract 4 unchanged). All 11
+  confirmed findings of the pre-merge adversarial review (3 MAJOR / 8 MINOR)
+  folded in, including PR-head build-status sampling and the dotless `-ssh`
+  host strip. Plugin self-test 319 → 383 assertions, zero-skip,
+  mutation-verified red-tests; suite lint V1–V12 green. See
+  `plugins/autopilot/CHANGELOG.md` §3.1.0.
+
 ## [1.1.0] — 2026-07-07
 
 Feature-complete: all six future-scope capabilities designed in v1.0.0 are shipped.

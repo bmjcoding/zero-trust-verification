@@ -54,7 +54,8 @@ Run `bash ${SKILL_DIR}/scripts/repo_shape_probe.sh` after the G1 refuses have cl
 
 
 - `TRUNK=<branch>` (falls back to `main` if `refs/remotes/origin/HEAD` is unset)
-- `CI_PRESENT=true|false|unknown` — presence of `bitbucket-pipelines.yml`, `.github/workflows/*.y(a)ml`, `Jenkinsfile`, or `.gitlab-ci.yml` at trunk tip
+- `CI_PRESENT=true|false|unknown` — a definite build-status sample on a recent trunk commit, or presence of `bitbucket-pipelines.yml`, `.github/workflows/*.y(a)ml`, `Jenkinsfile`, or `.gitlab-ci.yml` at trunk tip
+- `CI_STATUS_REPORTING=true|false|unknown` — does the CI that runs actually post to the host build-status API? Sampled over recent trunk commits AND recent PR head shas (never just the tip: PR-only-reporting CI posts statuses to PR heads that squash/rebase merges never bring onto trunk). `false` = CI config exists but the endpoint never populates on any sampled sha — the `ci.skip_wait: false` poll target would never resolve (a real pipeline can run without ever advertising to the host's build-status API)
 - `FORCE_PUSH_ALLOWED=true|false|unknown` — determined by pushing a temp branch `autopilot/probe-force-push-<PID>` with a `+` refspec and inspecting the rejection message via `match_rejection`
 - `JIRA_HOOK_ENFORCED=true|false|unknown` — determined by pushing a temp branch `autopilot/probe-jira-hook-<PID>` whose HEAD commit subject deliberately omits a JIRA key and inspecting the rejection message
 
@@ -69,6 +70,7 @@ The probe's facts flow into the seeded runbook frontmatter automatically:
 
 
 - `CI_PRESENT=false` → `ci.skip_wait: true`
+- `CI_PRESENT=true` **and** `CI_STATUS_REPORTING=false` → `ci.skip_wait: true` — CI runs but never posts to the host build-status API, so a `skip_wait: false` runbook would poll a void until `ci-stuck-pending` on every Subtask. Degrade the CI gate honestly at GENERATE-time: the local test gates remain the merge gate, and the `Repo constraints (detected)` block records why.
 - `FORCE_PUSH_ALLOWED=false` → `branching.no_force_push: true`
 - `JIRA_HOOK_ENFORCED=true` → `enforce_jira_key: true`
 

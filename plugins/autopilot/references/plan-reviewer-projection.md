@@ -29,6 +29,7 @@ This list is the SINGLE canonical allow-list — G3.5, D3.2, and the rationale d
   kind: <code | test-only | refactor | docs | config>
   owned_files:
     - <repo-relative-path>
+  invalidated_seams: [<test-file-path>]  # seam-invalidation completeness is reviewable structure
   depends_on: [<other-subtask-ids>]
   test_gates: [<unit | contract | integration>]
   validators: [<integration | design | quality | security | sre>]
@@ -68,6 +69,7 @@ The reviewer's prompt instructs it to return `NO-GO` when ANY of:
 6. **Inappropriate kind.** `kind: refactor` but the Subtask has a non-empty `behaviors_to_test[]` (refactor means no behavior change). `kind: code` with empty `interface_change` (code means there IS an interface, even if internal-ish).
 7. **Public-API shape.** A `public_api` signature uses leading-`_` names (private symbols promoted to "public" interface) — that's a sign of leaking implementation.
 8. **Validator selection.** The planner did NOT include `security` for a Subtask whose `owned_files[]` matches the security trigger patterns (`*/auth*`, `*/secret*`, `*/token*`, `*/cookie*`), or did NOT include `sre` for an operational-hot-path Subtask.
+9. **Missing seam inventory.** A `kind: refactor` Subtask (or one whose `public_api` implies moved or re-imported symbols) OMITS the `invalidated_seams` field entirely. (`invalidated_seams: []` is a legal explicit declaration — it asserts the planner ran the inventory grep and found nothing; an ABSENT field means the inventory was never run.)
 
 
 ## Reviewer's NEVER-GO conditions

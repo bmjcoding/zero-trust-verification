@@ -10,6 +10,16 @@
 # Emitted keys:
 #   TRUNK=<branch>              detected trunk (default: main; falls back to master)
 #   CI_PRESENT=true|false|unknown
+#   CI_STATUS_REPORTING=true|false|unknown
+#       Does the CI that runs actually REPORT to the host build-status API?
+#       Sampled over recent trunk commits AND recent PR head shas (never just
+#       the tip — PR-only-reporting CI posts statuses to PR heads that
+#       squash/rebase merges never bring onto trunk). `false` means CI
+#       config exists but the endpoint never populates — a `ci.skip_wait: false`
+#       runbook would poll a void forever, so the dispatcher auto-seeds
+#       `ci.skip_wait: true` on CI_PRESENT=true + CI_STATUS_REPORTING=false
+#       (degrade the CI gate honestly instead of pretending it is enforceable).
+#       `unknown` (no CI, backend unavailable, dry-run) never auto-flips.
 #   FORCE_PUSH_ALLOWED=true|false|unknown
 #   JIRA_HOOK_ENFORCED=true|false|unknown
 #
@@ -66,7 +76,10 @@ set -u
 set +x
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-BITBUCKET="$HERE/bitbucket.sh"
+# AUTOPILOT_PROBE_BITBUCKET: dependency-injection seam (self-test stubs the
+# backend to exercise the build-status sampling paths hermetically; same
+# pattern as the gh argv shim). Defaults to the real DC backend.
+BITBUCKET="${AUTOPILOT_PROBE_BITBUCKET:-$HERE/bitbucket.sh}"
 
 # Source the pattern registry.
 # shellcheck disable=SC1091
@@ -146,7 +159,7 @@ if (( DRY_RUN == 1 )); then
     echo "probe[dry-run]: would fetch origin <trunk>"
     echo "probe[dry-run]: would create + push temp branch $FP_BRANCH (commit A), rewrite to divergent commit B, force-push, then delete local+remote"
     echo "probe[dry-run]: would create + push temp branch $JH_BRANCH (one commit without a JIRA key), then delete local+remote"
-    echo "probe[dry-run]: would call bitbucket.sh build-status on the trunk tip (CI presence)"
+    echo "probe[dry-run]: would sample the host build-status API over recent trunk commits + recent PR head shas (CI presence + status-reporting)"
     echo "probe[dry-run]: no network or git-state operation is performed in this mode"
   } >&2
 fi
@@ -196,6 +209,49 @@ detect_trunk() {
 TRUNK="$(detect_trunk)"
 explain "TRUNK=$TRUNK (from symbolic-ref/ls-remote/fallback)"
 
+# --- Build-status sampling (feeds the CI presence + reporting probes) ---------
+# BS_SAMPLE classifies the host build-status API over recent trunk commits AND
+# recent PR head shas:
+#   definite     — at least one sampled commit returned SUCCESSFUL|FAILED|INPROGRESS
+#   silent       — every sampled commit returned UNKNOWN: the endpoint is reachable
+#                  but never populated (CI may run — e.g. an external pipeline —
+#                  without ever posting to the host build-status API)
+#   unavailable  — backend missing/unusable, trunk sha unresolvable, or --dry-run
+# The sample deliberately goes BEYOND the tip: the tip's build may simply not
+# have reported yet, and one commit is too small a base to declare an endpoint
+# silent. It also deliberately goes BEYOND trunk: PR-only-reporting CI (very
+# common — Jenkins/pipelines building PR/branch heads, statuses keyed to the PR
+# head sha) leaves squash/rebase-merged trunk commits status-less, and a
+# trunk-only sample would misread that WORKING endpoint as silent and auto-seed
+# `ci.skip_wait: true`, silently disabling a working D7.5 gate.
+sample_build_status() {
+  if (( DRY_RUN == 1 )); then printf 'unavailable'; return 0; fi
+  [[ -x "$BITBUCKET" ]] || { printf 'unavailable'; return 0; }
+  local trunk_sha shas sha bs rc
+  trunk_sha=$(git ls-remote origin "refs/heads/${TRUNK}" 2>/dev/null | awk '{print $1; exit}')
+  [[ -n "$trunk_sha" ]] || { printf 'unavailable'; return 0; }
+  if ! git rev-parse --verify -q "origin/${TRUNK}" >/dev/null 2>&1; then
+    git fetch --quiet origin "$TRUNK" >/dev/null 2>&1 || true
+  fi
+  shas=$(git rev-list "origin/${TRUNK}" -5 2>/dev/null || true)
+  [[ -n "$shas" ]] || shas="$trunk_sha"
+  # PR-only-reporting CI: also sample the 5 most recent PR head shas (Bitbucket
+  # DC advertises refs/pull-requests/<id>/from; GitHub refs/pull/<id>/head).
+  # On squash/rebase-merge repos these are the ONLY shas the endpoint ever
+  # populates. Empty on repos with no PRs — the trunk sample stands alone there.
+  local pr_shas
+  pr_shas=$(git ls-remote origin 'refs/pull-requests/*/from' 'refs/pull/*/head' 2>/dev/null \
+    | awk '{ n=split($2, a, "/"); print a[n-1], $1 }' | sort -rn | head -5 | awk '{print $2}')
+  for sha in $shas $pr_shas; do
+    bs=$("$BITBUCKET" build-status --sha "$sha" 2>/dev/null); rc=$?
+    # Backend error (auth, origin-parse, transport) is UNAVAILABLE, never
+    # SILENT — only a successful read of an empty status set counts as silence.
+    if (( rc != 0 )); then printf 'unavailable'; return 0; fi
+    case "$bs" in SUCCESSFUL|FAILED|INPROGRESS) printf 'definite'; return 0 ;; esac
+  done
+  printf 'silent'
+}
+
 # --- CI presence probe --------------------------------------------------------
 
 detect_ci() {
@@ -204,25 +260,13 @@ detect_ci() {
     printf 'unknown'
     return 0
   fi
-  # Strategy: fetch trunk HEAD sha, then call bitbucket.sh build-status.
-  # UNKNOWN response with no historical builds => fall through to manifest check.
-  # SUCCESSFUL / FAILED / INPROGRESS => CI_PRESENT=true.
-  # bitbucket.sh unavailable => manifest check only.
-  local bs="UNKNOWN"
-  if [[ -x "$BITBUCKET" ]]; then
-    local trunk_sha
-    trunk_sha=$(git ls-remote origin "refs/heads/${TRUNK}" 2>/dev/null | awk '{print $1; exit}')
-    if [[ -n "$trunk_sha" ]]; then
-      bs=$("$BITBUCKET" build-status --sha "$trunk_sha" 2>/dev/null || echo UNKNOWN)
-    fi
+  # Strategy: a definite build-status sample proves CI. Otherwise fall through
+  # to the manifest check (backend unavailable or endpoint silent).
+  if [[ "$BS_SAMPLE" == "definite" ]]; then
+    explain "CI_PRESENT=true (definite build-status on a recent trunk commit)"
+    printf 'true'
+    return 0
   fi
-  case "$bs" in
-    SUCCESSFUL|FAILED|INPROGRESS)
-      explain "CI_PRESENT=true (build-status=$bs on trunk tip)"
-      printf 'true'
-      return 0
-      ;;
-  esac
   # Second heuristic: look for well-known CI config files at trunk.
   # v2.4.0 (GAPS A10): recursive listing — the previous non-recursive ls-tree
   # showed `.github`, never `.github/workflows/...`, so GitHub-workflow
@@ -245,7 +289,24 @@ detect_ci() {
   fi
 }
 
+BS_SAMPLE="$(sample_build_status)"
 CI_PRESENT="$(detect_ci)"
+
+# --- CI status-reporting probe --------------------------------------------------
+# CI_STATUS_REPORTING: does the CI that runs actually report to the host
+# build-status API? A runbook with `ci.skip_wait: false` polls that API (D7.5);
+# when CI exists but never posts there, the poll can never resolve and the CI
+# gate is unenforceable. Detect it at probe time and degrade honestly.
+if [[ "$BS_SAMPLE" == "definite" ]]; then
+  CI_STATUS_REPORTING="true"
+  explain "CI_STATUS_REPORTING=true (definite build state on a recent trunk commit)"
+elif [[ "$CI_PRESENT" == "true" && "$BS_SAMPLE" == "silent" ]]; then
+  CI_STATUS_REPORTING="false"
+  explain "CI_STATUS_REPORTING=false (CI config present, but no build state on any sampled trunk commit — the endpoint never populates)"
+else
+  CI_STATUS_REPORTING="unknown"
+  explain "CI_STATUS_REPORTING=unknown (no CI detected, backend unavailable, or dry-run)"
+fi
 
 # --- Force-push probe ---------------------------------------------------------
 
@@ -434,6 +495,7 @@ JIRA_HOOK_ENFORCED="$(detect_jira_hook)"
 
 printf 'TRUNK=%s\n' "$TRUNK"
 printf 'CI_PRESENT=%s\n' "$CI_PRESENT"
+printf 'CI_STATUS_REPORTING=%s\n' "$CI_STATUS_REPORTING"
 printf 'FORCE_PUSH_ALLOWED=%s\n' "$FORCE_PUSH_ALLOWED"
 printf 'JIRA_HOOK_ENFORCED=%s\n' "$JIRA_HOOK_ENFORCED"
 
