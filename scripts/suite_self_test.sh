@@ -486,6 +486,50 @@ dr="$SANDBOX/v12p"; seed_sd "$dr"
 printf '\n# SD honesty note: a raw "missing rate limit" finding is exactly what this tier forbids.\n' >> "$dr/$SD_JOINPY_REL"
 expect_no_fail V12 "$dr" "prose comment naming a missing-X phrase (no emit/print call)"
 
+# V13 (ADR 0024 / register HL) — the /health-loop presence/vocabulary/read-only
+# pins. Plant a violation per guard; a benign comment stays green. Numbered V13
+# (V7..V12 are taken). The seed carries NO marketplace.json, so the full-tree
+# cross-plugin presence sub-check stays out of these sandboxes by design.
+seed_hl() {
+  local d="$1" ca="plugins/codebase-health/skills/cleanup-audit"
+  mkdir -p "$d/plugins/codebase-health/commands" "$d/$ca/references" "$d/$ca/scripts"
+  cp "$ROOT/plugins/codebase-health/commands/health-loop.md" "$d/plugins/codebase-health/commands/"
+  cp "$ROOT/$ca/loop.config.yaml"                 "$d/$ca/"
+  cp "$ROOT/$ca/references/health-loop.md"        "$d/$ca/references/"
+  cp "$ROOT/$ca/references/audit-state-and-verify.md" "$d/$ca/references/"
+  cp "$ROOT/$ca/scripts/spec_wave.sh" "$ROOT/$ca/scripts/wave_gate.sh" \
+     "$ROOT/$ca/scripts/wave_gate.py" "$ROOT/$ca/scripts/wave_preauth_check.sh" \
+     "$d/$ca/scripts/"
+}
+HL_CA_REL="plugins/codebase-health/skills/cleanup-audit"
+
+# V13-a — half-shipped loop: the command ships without the gate backend.
+dr="$SANDBOX/v13a"; seed_hl "$dr"
+rm "$dr/$HL_CA_REL/scripts/wave_gate.py"
+expect_fail V13 "$dr" "health-loop command present but wave_gate.py missing (presence coupling)"
+
+# V13-b — config vocabulary drift: a wave_policy value outside auto|pause.
+dr="$SANDBOX/v13b"; seed_hl "$dr"
+sed 's/^  "3": pause/  "3": yolo/' "$dr/$HL_CA_REL/loop.config.yaml" > "$dr/c.tmp" && mv "$dr/c.tmp" "$dr/$HL_CA_REL/loop.config.yaml"
+expect_fail V13 "$dr" "wave_policy \"3\" set to an unknown value (yolo)"
+
+# V13-c — gate vocabulary escape: wave_gate.py judges a status the verifier
+# lifecycle never writes.
+dr="$SANDBOX/v13c"; seed_hl "$dr"
+sed 's/^INCOMPLETE_STATUSES = (\"OPEN\"/INCOMPLETE_STATUSES = (\"HALFDONE\", \"OPEN\"/' \
+  "$dr/$HL_CA_REL/scripts/wave_gate.py" > "$dr/g.tmp" && mv "$dr/g.tmp" "$dr/$HL_CA_REL/scripts/wave_gate.py"
+expect_fail V13 "$dr" "wave_gate.py judges status HALFDONE, absent from the lifecycle"
+
+# V13-d — read-only pin: a write path appears in the gate.
+dr="$SANDBOX/v13d"; seed_hl "$dr"
+printf '\n# planted drift\ndef _persist(p, data):\n    p.write_text(data)\n' >> "$dr/$HL_CA_REL/scripts/wave_gate.py"
+expect_fail V13 "$dr" "wave_gate.py grows a write_text path (read-only pin)"
+
+# V13 false-positive guard — a benign comment in loop.config.yaml stays green.
+dr="$SANDBOX/v13p"; seed_hl "$dr"
+printf '\n# operator note: flipped nothing, just a comment\n' >> "$dr/$HL_CA_REL/loop.config.yaml"
+expect_no_fail V13 "$dr" "benign comment appended to loop.config.yaml"
+
 if [ "$RED_FAIL" -eq 0 ]; then
   echo "  -> lint-red-tests PASS (every vendor lint caught its planted drift; no false positives)"; record "lint-red-tests" PASS
 else
