@@ -1,0 +1,39 @@
+# loop.config.yaml — per-repo policy for /health-loop (ADR 0024).
+#
+# Separate file from remediation.config.yaml on purpose: different loop,
+# different levers, and V10 pins remediation's tables — never entangle them.
+# Every value here is read by the /health-loop command with a one-line grep
+# (the rl_severity_floor precedent); the loop owns no config schema.
+
+# Per-wave autonomy: does starting this wave's drain need a confirmation
+# question? `auto` proceeds straight to GENERATE; `pause` asks one question
+# first. Waves are the spec-format classes (1 SAFE .. 5 Architecture).
+# This governs STARTING a drain only — it never governs merging (see `merge`).
+wave_policy:
+  "1": auto     # SAFE & reversible
+  "2": pause    # confirmed correctness bugs — plan review matters most here
+  "3": pause    # security
+  "4": pause    # performance (flip to auto after a soak if your Wave 4s are mechanical)
+  "5": pause    # architecture — never ships auto by default
+
+# Any item at or above this severity in an auto-class wave forces a pause
+# anyway. CRITICAL always pauses regardless of this value.
+severity_ceiling_for_auto: HIGH
+
+# Merge-approval authority at each drained wave (ADR 0024 decision 4):
+#   pause          — operator approves each wave's PRs (the default; ≤5 asks/audit)
+#   preauthorized  — key 1 of 2: with this set AND an explicit per-run kickoff
+#                    confirmation (key 2), the loop may `host.sh pr-approve`
+#                    auto-class waves as the operator's logged delegate — only
+#                    after wave_preauth_check.sh passes P1–P4 per Story PR.
+#                    The Marshal still executes every merge after its
+#                    composed-state build. Execution autonomy is never granted.
+merge: pause
+
+# PARTIAL verdicts at a wave gate: v1 supports `pause` only (depth 0 — the
+# loop never re-fixes; ADR 0024 decision 6). `advance-and-carry` was rejected.
+partial_policy: pause
+
+budget:
+  max_wall_minutes: 480        # whole-campaign ceiling, checked at each re-entry
+  max_wave_regen_retries: 1    # manifest-revision-drift regen attempts per wave
