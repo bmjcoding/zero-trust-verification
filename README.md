@@ -4,7 +4,7 @@
 
 Six independently-installable Claude Code plugins that cover the ADLC left to right — *generate a spec → implement it → audit it → merge it* — plus a read-only org-memory index and a production-telemetry triage source, all integrated through a shared, machine-readable **Verification Manifest**. Every claim the system makes about your code is backed by deterministic evidence: a test that runs, a mutant that dies, a git-log entry, a build status. Agent judgment is used everywhere; agent judgment blocks a merge nowhere without that evidence.
 
-> **Status:** `v1.1.0` — **feature-complete.** All six future-scope capabilities designed in v1.0.0 are now shipped (mutation testing, remediation loop, production-telemetry triage, outcome measurement, org-wide memory, system-design coverage). Self-hosting on GitHub, provably green in one command with zero skips.
+> **Status:** `v1.2.0` — **feature-complete, field-hardened.** All six future-scope capabilities designed in v1.0.0 are shipped (mutation testing, remediation loop, production-telemetry triage, outcome measurement, org-wide memory, system-design coverage), and the first production e2e drain's field retros are absorbed (autopilot 3.1.0). Self-hosting on GitHub, provably green in one command with zero skips.
 
 ---
 
@@ -72,6 +72,8 @@ Requires [Claude Code](https://claude.com/claude-code). Add the marketplace, the
 /plugin install marshal@zero-trust-verification
 /plugin install triage@zero-trust-verification
 ```
+
+**Updating:** `/plugin marketplace update zero-trust-verification` refreshes the catalog, then `/plugin update <name>` (or bare `/plugin update` for all) updates the installed plugins — the marketplace refresh alone does not. Auto-update is off by default for third-party marketplaces; enable it per-marketplace under `/plugin` → Marketplaces. Installs track `main` unless you pinned a tag (`/plugin marketplace add bmjcoding/zero-trust-verification@v1.2.0`).
 
 Adopt tier by tier: the audit and org-memory are read-only, so a team can run them without granting an autonomous drain anything. Add spec-gen when you want better specs, autopilot when you want the drain, marshal when you want deterministic merge safety, triage when you want production incidents to become specs.
 
