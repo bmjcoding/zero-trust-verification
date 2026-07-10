@@ -812,6 +812,90 @@ else
   [ "$v12_bad" -eq 0 ] && ok V12 "SD tier: unfalsifiability guard + no-parallel-comparator guard hold (register SD-12; ADR 0021/0022; V1 byte-pins the 3 vendored SD-01 schema copies)"
 fi
 
+# ── V13: the /health-loop attended wave drain (ADR 0024; register HL-01..HL-04).
+#        The loop is codebase-health wiring over autopilot + marshal; four
+#        invariants must hold in SOURCE or the campaign's safety story silently
+#        breaks:
+#   (a) PRESENCE COUPLING (all-or-nothing): if commands/health-loop.md ships, its
+#       config, reference, and all four substrate scripts ship with it — a
+#       half-shipped loop is a command whose "deterministic script call" resolves
+#       to nothing and degrades to model judgment, the exact defect class L13
+#       exists for in autopilot.
+#   (b) CONFIG VOCABULARY: loop.config.yaml's wave_policy keys "1".."5" are each
+#       auto|pause; merge is pause|preauthorized; partial_policy is pause (v1 is
+#       depth-0 by ADR 0024 decision 6 — an advance-and-carry value appearing here
+#       is a design change smuggled in as config).
+#   (c) GATE VOCABULARY ⊆ LIFECYCLE: every status token wave_gate.py judges must
+#       exist in the audit-state-and-verify.md lifecycle — a gate token the
+#       verifier never writes is a branch that can never fire (or worse, a
+#       misspelling that silently reclassifies findings).
+#   (d) READ-ONLY PIN: wave_gate.py never writes state and spawns no detector
+#       (loop-safety invariants 1/7 — the gate reads /verify's judgment, it never
+#       re-grades or re-detects). Mirrors the remediation_scope_guard posture.
+#   Cross-plugin presence (full tree only, keyed on the root marketplace): the
+#   loop's merge step calls autopilot's host.sh and the marshal — their absence
+#   in a registered suite tree is a broken dispatch table (PR-2 review finding 8).
+#        NUMBERED V13: V7..V12 are taken (see their blocks).
+HL_CMD="$ROOT/plugins/codebase-health/commands/health-loop.md"
+HL_SKILL="$ROOT/plugins/codebase-health/skills/cleanup-audit"
+if [ ! -f "$HL_CMD" ]; then
+  ok V13 "health-loop command not present; nothing to pin (ADR 0024)"
+else
+  v13_bad=0
+  # (a) presence coupling — all-or-nothing.
+  for f in "$HL_SKILL/loop.config.yaml" \
+           "$HL_SKILL/references/health-loop.md" \
+           "$HL_SKILL/scripts/spec_wave.sh" \
+           "$HL_SKILL/scripts/wave_gate.sh" \
+           "$HL_SKILL/scripts/wave_gate.py" \
+           "$HL_SKILL/scripts/wave_preauth_check.sh"; do
+    if [ ! -f "$f" ]; then
+      violation V13 "half-shipped loop: ${f#$ROOT/} is missing while commands/health-loop.md exists (ADR 0024 presence coupling)"; v13_bad=1
+    fi
+  done
+  # (b) config vocabulary.
+  HL_CFG="$HL_SKILL/loop.config.yaml"
+  if [ -f "$HL_CFG" ]; then
+    for k in 1 2 3 4 5; do
+      if ! grep -qE "^[[:space:]]*\"$k\":[[:space:]]*(auto|pause)([[:space:]]|#|$)" "$HL_CFG"; then
+        violation V13 "loop.config.yaml wave_policy key \"$k\" is missing or not auto|pause (ADR 0024)"; v13_bad=1
+      fi
+    done
+    grep -qE '^[[:space:]]*merge:[[:space:]]*(pause|preauthorized)([[:space:]]|#|$)' "$HL_CFG" \
+      || { violation V13 "loop.config.yaml merge is missing or not pause|preauthorized (ADR 0024 decision 4)"; v13_bad=1; }
+    grep -qE '^[[:space:]]*partial_policy:[[:space:]]*pause([[:space:]]|#|$)' "$HL_CFG" \
+      || { violation V13 "loop.config.yaml partial_policy is missing or not pause — v1 is depth-0 only (ADR 0024 decision 6)"; v13_bad=1; }
+  fi
+  # (c) gate vocabulary ⊆ the audit-state-and-verify lifecycle.
+  HL_GATE_PY="$HL_SKILL/scripts/wave_gate.py"
+  HL_LIFECYCLE="$HL_SKILL/references/audit-state-and-verify.md"
+  if [ -f "$HL_GATE_PY" ] && [ -f "$HL_LIFECYCLE" ]; then
+    hl_tokens="$(grep -E '^(PASS_STATUSES|INCOMPLETE_STATUSES) = ' "$HL_GATE_PY" | grep -oE '"[A-Z_]+"' | tr -d '"'; echo REGRESSED)"
+    for s in $hl_tokens; do
+      if ! grep -qE "(^|[^A-Z])$s([^A-Z]|$)" "$HL_LIFECYCLE"; then
+        violation V13 "wave_gate.py judges status '$s' which is not in the audit-state-and-verify.md lifecycle — a gate branch the verifier can never feed"; v13_bad=1
+      fi
+    done
+  fi
+  # (d) read-only pin.
+  if [ -f "$HL_GATE_PY" ]; then
+    if grep -qE 'write_text|json\.dump|open\([^)]*,[[:space:]]*["'"'"'](w|a)' "$HL_GATE_PY"; then
+      violation V13 "wave_gate.py carries a write path — the gate is a pure reader of /verify's judgment (loop-safety invariants 1/7)"; v13_bad=1
+    fi
+    if grep -qE 'run_audit\.sh|mutmut|cosmic-ray|stryker|pitest|cargo-mutants' "$HL_GATE_PY"; then
+      violation V13 "wave_gate.py spawns a detector/mutation tool — the gate never re-detects (loop-safety invariant 1)"; v13_bad=1
+    fi
+  fi
+  # Cross-plugin presence — only meaningful in a full registered tree.
+  if [ -f "$ROOT/.claude-plugin/marketplace.json" ]; then
+    [ -f "$ROOT/plugins/autopilot/scripts/host.sh" ] \
+      || { violation V13 "health-loop ships but autopilot's host.sh is absent — the merge step's PR surface is unresolvable"; v13_bad=1; }
+    [ -d "$ROOT/plugins/marshal" ] \
+      || { violation V13 "health-loop ships but the marshal plugin is absent — no merge executor for the campaign"; v13_bad=1; }
+  fi
+  [ "$v13_bad" -eq 0 ] && ok V13 "health-loop: presence coupling + config vocabulary + gate-status-subset + read-only pin hold (ADR 0024)"
+fi
+
 echo
 if [ "$FAIL" -eq 0 ]; then echo "== lint_consistency: all cross-plugin contract rules pass =="; else echo "== lint_consistency: violations found =="; fi
 exit "$FAIL"

@@ -1669,6 +1669,18 @@ else
   fail "HL-03: wave_preauth_check.sh absent (red-first)"
 fi
 
+echo "== HL-04. loop_e2e.sh: health-loop dispatch composition (ADR 0024) =="
+if [ -f "$HARNESS_DIR/loop_e2e.sh" ]; then
+  if bash "$HARNESS_DIR/loop_e2e.sh" > "$WORK/hl_e2e.out" 2>&1; then
+    ok "HL-04: loop e2e green + red paths pass ($(tail -1 "$WORK/hl_e2e.out" | sed 's/^== //; s/ ==$//'))"
+  else
+    fail "HL-04: loop e2e failed — output follows"
+    sed 's/^/    /' "$WORK/hl_e2e.out" | tail -30
+  fi
+else
+  fail "HL-04: loop_e2e.sh absent (red-first)"
+fi
+
 echo
 echo "== self-test: $PASS passed, $FAIL failed =="
 [ "$FAIL" -eq 0 ]

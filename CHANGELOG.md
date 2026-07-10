@@ -9,9 +9,8 @@ is the release marker, and individual plugins carry their own `plugin.json` vers
 ### Added — /health-loop attended wave drain (ADR 0024)
 
 One prompt runs audit → per-wave autopilot drain → merge → `/verify --strict` →
-gate → next wave, until the original audit is drained. Shipping across three
-PRs — substrate (#36), the loop (this entry), and enforcement (root lint V13 +
-the e2e loop fixture) in the final PR:
+gate → next wave, until the original audit is drained. Shipped across three
+PRs — substrate (#36), the loop (#37), enforcement (this entry):
 
 - **Deterministic substrate** (#36) — `spec_wave.sh` (SPEC.md wave parser:
   waves/slice/fingerprints/forward-deps, fail-closed exit contract),
@@ -28,6 +27,15 @@ the e2e loop fixture) in the final PR:
   merge-before-verify as a correctness rule; stateless position + append-only
   `audit/loop_log.md` journal; `/remediate` coexistence (drip vs drain,
   Guard-1 stamping with `health-loop:` ref prefix). ADR 0024.
+- **Enforcement** — root lint **V13** (presence coupling all-or-nothing,
+  config vocabulary, gate-status-subset-of-lifecycle, wave_gate read-only pin,
+  full-tree autopilot/marshal presence) with four planted-drift red-tests + a
+  false-positive guard in `suite_self_test.sh`; hermetic
+  `tests/codebase-health/loop_e2e.sh` (HL-04) proving the dispatch composition
+  — green path (position walk, delegated-approval journaling, Guard-1 stamps,
+  empty-wave skip, drained no-op) and red paths (HUMAN_NEEDED stops before the
+  next wave slices, REGRESSED halts with no stamps, forward dep refuses
+  pre-generate, corrupt state fails closed).
 
 No changes to autopilot, marshal, spec-gen, or `/verify`. Autopilot HC §4
 (never merges) untouched — the hatch delegates *approval* only, behind
