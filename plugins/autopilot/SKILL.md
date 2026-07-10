@@ -52,7 +52,7 @@ Loop-safety invariants (what the loop may NEVER do, and which mechanism enforces
 | `/autopilot --generate @<doc>... --consolidate=auto` | GENERATE + AP-21 consolidation | Enables G3.6 Subtask consolidation for eligible same-kind config / docs Subtasks. Equivalent to `pack_subtasks: true` in the runbook. |
 | `/autopilot --drain @<runbook>` | DRAIN | Arms the adaptive cron and starts the work loop on a previously generated runbook. |
 | `/autopilot --generate @<doc>... --slug=<name>` | GENERATE + slug override | Overrides the auto-derived slug. Combine with any other GENERATE flag. Slug must match `[a-z0-9][a-z0-9-]*` and be unique across in-flight drains. |
-| `/autopilot --resume @<runbook>` | RESUME | Resume a paused drain. Auto-detects `STATUS: PAUSED`, validates runbook + tracker, flips `STATUS: ACTIVE`, re-arms the cron at appropriate cadence, and continues. |
+| `/autopilot --resume @<runbook>` | RESUME | Resume a paused drain — or reclaim a stale-ACTIVE one. `STATUS: PAUSED` → validates runbook + tracker, flips `STATUS: ACTIVE`, re-arms the cron at appropriate cadence, and continues. `STATUS: ACTIVE` → refused while the session lock is live; reclaimed (`ACTIVE → PAUSED`, then the normal PAUSED path) only when the lock is null/expired AND a dead-session signal holds — `last_heartbeat_at` > 90 min stale (the D1.3 crash standard) or `awaiting_ci: true` with no in-flight Subtask work (drain-lifecycle §Resume step 2). Never hand-flip `STATUS`. |
 | `/autopilot --force ...` | Any mode + force override | Bypass the matching refusal (concurrent drain, existing artifacts, etc.). Every use is logged to the tracker's `## Force Audit` section with timestamp + flag + reason. AP-11. |
 | `/autopilot ... --reprobe` | Any mode + probe refresh | Re-run the G1.5 repo-shape probe against an existing runbook and refresh the `Repo constraints (detected)` block (operator edits newer than the probe are preserved). |
 | `/autopilot ... --no-probe` | GENERATE without probe | Skip G1.5 entirely; the runbook keeps hand-authored `Repo constraints (detected)` values (or defaults when none). |
@@ -159,7 +159,7 @@ Each fire is one Subtask end-to-end. Per-fire scope is HARD: one Subtask — its
 ### RESUME mode
 
 
-Triggered by `/autopilot --resume @<runbook>`. Recovers a paused drain without requiring the operator to re-paste a resume prompt. Full step text: `references/drain-lifecycle.md` §"Resume mode".
+Triggered by `/autopilot --resume @<runbook>`. Recovers a paused drain — and reclaims a stale-ACTIVE tracker whose owning session died (step 2's stale-ACTIVE reclaim; gated on an expired lock PLUS a dead-session signal, never lock expiry alone) — without requiring the operator to re-paste a resume prompt. Full step text: `references/drain-lifecycle.md` §"Resume mode".
 
 
 ### Failure escalation, STATUS state machine, tracker-PR availability, end-of-drain output

@@ -33,6 +33,7 @@ You will receive (passed by the orchestrator):
 3. The base branch this Subtask branched from
 4. Any Plan refinements from the prior Plan-agent invocation (file ownership map, integration contracts)
 5. The runbook's `gates:` command table and `budget.max_cycles_per_subtask`. Run tests ONLY through `gates.test_single` / `gates.test_scoped` (the examples below show the Python defaults, `pytest ...`; substitute your runbook's commands verbatim). Exceeding the cycle budget → stop and report `[BLOCKED: cycle-budget-exhausted]`.
+6. The runbook's `regen_rituals:` entries, when any are declared (consumed by commit rule 8 below; omitted when the runbook declares none).
 
 
 ## WORKFLOW BY KIND
@@ -97,6 +98,7 @@ behaviors can be driven one at a time.
 5. Never `git commit --amend` once a cycle's commit has landed. Each cycle is a permanent record on the branch.
 6. Never `git rebase -i` to squash within a Subtask. The per-cycle commits are the evidence D6 audits.
 7. **Format before EVERY commit (when the runbook defines `gates.format`).** Immediately before each `git commit` — RED, GREEN, refactor, docs, config — run `gates.format` over exactly the files you are staging (Python default: `ruff format {files}`), then stage the result. Formatting is part of the write, never a follow-up fix cycle: a formatting-only validator finding downstream means this rule was skipped and burns a whole fix pass on mechanical churn. If the runbook defines no `gates.format`, skip silently (`gates.lint` / `gates.precommit` remain the backstop).
+8. **Regen-ritual classification (when the runbook declares `regen_rituals:`, input 6).** If the files you are committing include a path matching a declared entry's glob (generated artifacts: wire-format fingerprints, generated clients, serialized schema snapshots), the body of the commit carrying that regeneration MUST include a classification line — `regen: additive` or `regen: breaking` — judged per the entry's `ritual` doc. `regen: breaking` additionally requires operator sign-off BEFORE the commit (escalation boundary rule 3 — an irreversible outward-facing commitment; never self-approve). Write the line at commit time: the integration validator (validator-prompts check 7) blocks a matching diff without this evidence, and rule 5 forbids amending a landed commit, so a missing line costs a whole fix cycle to add in a new commit. No `regen_rituals:` declared, or no staged path matches → skip silently.
 
 
 After ALL behaviors are GREEN, do ONE refactor pass:

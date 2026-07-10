@@ -74,9 +74,12 @@ regen_rituals: []                        # optional: generated-artifact regen ri
                                          #     ritual: "<doc-or-skill that performs/reviews the regen>"
                                          #     classification: additive-vs-breaking   # `breaking`
                                          #                     # requires operator sign-off
-                                         # The integration validator blocks a diff touching a matching
-                                         # path without the declared `regen:` classification evidence
-                                         # (validator-prompts.md, integration check 7) — an auto-regen
+                                         # Producer: implementer commit rule 8 writes the `regen:`
+                                         # classification line into the regenerating commit's body
+                                         # (implementer-prompt.md; the entries are implementer input 6).
+                                         # Enforcement: the integration validator blocks a diff touching
+                                         # a matching path without that evidence (validator-prompts.md,
+                                         # integration check 7, fed by validator input 7) — an auto-regen
                                          # must never fold silently into a PR.
 ci:
   platform: bitbucket-dc                 # informational only; host.sh detects the backend (bitbucket-dc | github) from origin at runtime (ADR 0013)
