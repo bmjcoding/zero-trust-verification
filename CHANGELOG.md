@@ -9,7 +9,9 @@ is the release marker, and individual plugins carry their own `plugin.json` vers
 ### Added — /health-loop attended wave drain (ADR 0024)
 
 One prompt runs audit → per-wave autopilot drain → merge → `/verify --strict` →
-gate → next wave, until the original audit is drained. Landed in three PRs:
+gate → next wave, until the original audit is drained. Shipping across three
+PRs — substrate (#36), the loop (this entry), and enforcement (root lint V13 +
+the e2e loop fixture) in the final PR:
 
 - **Deterministic substrate** (#36) — `spec_wave.sh` (SPEC.md wave parser:
   waves/slice/fingerprints/forward-deps, fail-closed exit contract),

@@ -27,9 +27,16 @@ records that already exist, re-derived on every invocation:
 Re-invoking `/health-loop` in a fresh session — after a crash, a context limit,
 or a week — is the resume story. There is no other resume story.
 
-`audit/loop_log.md` is an **append-only journal** (the `force_audit` posture):
-kickoff authorizations verbatim, every delegated approval, every drift-regen
-retry. It is never read for control flow.
+`audit/loop_log.md` is an **append-only journal**: kickoff authorizations
+verbatim, every delegated approval, every drift-regen retry, the campaign
+start line. It is never read to compute *position* (that would make it a
+second source of truth) — but it IS the authoritative record for the three
+things only it can know: the campaign wall-clock anchor
+(`budget.max_wall_minutes`), the per-wave regen-retry count, and whether — and
+for exactly which waves — the key-2 kickoff grant was given. A fresh session
+enforcing budgets or exercising delegated approval MUST read those journal
+entries first; a missing/unreadable journal means no grant and no regen budget
+(fail closed).
 
 ## One invocation, step by step
 
@@ -52,15 +59,25 @@ may approve (key 2 of the hatch) and journal the answer verbatim.
 | Observation | Action |
 |---|---|
 | `wave_gate.sh` exit 0 for the wave's fingerprints | Wave complete — next wave. |
-| No tracker for `audit-w<N>` | `spec_wave.sh forward-deps` (exit 1 → refuse, name the deps); policy gate: `wave_policy` `auto` → proceed, `pause` → one question ("Wave 3 — Security, 4 items, proceed?"); any item ≥ `severity_ceiling_for_auto` forces the question. Then `spec_wave.sh slice` → `/autopilot --generate @audit/waves/wave-<N>.md --slug audit-w<N> --yolo`. |
+| No tracker for `audit-w<N>` | `spec_wave.sh forward-deps` (exit 1 → refuse, name the deps); policy gate: `wave_policy` `auto` → proceed, `pause` → one question ("Wave 3 — Security, 4 items, proceed?"); any item ≥ `severity_ceiling_for_auto` forces the question. Then `spec_wave.sh slice` → `/autopilot --generate @audit/waves/wave-<N>.md --slug=audit-w<N> --yolo`. |
 | Tracker `ACTIVE`, live lock | A drain fire is running. Report and END THE TURN — autopilot's own cadence drives it; the loop never idle-waits. |
-| Tracker `ACTIVE`, stale lock + dead-session signal | `/autopilot --resume @<tracker>` (its stale-ACTIVE reclaim; the loop adds nothing). |
+| Tracker `ACTIVE`, stale lock + dead-session signal | `/autopilot --resume @.autopilot/runbooks/audit-w<N>.md` — the RUNBOOK path, not the tracker (autopilot's RESUME contract derives the slug from the runbook filename and refuses otherwise). Its stale-ACTIVE reclaim does the rest; the loop adds nothing. |
 | Tracker `PAUSED — manifest-revision-drift` | One `--generate --merge` regen per wave (journaled; `budget.max_wave_regen_retries`), else stop. |
 | Tracker `HUMAN_NEEDED` / `STOPPED` / other `PAUSED` | Relay the tracker's own escalation VERBATIM and stop. Never retry past autopilot's caps — retrying a HUMAN_NEEDED launders an escalation into a loop. |
 | Tracker `DRAINED`, PRs unmerged | **Merge step** (below). |
 | PRs merged, gate not yet green | `git pull` trunk → `/verify --strict` → `wave_gate.sh` → route (below). |
 
-**3. The merge step** at a drained wave:
+**3. The merge step** at a drained wave.
+
+**Auto-class is defined once, here:** a wave is auto-class for *delegated
+approval* iff ALL of — (a) `wave_policy` says `auto` after per-run overrides,
+(b) the wave was NAMED in this run's key-2 kickoff grant (journaled), and
+(c) no item in the wave is at or above `severity_ceiling_for_auto` (the
+ceiling disqualifies a wave from delegation exactly as it forces the
+generate-time question). A mid-campaign `--auto-waves` override can therefore
+never widen delegation past the key-2 grant: adding a wave to the delegated
+set requires a FRESH key-2 confirmation naming it, journaled like the first.
+Everything else is pause-class.
 
 - *Pause-class wave, or `merge: pause`* — **Pause A**: print `MERGE-ORDER.md`,
   ask one approval question. Operator approves → the Marshal (or the operator)
@@ -68,11 +85,13 @@ may approve (key 2 of the hatch) and journal the answer verbatim.
 - *Auto-class wave under the double-keyed hatch* — for each Story PR:
   `wave_preauth_check.sh --tracker <t> --story <id> --branch <ref> --base
   <trunk> --pr-body <runbook-pr-body>`; ALL pass → `host.sh pr-approve` each
-  (one journal line per approval) → `/marshal-pass` until `host.sh pr-state`
-  reports MERGED for every wave PR. ANY refusal or Marshal kickback
-  (Composition Break, rebase budget) → pause with the PR and the named reason.
-  Delegation covers approval only; the Marshal's composed-state build is never
-  waived.
+  (one journal line per approval) → invoke `/marshal-pass` ONCE; if
+  `host.sh pr-state` does not yet report MERGED for every wave PR (Marshal
+  `wait` states, composed build in flight), report and END THE TURN like any
+  other in-flight work — the loop never idle-waits — and re-check on the next
+  invocation. ANY preauth refusal or Marshal kickback (Composition Break,
+  rebase budget) → pause with the PR and the named reason. Delegation covers
+  approval only; the Marshal's composed-state build is never waived.
 
 **4. The verify gate** after a merged wave — `wave_gate.sh <state.json>
 <wave-fingerprints>`:
@@ -84,10 +103,22 @@ may approve (key 2 of the hatch) and journal the answer verbatim.
 | 3 | REGRESSED anywhere, or ratchet increase | **Halt**: the drain damaged the codebase; a human decides. |
 | 4 | state unreadable or spec↔state desync | Stop, fail closed, never guess. |
 
-**5. Campaign end**: all waves gated → final `/verify --strict` over the full
-original fingerprint set → report DRAINED with the per-wave summary (PRs,
+**5. Campaign end**: all in-scope waves gated → final `/verify --strict` over
+the campaign's fingerprint set (all waves, or waves ≥ `--from-wave N` when
+scoped — excluded waves' fingerprints are reported as *out of campaign scope*,
+never graded as failures) → report DRAINED with the per-wave summary (PRs,
 verdicts, journal highlights). A re-invocation over a drained campaign is a
 no-op that says so.
+
+## Cross-plugin dependencies
+
+The loop is codebase-health wiring over an installed **autopilot** (drain,
+`host.sh`, `detect_concurrent_drain.sh` — resolved at the autopilot plugin's
+install path; in this monorepo `plugins/autopilot/scripts/`, overridable the
+`RUNBOOK_PR_SH` way for standalone installs) and an installed **marshal**
+(`/marshal-pass` merge execution). Absent either, the loop refuses at the step
+that needs them and says which plugin is missing — it never degrades to
+merging or draining by other means. The presence pin is root lint V13.
 
 ## Failure routing (who owns what)
 
