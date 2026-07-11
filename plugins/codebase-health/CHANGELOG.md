@@ -40,9 +40,8 @@ or the Marshal.
 
 The audit tier gains its step-4-checker deltas: a diff-scoped **PR Gate mode**
 and **Verification-Manifest** consumption. All read-only, warn-only, degrade-to-
-less; the 1.4.0 posture and the eight ratchets are untouched. Register:
-`docs/specs/codebase-health-register.md`. Manifest artifacts (validator + schema)
-are CONSUMED, never re-authored (ADR 0001).
+less; the 1.4.0 posture and the eight ratchets are untouched. Manifest artifacts
+(validator + schema) are CONSUMED, never re-authored (ADR 0001).
 
 - **Manifest ingestion + consumer degrade** (CH-01) — `ingest_manifest.sh` emits a
   `MODE` token (COMPLETE/INCOMPLETE/ABSENT/SCHEMA-INVALID/UNSUPPORTED) off the

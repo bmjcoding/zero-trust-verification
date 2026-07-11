@@ -4,7 +4,7 @@
 > caller identity; private/restricted-repo memory never crosses confidentiality boundaries (ADR 0019).
 
 > Status: DRAFT r2 (adversarial critique applied — corrects the r1 host.sh-reuse overstatement, adds a hard-bounded read surface, closes the MCP allow-list + self-exclusion loop-safety gaps, and narrows two `[det]` claims that were laundering FTS ranking as deterministic; see Critique Notes in the ADR).
-> Style: GAPS_SPEC register (mirrors docs/specs/autopilot-v3-register.md, codebase-health-register.md). Acceptance is honest about its home:
+> Style: GAPS_SPEC register. Acceptance is honest about its home:
 >   `[det]` = deterministic self_test.sh / lint_consistency.sh assertion — grep / fixture / golden-JSON / exit-code provable, hermetic, no network. A `[det]` tag is legal ONLY over a mechanical claim (exact match, flag presence, byte-comparison), NEVER over relevance/ranking/recall.
 >   `[drain]` = agent-behavior / real-multi-repo residual, measured only against a live corpus + honest Drift Notes (the autopilot v2.4.0 / codebase-health 1.4.0 honest-residual convention). NEVER presented as automated coverage.
 > Sources: ADR OWM (this stream), ADR 0001 (marketplace + vendoring lint), ADR 0002 (escalation), ADR 0003 (rot points / ambient-audit cron cadence), ADR 0011 (independent installability, permission-surface separation), ADR 0013 (host adapter — PR/build-scoped, NOT org-enumeration-scoped), ADR 0014 (validator toolchain), ADR 0015 (shell + Python-on-uv). CONTEXT.md (Decision Log, Memory Rot, Verification Manifest, Journey — normative memory-class vocabulary). Prior art: spec-gen-tier-v1.md non-goals explicitly RESERVE `org-memory aggregation (formats already comply)` — this register is that reserved item, made buildable.
@@ -112,7 +112,7 @@ OWM is the FIFTH plugin: a `plugins/org-memory/` source dir with its own `.claud
 ## Non-goals
 - **No second store of truth / no write-back.** OWM never edits, syncs, or authors a repo file. (ADR OWM — the whole point.)
 - **No whole-repo read.** OWM reads ONLY the declared memory globs, never the code tree (OWM-03a). It has strictly LESS read surface than the audit tier.
-- **No autonomous write / remediation loop / prod-triage / re-plan.** OWM produces NO findings that feed a spec-gen `--amend` or an autopilot re-plan; the remediation loop is reserved future scope elsewhere (spec-gen-tier-v1.md non-goals; codebase-health-register.md non-goals) and OWM does not build any part of it. No new autonomous write path exists, so infinite-regress / self-remediation is structurally absent, not merely guarded.
+- **No autonomous write / remediation loop / prod-triage / re-plan.** OWM produces NO findings that feed a spec-gen `--amend` or an autopilot re-plan; the remediation loop is reserved future scope elsewhere (spec-gen-tier-v1.md non-goals) and OWM does not build any part of it. No new autonomous write path exists, so infinite-regress / self-remediation is structurally absent, not merely guarded.
 - **No mutation testing.** OWM runs no tests and mutates nothing; it neither runs nor ingests mutation reports (that is codebase-health's ingest-only concern, out of scope here).
 - **No independent staleness heuristic.** Freshness = crawled sha vs head; no TTL, no semantic-staleness guess. Repos own rot (PR Gate, manifest_revision, ADR supersession).
 - **No cross-repo write coordination** (Marshal's + claims' remit; ADRs 0009/0010/0011).

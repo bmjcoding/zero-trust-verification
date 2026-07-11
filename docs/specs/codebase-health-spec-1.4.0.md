@@ -4,9 +4,8 @@
 > `docs/specs/` when the four plugins were normalized under `plugins/`. This is a
 > frozen build record; intra-repo paths below are written relative to the **old**
 > wrapper root and map to the current layout as: `scripts/self_test.sh` /
-> `make_blind_corpus.sh` and `test-fixtures/…` → `tests/codebase-health/…`;
-> `docs/GAPS_SPEC.md` → `docs/specs/codebase-health-gaps-spec.md`; the plugin
-> itself → `plugins/codebase-health/`.
+> `make_blind_corpus.sh` and `test-fixtures/…` → `tests/codebase-health/…`; the
+> plugin itself → `plugins/codebase-health/`.
 
 > Provenance: produced 2026-07-02 by a multi-agent gap audit of this repo against
 > Bailey's test-quality / observability / journey-integrity concerns. Coverage was
