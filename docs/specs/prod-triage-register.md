@@ -6,8 +6,7 @@
 > marketplace; the code and lint V6 assert six. See ADR 0020's reconciliation note.
 > Status: HARDENED r2 (adversarial critique applied) · new plugin `triage` (fifth PLUGIN,
 > NOT a fifth Tier — CONTEXT.md fixes "Tier" at three; ADR 0011 already established a fourth
-> non-tier plugin, Marshal). GAPS_SPEC register style, mirrors autopilot-v3-register.md and
-> codebase-health-register.md.
+> non-tier plugin, Marshal). GAPS_SPEC register style.
 >
 > Acceptance vocabulary (tightened for honesty):
 >   `[det]`        = hermetic self_test.sh / lint assertion — grep / fixture / exit-code-provable,

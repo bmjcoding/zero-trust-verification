@@ -165,7 +165,7 @@ assertions (L1–L23 unchanged), all green on bash 3.2.57.
 
 **autopilot v3** — Verification-Manifest consumption, PR-per-Story granularity,
 cross-drain coordination, and quality shift-left, on the host-agnostic adapter
-foundation. Register: `docs/specs/autopilot-v3-register.md`. Per the M3 gate every
+foundation. Per the M3 gate every
 behavioral claim cites its `self_test.sh` assertion id (`AV3-xx.n`, plus the
 inherited `Txx`/`HD`/`HG`/`H50`) or `lint_consistency.sh` rule (`Lxx`); the suite
 grew 170 → 312 assertions and L1–L15 → **L1–L23**, all green.

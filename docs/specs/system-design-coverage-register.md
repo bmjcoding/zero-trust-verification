@@ -14,11 +14,11 @@
 > sd_self_test.sh (SD-12). Every [audit-run] item (declared/discovered VALUE quality, shed-priority, breadth,
 > deadlock) stays comment-only, blind-eval scored — never automated coverage. Suite green ZERO-skip on bash 3.2.57.
 > Prior status — DRAFT r1 (hardened from an empty stub against the governing sources; adversarial pass applied across HONESTY / FEASIBILITY / [det]-[drain] / CONTRADICTION / ESCALATION).
-> Style: GAPS_SPEC register (mirrors codebase-health-register.md and mutation-testing-register.md).
+> Style: GAPS_SPEC register.
 > Acceptance tags (honest about their home, per the 1.4.0 convention):
 >   `[det]` = hermetic self_test.sh / lint assertion — grep / fixture / golden-JSON / exit-code provable, no network, NO agent judgment. Legal ONLY over a mechanical claim (field presence, exact match, join-lattice truth table, exit code). NEVER over a criticality/locus/priority VALUE or any recall/relevance claim.
 >   `[audit-run]` = measured only in real audit / PR-Gate runs + the manual blind-corpus eval (the 1.4.0 honest-residual convention). Every agent-DERIVED value and every declared-value-quality claim lives here, never presented as automated coverage.
-> Sources: docs/specs/codebase-health-system-design-coverage-2026-07-04.md (§2 packs, §3 the declare-then-verify list — NORMATIVE for this register's honesty spine; relocated here by the plugins/ restructure); verification-manifest-v1.md (§4 journey/step schema, §10 completeness rules, §11 degrade table, §12 the join); ADR 0003 (PR-Gate placement), ADR 0004 (ratcheted blocking + the agent-opinion-never-blocks invariant), ADR 0006 (profiles are data, name-only in the manifest), ADR 0008 (straight-through drains), ADR 0002 (escalation criterion); codebase-health-register.md (CH-01 ingestion, CH-03 §12 comparator — REUSED, not re-implemented); mutation-testing-register.md (MT-05/MT-06 — the exact [det]-in-the-join / cap-at-comment-only precedent this register generalizes).
+> Sources: verification-manifest-v1.md (§4 journey/step schema, §10 completeness rules, §11 degrade table, §12 the join); ADR 0003 (PR-Gate placement), ADR 0004 (ratcheted blocking + the agent-opinion-never-blocks invariant), ADR 0006 (profiles are data, name-only in the manifest), ADR 0008 (straight-through drains), ADR 0002 (escalation criterion). Reuses codebase-health CH-01 ingestion and the CH-03 §12 comparator (not re-implemented).
 > Baseline: codebase-health v1.4.0 + the CH-01..CH-10 manifest-integration deltas (this register CONSUMES CH-01 ingestion and CH-03's §12 comparator; it is the 1.7.0-train work the CH register's non-goals defer to it). Nothing here is greenfield and nothing re-implements a detector.
 
 ## 0. Position and posture (read first — this is the honesty spine)
