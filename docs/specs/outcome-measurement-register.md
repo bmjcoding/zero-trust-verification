@@ -5,9 +5,8 @@
 > uniquely enabled by this suite, and needs no external defect source of truth. Other metrics
 > (defect-escape, DORA) are secondary/supporting, gated on their deployment-time external sources.
 > Status: HARDENED r2 (post-adversarial) · 2026-07-06
-> Style: GAPS_SPEC register (mirrors docs/specs/codebase-health-register.md and
-> docs/specs/autopilot-v3-register.md). Acceptance tags are honest about their home,
-> using the codebase-health register's OWN three-tag convention verbatim (line 7-10):
+> Style: GAPS_SPEC register. Acceptance tags are honest about their home,
+> using the suite's three-tag convention verbatim:
 >   [det]       = deterministic self_test.sh / lint assertion — grep / git-log /
 >                 fixture / exit-code provable, hermetic (green in CI, no network,
 >                 no host, NO agent in the loop).
