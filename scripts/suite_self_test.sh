@@ -530,6 +530,12 @@ dr="$SANDBOX/v13p"; seed_hl "$dr"
 printf '\n# operator note: flipped nothing, just a comment\n' >> "$dr/$HL_CA_REL/loop.config.yaml"
 expect_no_fail V13 "$dr" "benign comment appended to loop.config.yaml"
 
+# V13 false-positive guard #2 — a PROSE COMMENT in wave_gate.py naming write_text
+# is documentation of the pin, not a write path: stays green (the V12 precedent).
+dr="$SANDBOX/v13p2"; seed_hl "$dr"
+printf '\n# note: this gate deliberately has no write_text call anywhere\n' >> "$dr/$HL_CA_REL/scripts/wave_gate.py"
+expect_no_fail V13 "$dr" "prose comment in wave_gate.py naming write_text (no call)"
+
 if [ "$RED_FAIL" -eq 0 ]; then
   echo "  -> lint-red-tests PASS (every vendor lint caught its planted drift; no false positives)"; record "lint-red-tests" PASS
 else
