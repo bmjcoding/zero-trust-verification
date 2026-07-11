@@ -110,7 +110,7 @@ assert_rc OS06 "external metric mislabeled agent-graded rejected schema-invalid"
 # ============================================================================
 # DORA fixture (shared by OM-02 / OM-03) — a hand-computed history
 # ============================================================================
-FIX="$SANDBOX/repo"; mkdir -p "$FIX"; ( cd "$FIX" && git init -q && git checkout -q -b main )
+FIX="$SANDBOX/repo"; mkdir -p "$FIX"; ( cd "$FIX" && git init -q && git config commit.gpgsign false && git checkout -q -b main )
 E=1000000000
 gc() { ( cd "$FIX" && git add -A && GIT_AUTHOR_DATE="@${3:-$1}" GIT_COMMITTER_DATE="@$1" git commit -q -m "$2" ); }
 ( cd "$FIX" && printf 'a\n' > defs.txt && printf 'a\n' > calls.txt ); gc $E root
@@ -403,7 +403,7 @@ assert_contains RP08 "honesty mismatch surfaced loudly (not hidden)" "HONESTY-MI
 # ============================================================================
 echo "== OM-08 digest (DG) =="
 if [ "$UV_OK" = "1" ]; then
-  DGREPO="$SANDBOX/dgrepo"; mkdir -p "$DGREPO/audit"; ( cd "$DGREPO" && git init -q && git checkout -q -b main )
+  DGREPO="$SANDBOX/dgrepo"; mkdir -p "$DGREPO/audit"; ( cd "$DGREPO" && git init -q && git config commit.gpgsign false && git checkout -q -b main )
   ( cd "$DGREPO" && printf 'a\n' > defs.txt && printf 'a\n' > calls.txt && git add -A && GIT_AUTHOR_DATE="@$E" GIT_COMMITTER_DATE="@$E" git commit -qm root )
   ( cd "$DGREPO" && printf 'a\nb\n' > defs.txt && printf 'a\nb\n' > calls.txt && git add -A && GIT_AUTHOR_DATE="@$E" GIT_COMMITTER_DATE="@$((E+86400))" git commit -qm D1 )
   cp "$EM3" "$DGREPO/audit/journeys.json"
