@@ -132,7 +132,7 @@ assert_eq       BA06 "no branch past a 100h ceiling -> empty" "" "$out"
 
 # --refs mode over a real repo with one old (2020) and one just-now branch.
 BAREPO="$SANDBOX/barepo"; mkdir -p "$BAREPO"
-( cd "$BAREPO" && git init -q \
+( cd "$BAREPO" && git init -q && git config commit.gpgsign false \
   && GIT_AUTHOR_DATE="2020-01-01T00:00:00Z" GIT_COMMITTER_DATE="2020-01-01T00:00:00Z" git commit -q --allow-empty -m init \
   && git branch story/old \
   && git checkout -q -b story/new \
@@ -164,6 +164,7 @@ mk_case() {  # -> sets ORIGIN WC STATE ; fresh bare origin + working clone
   ORIGIN="$CASE/origin.git"; WC="$CASE/wc"; STATE="$CASE/state.json"
   git init -q --bare "$ORIGIN"
   git clone -q "$ORIGIN" "$WC" 2>/dev/null
+  git -C "$WC" config commit.gpgsign false
 }
 main_init() {  # <defs-lines> <calls-lines>  (\n-separated); commits + pushes main
   ( cd "$WC" && printf '%b' "$1" > defs.txt && printf '%b' "$2" > calls.txt \
@@ -510,6 +511,7 @@ mkdir -p "$MGROOT/github.com/acme"
 git init -q --bare "$GBARE"
 GWC="$MGROOT/wc"
 git clone -q "$GBARE" "$GWC" 2>/dev/null
+git -C "$GWC" config commit.gpgsign false
 # main + two branches forked from it (both already-current: no rebase, no push).
 ( cd "$GWC" \
     && git commit -q --allow-empty -m init && git branch -M main && git push -q -u origin main \

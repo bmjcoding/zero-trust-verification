@@ -565,6 +565,7 @@ make_remote_and_clone() {  # name -> sets REMOTE, CLONE
   git init -q "$CLONE"
   git -C "$CLONE" config user.email selftest@local
   git -C "$CLONE" config user.name selftest
+  git -C "$CLONE" config commit.gpgsign false
   ( cd "$CLONE" && echo hello > f.txt && git add f.txt && git commit -qm init && git branch -M main \
     && git remote add origin "$REMOTE" && git push -q origin main && git remote set-head origin main )
 }
@@ -934,6 +935,7 @@ CS_REPO="$SANDBOX/cs-repo"
 git init -q "$CS_REPO"
 git -C "$CS_REPO" config user.email selftest@local
 git -C "$CS_REPO" config user.name selftest
+git -C "$CS_REPO" config commit.gpgsign false
 csc() { git -C "$CS_REPO" "$@"; }
 csci() { csc commit -q --allow-empty -m "$1"; }
 echo base > "$CS_REPO/f"; csc add f; csci "chore: base"; csc branch -M main
@@ -1439,6 +1441,7 @@ RB_REPO="$SANDBOX/rb-repo"
 git init -q "$RB_REPO"
 git -C "$RB_REPO" config user.email selftest@local
 git -C "$RB_REPO" config user.name selftest
+git -C "$RB_REPO" config commit.gpgsign false
 ( cd "$RB_REPO" && echo base > f && git add f && git commit -qm "chore: base" && git branch -M main \
   && git checkout -qb autopilot/demo/runbook \
   && printf 'tracker\n' > t.md && git add t.md \
@@ -1555,6 +1558,7 @@ BIND_REPO="$SANDBOX/bind-repo"
 git init -q "$BIND_REPO"
 git -C "$BIND_REPO" config user.email selftest@local
 git -C "$BIND_REPO" config user.name selftest
+git -C "$BIND_REPO" config commit.gpgsign false
 bindc() { git -C "$BIND_REPO" "$@"; }
 echo base > "$BIND_REPO/f"; bindc add f; bindc commit -qm "chore: base"
 BIND_BASE=$(bindc rev-parse HEAD)
@@ -1698,7 +1702,7 @@ assert_eq "MT-01.c" "vendored adapter counts total mutants (budget input)" "10" 
 mk_mut_repo() {  # $1 = dir -> prints BASE sha on fd 3? no: echoes BASE
   local d="$1"
   mkdir -p "$d"; ( cd "$d"
-    git init -q
+    git init -q && git config commit.gpgsign false
     printf 'def f():\n    return 1\n' > mod.py
     git add mod.py; git commit -qm base
     printf 'def f():\n    return 1\n    g(2)\n' > mod.py   # line 3 added
