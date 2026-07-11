@@ -1,13 +1,14 @@
 [project]
-name = "spec-gen"
-version = "0.1.0"
-description = "Spec Generation tier — deterministic substrate (vendored manifest validator + ID allocator, resume projection, profile resolution, emission-shape gate; ADR 0015)"
+name = "zero-trust"
+version = "2.0.0rc1"
+description = "Zero-Trust Verification plugin — deterministic Python substrate (canonical manifest validator + ID allocator, resume projection, profile resolution, emission-shape gate, triage correlators, OWM engine; ADR 0015/0025)"
 requires-python = ">=3.10"
-# Same runtime deps as the repo-root validator: this plugin VENDORS
-# scripts/validate_manifest.{sh,py} + schema byte-identical (SG-3), so the
-# vendored `validate_manifest.sh` (which runs `uv run --project <plugin-root>`)
-# resolves the same ruamel.yaml YAML-1.2 core parser (ADR 0014 Norway guard)
-# and jsonschema. PyYAML (1.1) must never be used.
+# Runtime deps of the CANONICAL manifest validator (scripts/validate_manifest.py,
+# the suite's single copy per ADR 0025): `validate_manifest.sh` runs
+# `uv run --project <plugin-root>` and resolves the ruamel.yaml YAML-1.2 core
+# parser (ADR 0014 Norway guard) and jsonschema here. PyYAML (1.1) must never
+# be used. The cleanup-audit skill's own Python remains stdlib-only; its
+# py_run.sh pins --project to this same plugin root.
 dependencies = [
     "ruamel.yaml>=0.18",
     "jsonschema>=4.20",
