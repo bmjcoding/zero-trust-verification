@@ -4,145 +4,31 @@
   "owner": {
     "name": "bailey"
   },
-  "description": "Zero-Trust Verification suite: a six-plugin software-quality system — spec generation (shift-left interrogation), autopilot implementation drain, codebase-health audit, the Merge Marshal coordination backstop, Org-Wide Memory (a read-only, refuse-by-default index over repo-resident memory), and Production-Telemetry Triage (a read-only, bounded-window source that turns an emitted production incident into a resumable incident-Spec feeding spec-gen's resume path) — integrated through a shared machine-readable Verification Manifest (ADR 0001, amended by ADR 0011 to four plugins, ADR 0019 to five plugins, and ADR 0020 to six plugins). This root marketplace is the product entry point; every plugin is independently installable, pins schema_version, and degrades gracefully when the manifest is absent.",
+  "description": "Zero-Trust Verification: a software-quality system for the AI-assisted development lifecycle, shipped as ONE plugin (ADR 0025 — consolidation of the former six-plugin suite). Spec generation (shift-left interrogation), the autopilot implementation drain, the codebase-health audit + PR gate, the Merge Marshal coordination backstop, Org-Wide Memory (a read-only, refuse-by-default index over repo-resident memory), and Production-Telemetry Triage (a read-only, bounded-window source that turns an emitted production incident into a resumable incident-Spec) — integrated through a shared machine-readable Verification Manifest (ADR 0001; plugin boundary collapsed by ADR 0025). This root marketplace is the product entry point; the plugin pins schema_version and degrades gracefully when the manifest is absent.",
   "plugins": [
     {
-      "name": "spec-gen",
-      "source": "./plugins/spec-gen",
-      "description": "Spec Generation tier: interrogate raw intent into a product-approvable Spec plus a complete Verification Manifest by walking the manifest schema as a question tree, refusing to finalize while any completeness rule fails. Two-attacker adversarial round before any human sees the skeleton; the only path to a confirmed-CORE entry is a human answer. The second-lowest-trust plugin (markdown/YAML + git branch/PR only) — the adoption on-ramp for teams that want better specs before they want drains.",
-      "version": "0.1.0",
+      "name": "zero-trust",
+      "source": "./plugins/zero-trust",
+      "description": "The whole Zero-Trust Verification suite in one plugin: /spec (interrogate raw intent into a Spec + complete Verification Manifest, refuse-to-finalize, human-only confirmed-CORE), /autopilot (autonomous TDD drain into PR-per-Story with the D6.5 mutation gate and N=5 determinism, host-agnostic GitHub + Bitbucket DC), /audit + /verify + /remediate + /health-loop (closed-loop codebase health: deterministic evidence, agent judgment, closing tests rerun 5x, debt ratchet), /marshal-pass + /marshal-staleness (serial deterministic composed-state merge backstop — post-rebase build verification, zero agent judgment in the merge path), org-memory (read-only refuse-by-default MCP index over repo-resident memory), and /triage (production incident -> resumable incident-Spec through one vendor-neutral telemetry adapter). One copy of every vendored artifact lives inside the plugin.",
+      "version": "2.0.0-rc.1",
       "author": {
         "name": "bailey"
       },
       "license": "MIT",
       "category": "code-quality",
       "keywords": [
-        "spec",
+        "zero-trust",
         "verification-manifest",
-        "requirements",
-        "interrogation",
-        "given-when-then",
-        "shift-left",
-        "adversarial-review"
-      ]
-    },
-    {
-      "name": "autopilot",
-      "source": "./plugins/autopilot",
-      "description": "Autopilot implementation drain: turn an ADR / design doc / manifest-bearing Spec into an autonomous TDD task queue and drain it into PRs across self-scheduled fires — plan (disjoint file ownership + test gates) → implement (RED/GREEN commits per Subtask) → parallel multi-validator review → one draft PR per Story. Consumes the Verification Manifest (mode inference, Behavior-ID mapping, union + revision-drift gates), coordinates cross-drain via derived claim overlap, and shifts quality left (anti-flakiness contract, N=5 determinism gate). Host-agnostic through one adapter (Bitbucket Data Center + GitHub).",
-      "version": "3.0.1",
-      "author": {
-        "name": "bailey"
-      },
-      "license": "MIT",
-      "category": "workflow",
-      "keywords": [
+        "spec",
         "autopilot",
         "tdd",
-        "autonomous",
-        "implementation-drain",
-        "verification-manifest",
-        "pr-per-story",
-        "claim-overlap",
-        "host-agnostic"
-      ]
-    },
-    {
-      "name": "codebase-health",
-      "source": "./plugins/codebase-health",
-      "description": "Closed-loop codebase health: audit any large codebase (dead/unused code, redundancy, doc hygiene, partially-implemented logic, test-suite health (flaky/vacuous tests), logging/observability, transactional integrity, security, performance, architecture shape, AI-navigability, and business-critical user journeys) with seven specialist agents to measured coverage — then verify fixes with evidence via /verify (closing tests rerun 5x before FIXED), fingerprinted findings, a debt ratchet, and a warn-only prevention hook whose CI surface is strict by default. Deterministic tools find evidence; LLM agents make the judgment; nothing counts until verified. Language-agnostic with tool packs for Python, TS, Rust, Go.",
-      "version": "1.4.0",
-      "author": {
-        "name": "bailey"
-      },
-      "license": "MIT",
-      "category": "code-quality",
-      "keywords": [
-        "cleanup",
-        "dead-code",
-        "security",
-        "performance",
         "audit",
-        "incomplete-logic",
         "technical-debt",
-        "architecture",
-        "verification",
-        "user-journeys"
-      ]
-    },
-    {
-      "name": "marshal",
-      "source": "./plugins/marshal",
-      "description": "The Merge Marshal: a serial, deterministic composed-state merge backstop for any shared repo. FIFO over ready, approved PRs; rebase onto trunk (or refuse per the D7.0 file/hunk budget); build-status on the POST-REBASE head — the composed-state verification that catches Composition Breaks two clean merges hide; green merges, red is evicted, one PR in flight, no speculation. Wiring, not a checker: every decision is a timestamp, a sha, a build state, or a file-surface intersection — no agent judgment in the merge path. Host-agnostic (GitHub + Bitbucket DC). Ships the vendored claim-overlap check and the 48h branch-age watcher. Installs standalone with zero Bazel, zero autopilot, zero spec tier.",
-      "version": "0.1.0",
-      "author": {
-        "name": "bailey"
-      },
-      "license": "MIT",
-      "category": "workflow",
-      "keywords": [
+        "mutation-testing",
         "merge-backstop",
-        "composition-break",
-        "serial-merge",
-        "rebase",
-        "build-status",
-        "deterministic",
-        "claim-overlap",
-        "branch-age",
-        "host-agnostic"
-      ]
-    },
-    {
-      "name": "org-memory",
-      "source": "./plugins/org-memory",
-      "description": "Org-Wide Memory: a read-only, memory-glob-bounded index and crawler over the memory each repo already commits (ADRs, CONTEXT.md glossaries, Verification Manifests, DL-### decision logs, journey/as-built docs), exposed to agents via a refuse-by-default MCP query surface — never a second store of truth (ADR 0019). Every record is a derived view carrying a {repo, commit_sha, path, source_line} back-pointer; rebuild-from-empty is always correct. Config-first repo list (installs standalone; optional host org-enumeration is vendored-under-lint, never a runtime dependency on a sibling plugin). Reuses the canonical validate_manifest toolchain (never a forked parser) and honors its 0/3/4/5 exit contract. lookup / full-text search / alias-resolution / decision-lookup over a single-file SQLite+FTS5 cache; supersession-aware; staleness disclosed, never faked. The lowest-write-surface plugin: repo READ only, no findings, no remediation loop.",
-      "version": "0.1.0",
-      "author": {
-        "name": "bailey"
-      },
-      "license": "MIT",
-      "category": "code-quality",
-      "keywords": [
         "org-memory",
-        "knowledge-index",
-        "crawler",
-        "adr",
-        "glossary",
-        "decision-log",
-        "verification-manifest",
-        "sqlite",
-        "fts5",
-        "mcp",
-        "read-only",
-        "refuse-by-default",
-        "supersession",
-        "derived-view"
-      ]
-    },
-    {
-      "name": "triage",
-      "source": "./plugins/triage",
-      "description": "Production-Telemetry Triage: a read-only, bounded-window SOURCE that turns an emitted production incident into a resumable incident-Spec feeding spec-gen's RESUME path — never a patch, never an auto-merge (ADR 0020, report-only first). Ingests vitals through one vendor-neutral telemetry adapter (default OTEL/OTLP-JSON; CloudWatch/Dynatrace behind the same surface, config-profile-selected — ADR 0006/0013), takes a mechanically BOUNDED window (never a full-retention/whole-fleet scan), drops self-emitted events, and correlates the runtime event_name to the Verification Manifest's journey + behavior IDs via the §12 join key (DERIVED, not a backref — CH-02 unbuilt). Emits a completeness:incomplete incident-Spec that references EXISTING behavior IDs and mints none, honoring an open-incident dedupe loop-guard. The sixth independently installable plugin — a new source at the ADLC left edge, not a fourth Tier and not a new quality opinion; degrades to less action on any gap.",
-      "version": "0.1.0",
-      "author": {
-        "name": "bailey"
-      },
-      "license": "MIT",
-      "category": "code-quality",
-      "keywords": [
         "triage",
         "production-telemetry",
-        "observability",
-        "otel",
-        "otlp",
-        "incident-spec",
-        "verification-manifest",
-        "vendor-neutral",
-        "bounded-window",
-        "read-only",
-        "report-only",
-        "agent-first",
-        "spec-gen-resume",
         "host-agnostic"
       ]
     }
