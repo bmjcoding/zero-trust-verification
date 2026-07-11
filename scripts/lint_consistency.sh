@@ -877,12 +877,14 @@ else
       fi
     done
   fi
-  # (d) read-only pin.
+  # (d) read-only pin. Comment lines are excluded so PROSE ABOUT the pin (a
+  #     docstring or note naming write_text) is not a false positive — the V12
+  #     emit/print-call scoping precedent.
   if [ -f "$HL_GATE_PY" ]; then
-    if grep -qE 'write_text|json\.dump|open\([^)]*,[[:space:]]*["'"'"'](w|a)' "$HL_GATE_PY"; then
+    if grep -vE '^[[:space:]]*#' "$HL_GATE_PY" | grep -qE 'write_text|json\.dump|open\([^)]*,[[:space:]]*["'"'"'](w|a)'; then
       violation V13 "wave_gate.py carries a write path — the gate is a pure reader of /verify's judgment (loop-safety invariants 1/7)"; v13_bad=1
     fi
-    if grep -qE 'run_audit\.sh|mutmut|cosmic-ray|stryker|pitest|cargo-mutants' "$HL_GATE_PY"; then
+    if grep -vE '^[[:space:]]*#' "$HL_GATE_PY" | grep -qE 'run_audit\.sh|mutmut|cosmic-ray|stryker|pitest|cargo-mutants'; then
       violation V13 "wave_gate.py spawns a detector/mutation tool — the gate never re-detects (loop-safety invariant 1)"; v13_bad=1
     fi
   fi
