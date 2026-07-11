@@ -143,7 +143,7 @@ assert_grep "$WORK/report.html" '<td><span class="pill high">HIGH</span></td>' "
 
 echo "== 5. check_new_debt.sh: flags newly introduced debt, warn-only =="
 mkdir -p "$WORK/repo" && cd "$WORK/repo"
-git init -q && git -c user.email=t@t -c user.name=t commit -q --allow-empty -m init
+git init -q && git config commit.gpgsign false && git -c user.email=t@t -c user.name=t commit -q --allow-empty -m init
 printf 'def f():\n    return 1\n' > clean.py
 git add clean.py && git -c user.email=t@t -c user.name=t commit -qm clean
 printf '# TODO: finish this\ndef g():\n    return None  # type: ignore\n' > new.py
@@ -704,7 +704,7 @@ echo "== 18. CH-04 PR Gate diff-scoped mode (ADR 0003; MS §13.10) =="
 # BASE_REF, must NOT write journeys.json, and must NOT trigger a whole-repo walk.
 PRG="$WORK/prg"; mkdir -p "$PRG"
 ( cd "$PRG"
-  git init -q && git -c user.email=t@t -c user.name=t commit -q --allow-empty -m base
+  git init -q && git config commit.gpgsign false && git -c user.email=t@t -c user.name=t commit -q --allow-empty -m base
   printf 'def f():\n    return 1\n' > mod.py
   git add mod.py && git -c user.email=t@t -c user.name=t commit -qm add-mod
   printf '# TODO: finish the thing\ndef g():\n    return None\n' >> mod.py
@@ -737,7 +737,7 @@ echo "== 19. CH-05 memory-rot facet — deterministic layer (ADR 0003 point 1; A
 # dangling ref, suppresses a tombstone, and aliases a rename.
 ROT="$WORK/rot"; mkdir -p "$ROT"
 ( cd "$ROT"
-  git init -q && git config user.email t@t && git config user.name t
+  git init -q && git config user.email t@t && git config user.name t && git config commit.gpgsign false
   mkdir -p docs/adr src
   printf 'def transfer_funds(a, b):\n    return a + b\n\ndef keep_me():\n    return 1\n\ndef orphan_helper():\n    return 9\n' > src/billing.py
   printf 'def test_legacy_capture():\n    assert True\n' > src/legacy_test.py
@@ -783,7 +783,7 @@ echo "== 20. CH-06 behavior-ID coverage — claimed vs proven (MS §13.11; ADR 0
 # B-pay-003 is claimed but has neither -> the ADR-0004 blocking finding.
 BCOV="$WORK/bcov"; mkdir -p "$BCOV"
 ( cd "$BCOV"
-  git init -q && git config user.email t@t && git config user.name t
+  git init -q && git config user.email t@t && git config user.name t && git config commit.gpgsign false
   git commit -q --allow-empty -m base
   mkdir -p tests
   printf 'def test_capture_is_idempotent():\n    assert True\n' > tests/test_capture.py
@@ -844,7 +844,7 @@ echo "== 21. CH-07 SG-8 provenance + main-lineage ID reservation (spec-gen SG-8;
 # branch hand-edits confirmation/completeness and adds B-branch-001.
 PROV="$WORK/prov"; mkdir -p "$PROV"
 ( cd "$PROV"
-  git init -q -b main && git config user.email t@t && git config user.name t
+  git init -q -b main && git config user.email t@t && git config user.name t && git config commit.gpgsign false
   cat > manifest.yaml <<'YAML'
 schema_version: 1
 manifest_revision: 1
@@ -890,7 +890,7 @@ SPEC_LINE='Payment capture spec.'
 HHASH="sha256:$(printf '%s\n' "$SPEC_LINE" | sha256_of)"
 write_manifest() { cat > "$HIST/manifest.yaml"; }  # reads heredoc from stdin
 ( cd "$HIST"
-  git init -q -b main && git config user.email t@t && git config user.name t
+  git init -q -b main && git config user.email t@t && git config user.name t && git config commit.gpgsign false
   printf '%s\n' "$SPEC_LINE" > payments.md )
 cat > "$HIST/manifest.yaml" <<YAML
 schema_version: 1
@@ -1036,7 +1036,7 @@ assert_grep "$WORK/hist.out" '\[FINDING blocking\] id-tombstone-reuse: B-pay-003
 # renumber to the behavior). Renumbering only the journey must name the JOURNEY.
 HX="$WORK/histx"; mkdir -p "$HX"
 ( cd "$HX"
-  git init -q -b main && git config user.email t@t && git config user.name t
+  git init -q -b main && git config user.email t@t && git config user.name t && git config commit.gpgsign false
   cat > manifest.yaml <<'YAML'
 schema_version: 1
 manifest_revision: 1
@@ -1183,7 +1183,7 @@ SIB="$SKILL_SCRIPTS/check_mutation_survivors.sh"
 if [ -x "$SIB" ]; then
   MUT="$WORK/mutsib"; mkdir -p "$MUT/app" "$MUT/audit"
   ( cd "$MUT"
-    git init -q && git config user.email t@t && git config user.name t
+    git init -q && git config user.email t@t && git config user.name t && git config commit.gpgsign false
     printf 'def capture(a):\n    return charge(a)\n' > app/pay.py
     printf 'def fmt(x):\n    return str(x)\n' > app/util.py
     git add -A && git commit -qm base
@@ -1442,7 +1442,7 @@ fi
 # the loop's own dead-code removal — the deterministic proof of the wiring.
 RLROT="$WORK/rlrot"; mkdir -p "$RLROT"
 ( cd "$RLROT"
-  git init -q && git config user.email t@t && git config user.name t
+  git init -q && git config user.email t@t && git config user.name t && git config commit.gpgsign false
   mkdir -p docs/adr
   printf 'def old_exporter():\n    return 1\n' > exporter.py
   printf '# ADR: old_exporter was the legacy export entrypoint\nold_exporter is referenced here.\n' > docs/adr/0009-x.md
