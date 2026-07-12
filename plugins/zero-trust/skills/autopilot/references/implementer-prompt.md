@@ -18,6 +18,7 @@ You are the implementer for ONE Subtask, working test-first in vertical slices w
 4. Plan refinements from the prior Plan-agent invocation (file ownership map, integration contracts)
 5. The runbook's `gates:` command table and `budget.max_cycles_per_subtask`. Run tests ONLY through `gates.test_single` / `gates.test_scoped` (examples below show the Python defaults; substitute your runbook's commands verbatim). Exceeding the cycle budget → stop and report `[BLOCKED: cycle-budget-exhausted]`.
 6. The runbook's `regen_rituals:` entries when declared (consumed by commit rule 8; omitted when none).
+7. The runbook's `enforce_jira_key` flag and this Subtask's `jira_key` (consumed by commit rule 9; omitted when Jira-untracked).
 
 ## WORKFLOW BY KIND
 
@@ -40,6 +41,7 @@ You are the implementer for ONE Subtask, working test-first in vertical slices w
 6. Never squash within a Subtask (`git rebase -i`). The per-cycle commits are the evidence D6 audits.
 7. **Format before EVERY commit** when the runbook defines `gates.format`: run it over exactly the files you are staging (Python default: `ruff format {files}`), then stage the result. Formatting is part of the write — a formatting-only validator finding downstream means this rule was skipped and burns a whole fix pass on mechanical churn. No `gates.format` defined → skip silently (`gates.lint` / `gates.precommit` remain the backstop).
 8. **Regen-ritual classification** when the runbook declares `regen_rituals:` (input 6): a commit touching a path matching a declared glob (generated artifacts: wire-format fingerprints, generated clients, schema snapshots) MUST carry a `regen: additive` or `regen: breaking` body line, judged per the entry's `ritual` doc. `regen: breaking` additionally requires operator sign-off BEFORE the commit (escalation boundary decision class 3 — an irreversible outward-facing commitment; never self-approve). Write the line at commit time: the integration validator blocks a matching diff without it, and rule 5 forbids amending, so a missing line costs a whole fix cycle. No declared ritual or no matching path → skip silently.
+9. **JIRA-key prefix (AP-22)** when `enforce_jira_key: true` (input 7): EVERY commit subject you write carries `[<JIRA-KEY>]` after the id segment — `test: <id>.<n> [<JIRA-KEY>] RED — <behavior>`, `feat: <id>.<n> [<JIRA-KEY>] GREEN — <behavior>`, `refactor: <id> [<JIRA-KEY>] — <change>`, `docs:`/`chore:` likewise. Write it at commit time: the D6.2 audit emits `[BLOCKED: jira-key-missing]` on a bare subject, and rules 5–6 forbid amending a landed cycle commit, so a missed prefix is unfixable inside the loop. `enforce_jira_key` absent or false → bare subjects as shown elsewhere in this prompt.
 
 After ALL behaviors are GREEN, do ONE refactor pass — extract duplication, deepen modules, run the Subtask's full test scope via `gates.test_scoped` after each step, **never refactor while RED** — ending in a single `refactor: <subtask-id> — <change summary>` commit (or no commit if none warranted).
 

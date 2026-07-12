@@ -6,7 +6,7 @@
 
 ## Step G0 — Mode inference (ADR 0008 / AV3-01)
 
-Decide the GENERATE *shape* from the input's companion Verification Manifest. Locate `<spec-basename>.manifest.yaml` next to each input doc; if present, validate it with the manifest validator (exit codes 0 complete · 3 incomplete · 4 schema-invalid · 5 unsupported). For multi-doc invocations also run `scripts/validate_manifest.sh --union` (AV3-03) first. Then:
+Decide the GENERATE *shape* from the input's companion Verification Manifest. Locate `<spec-basename>.manifest.yaml` next to each input doc; if present, validate it with the manifest validator — the plugin's canonical single-file `scripts/validate_manifest.sh`, NOT autopilot's `--union`-only checker (exit codes 0 complete · 3 incomplete · 4 schema-invalid · 5 unsupported). For multi-doc invocations also run `scripts/validate_manifest.sh --union` (AV3-03) first. Then:
 
 ```bash
 bash ${SKILL_DIR}/scripts/detect_input_mode.sh \
@@ -260,7 +260,7 @@ MISSING → `[BLOCKED: plan-stale-missing]` (impl); DRIFTED → `[BLOCKED: plan-
 
 ### D3.1 — Plan
 
-Spawn a `Plan` agent. Prompt: the Subtask's full schema block + the runbook's "Plan agent role" section.
+Spawn a `Plan` agent. Prompt: the Subtask's full schema block + the runbook's role-prompt section for the Plan agent (G7 writes it into the runbook body; see `references/runbook-template.md`).
 
 ### D3.2 — Plan review (schema-only projection)
 
@@ -276,7 +276,7 @@ Work lands on the Story branch `autopilot/<slug>/<story-id>` (PR-per-Story, AV3-
 - **Later Subtask of the same Story** → `git checkout autopilot/<slug>/<story-id>` and continue the commit series; never branch anew. (D6.2 audits only `prev_pushed_sha..HEAD`, so prior Subtasks' commits are not re-audited.)
 - Under `branching.single_branch_single_pr: true` → always the drain's single feature branch.
 
-Spawn ONE `general-purpose` agent with `references/implementer-prompt.md` inlined verbatim, plus the runbook's `gates:` command table and `budget.max_cycles_per_subtask` (the prompt carries the full TDD cycle contract: per-behavior RED→GREEN commits, JIRA-key prefix under AP-22, refactor-after-green, public-interface tests, 800-token report cap AP-16). Cycle count past the budget → `[BLOCKED: cycle-budget-exhausted]` (impl).
+Spawn ONE `general-purpose` agent with `references/implementer-prompt.md` inlined verbatim, plus the runbook's `gates:` command table, `budget.max_cycles_per_subtask`, `regen_rituals:` when declared, and `enforce_jira_key` + the Subtask's `jira_key` when enforced (the prompt's inputs 5–7; its commit rules carry the full TDD cycle contract: per-behavior RED→GREEN commits, JIRA-key prefix under AP-22 rule 9, refactor-after-green, public-interface tests, 800-token report cap AP-16). Cycle count past the budget → `[BLOCKED: cycle-budget-exhausted]` (impl).
 
 The agent's `kind`-aware shape (D6.2 audits it from git log):
 
@@ -423,7 +423,7 @@ Under `no_force_push: false` the deltas were committed directly at claim time (D
 
 Under `no_force_push: true` with a non-empty D7.1a fold, the PR body also carries a `## Tracker deltas folded in` H2 (each entry's `delta_kind` + `diff_summary`) for reviewer visibility. Under `branching.single_branch_single_pr: true`, D7.3 opens ONE PR on the drain's first successful Subtask; later Subtasks push to the same branch and update it via `host.sh pr-comment`.
 
-**D7.4 — Tracker update.** Set `in_progress.pr_number` (the Story PR — same number for every Subtask of the Story), `awaiting_ci: true`, `pushed_at`, `pushed_sha` (consumed by D7.5's `--sha`), `ci_check_count: 0`, `last_heartbeat_at`. Record the Story's `last_pushed_sha = pushed_sha` on its tracker entry — the NEXT Subtask of this Story reads it as `prev_pushed_sha` (the D6.2 audit base; the Story's first Subtask audits from `origin/<trunk>`). On a manifest-backed drain, mirror the `## Behavior coverage` mapping to the tracker (AV3-05) so the binding survives across fires and is auditable without the PR. Routing: direct commit to the Runbook PR branch under `no_force_push: false`; `delta_kind: status_change` queue append under `true`.
+**D7.4 — Tracker update.** Set `in_progress.pr_number` (the Story PR — same number for every Subtask of the Story), `awaiting_ci: true`, `pushed_at`, `pushed_sha` (consumed by D7.5's `--sha`), `ci_check_count: 0`, `last_heartbeat_at`. Record the Story's `last_pushed_sha = pushed_sha` on its tracker entry — the NEXT Subtask of this Story reads it as `prev_pushed_sha` (the D6.2 audit base; the Story's first Subtask audits from `origin/<trunk>`). On a manifest-backed drain, mirror the `## Behavior coverage` mapping to the tracker (AV3-05) so the binding survives across fires and is auditable without the PR. Routing: direct commit to the Runbook PR branch under `no_force_push: false` — subject carries the `[<JIRA-KEY>]` prefix under `enforce_jira_key: true` (AP-22; the server hook rejects bare subjects); `delta_kind: status_change` queue append under `true` (the fold commit's JIRA handling: `tracker-delta-batching.md` §Interaction with `enforce_jira_key`).
 
 ### D7.3a — Stacked PR merge strategy (AP-10)
 
@@ -514,7 +514,7 @@ On `STATUS: DRAINED`, the final fire renders `MERGE-ORDER.md` next to the tracke
 
 ## Dangling draft Story PRs (every terminal STATUS — AV3-06)
 
-On ANY terminal STATUS, the end-of-drain output MUST enumerate every dangling draft Story PR — still `DRAFT` because its Story did not fully drain — with a required operator disposition each (autopilot never merges and never silently abandons a draft):
+On ANY terminal STATUS, the end-of-drain output MUST enumerate every dangling draft Story PR — still `DRAFT` because its Story did not fully drain — with a required operator disposition each (autopilot never merges and never silently abandons a draft). On a non-`DRAINED` terminal (`HUMAN_NEEDED`/`PAUSED`), the Runbook PR is listed alongside them with its own disposition (stays open as the bookkeeping home until the drain resumes or the operator closes it):
 
 ```
 DRAFT Story PR <host>/<pr#>  story=<story-id>  branch=autopilot/<slug>/<story-id>
