@@ -57,7 +57,7 @@ Return `NO-GO` when ANY of:
 NO-GO with no second chance — straight to `[GENERATE-FAILED: plan-review-ungated]`, no planner re-spawn:
 
 - The projection contains a field outside the allow-list: the orchestrator's stripper has a bug. Surface the offending key name.
-- The projection contains zero Subtasks for a Story: a planner failure no review re-prompt can recover.
+- The projection contains zero Subtasks for THE STORY UNDER REVIEW: a planner failure no review re-prompt can recover. **Scope: each review is per-Story** — the projection deliberately contains ONLY the reviewed Story's Subtasks, so the absence of OTHER Stories (whose Subtask IDs may appear in the orchestrator-supplied drain-wide ID list for condition 3) is expected and NEVER matches this clause.
 
 ## Output format
 
@@ -75,3 +75,7 @@ findings:
 ## What the orchestrator does with NO-GO
 
 Re-spawn the original planner ONCE with the projection + findings verbatim; the planner re-emits the full schema; the orchestrator re-strips and re-spawns the reviewer. A second NO-GO → `[GENERATE-FAILED: plan-review-ungated]` for that Story — two NO-GOs mean the underlying spec is ambiguous and needs human eyes. No third attempt.
+
+## Contract-invalid verdicts
+
+A reviewer return that violates the output contract — a verdict outside `GO | NO-GO | NEVER-GO`, unparseable YAML, or a NEVER-GO grounded on a Story other than the one under review — is NOT a plan verdict and never fails the drain by itself. Re-prompt THAT reviewer ONCE with the scope clarified ("you are reviewing Story `<id>` only; the projection intentionally omits other Stories"). Still contract-invalid → treat as NO-GO and enter the normal planner re-spawn loop above.

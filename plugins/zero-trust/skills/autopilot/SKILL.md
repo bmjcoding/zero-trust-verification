@@ -41,7 +41,7 @@ Loop-safety invariants — what the loop may NEVER do, each named with its enfor
 | `/autopilot --generate @<doc>... --consolidate=auto` | GENERATE + consolidation | Enables G3.6 same-kind Subtask consolidation (AP-21); equivalent to `pack_subtasks: true`. |
 | `/autopilot --generate @<doc>... --slug=<name>` | GENERATE + slug override | Overrides the derived slug; must match `[a-z0-9][a-z0-9-]*` and be unique across in-flight drains. |
 | `/autopilot --drain @<runbook>` | DRAIN | Arms the adaptive cron and starts the work loop. |
-| `/autopilot --resume @<runbook>` | RESUME | Resumes a PAUSED drain, or reclaims a stale-ACTIVE one — only when the lock is null/expired AND a dead-session signal holds (heartbeat > 90 min stale, or `awaiting_ci: true` with no work in flight). Never hand-flip `STATUS`. |
+| `/autopilot --resume @<runbook>` | RESUME | Resumes a PAUSED drain, or reclaims a stale-ACTIVE one — only when the lock is null/expired AND a dead-session signal holds (heartbeat > 90 min stale, or `awaiting_ci: true` with no work in flight). Never hand-flip `STATUS` — sole sanctioned exception: `HUMAN_NEEDED` exits the automated loop, and re-entry is the operator recovery procedure in runbook-template §"Resuming a runbook". |
 | `/autopilot --force ...` | Any mode + force | Bypasses the matching refusal; every use logged to `## Force Audit` with timestamp + flag + reason (AP-11). |
 | `/autopilot ... --reprobe` | Any mode + probe refresh | Re-runs the G1.5 repo-shape probe; operator edits newer than the probe are preserved. |
 | `/autopilot ... --no-probe` | GENERATE without probe | Skips G1.5; the runbook keeps hand-authored `Repo constraints (detected)` values (or defaults). |
