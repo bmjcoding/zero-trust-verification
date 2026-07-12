@@ -243,7 +243,7 @@ Its body carries the drain's **predicted file surface** as a grep-able block, de
 
 ## Tracker file
 
-The dispatcher writes a sibling tracker at `.autopilot/runbooks/<slug>.tracker.md`. Operators do not edit this; it is the dispatcher's append-only state log. The frontmatter is the CANONICAL schema (v2.4.0 — this section previously documented a divergent legacy field set that neither G7 nor `detect_concurrent_drain.sh` could interoperate with; see docs/GAPS_SPEC.md C2):
+The dispatcher writes a sibling tracker at `.autopilot/runbooks/<slug>.tracker.md`. Operators do not edit this; it is the dispatcher's append-only state log. The frontmatter is the CANONICAL schema (v2.4.0 — this section previously documented a divergent legacy field set that neither G7 nor `detect_concurrent_drain.sh` could interoperate with; see CHANGELOG.md §2.4.0, gap C2):
 
 ```yaml
 ---

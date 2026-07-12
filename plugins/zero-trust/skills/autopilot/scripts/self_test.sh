@@ -12,7 +12,8 @@
 #   - Hermetic: everything runs inside a mktemp -d sandbox with local bare
 #     repos and a loopback mock Bitbucket DC server. No network, no keychain,
 #     no writes outside the sandbox.
-#   - Every assertion cites its GAPS_SPEC.md id (Txx). A new bug found in the
+#   - Every assertion cites its gap-register id (Txx; the v2.3.0 gap register is
+#     retired — its closure record is CHANGELOG.md §2.4.0). A new bug found in the
 #     field MUST land here as a failing assertion before (or with) its fix.
 #   - Run after ANY change under scripts/ or references/.
 #

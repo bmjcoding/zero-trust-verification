@@ -12,7 +12,7 @@
 #
 # Exit 0 = all rules pass. Exit 1 = at least one violation (each printed).
 #
-# Adding a rule: append an `L<n>` block, cite it from docs/GAPS_SPEC.md, and
+# Adding a rule: append an `L<n>` block and
 # reference the rule id in the CHANGELOG entry that motivated it.
 
 set -u
