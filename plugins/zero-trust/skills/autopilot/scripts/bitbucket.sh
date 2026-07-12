@@ -80,7 +80,7 @@
 #     so the token never appears in argv (/proc/*/cmdline).
 #   - In all cases: `set +x` around credential handling; never log the token.
 #
-# v2.4.0 fixes (see docs/GAPS_SPEC.md A1, A9, B1, B2):
+# v2.4.0 fixes (see CHANGELOG.md §2.4.0, gaps A1, A9, B1, B2):
 #   - bb_curl no longer runs in a command substitution: it writes the response
 #     body to a caller-named file and sets HTTP_STATUS in the calling shell,
 #     so status handling works and resolver failures abort the whole script.

@@ -12,7 +12,7 @@
 #
 # Exit 0 = all rules pass. Exit 1 = at least one violation (each printed).
 #
-# Adding a rule: append an `L<n>` block, cite it from docs/GAPS_SPEC.md, and
+# Adding a rule: append an `L<n>` block and
 # reference the rule id in the CHANGELOG entry that motivated it.
 
 set -u
@@ -74,9 +74,9 @@ if hits=$(grep -l -E "$legacy_steps" "${SCRIPTS[@]}" 2>/dev/null); then
 fi
 
 # --- L4: unique step ids ------------------------------------------------------
-d75_defs=$(grep -c -E '^#+ +(Step +)?D7\.5\b' "$ROOT/references/drain-lifecycle.md" 2>/dev/null || echo 0)
+d75_defs=$(grep -c -E '^#+ +(Step +)?D7\.5\b' "$ROOT/references/lifecycle.md" 2>/dev/null || echo 0)
 if [[ "$d75_defs" != "1" ]]; then
-  violation L4 "expected exactly one D7.5 heading in drain-lifecycle.md, found $d75_defs"
+  violation L4 "expected exactly one D7.5 heading in lifecycle.md, found $d75_defs"
 else
   ok L4
 fi
@@ -91,15 +91,15 @@ else
 fi
 
 # --- L6: caps come from budget, not hardcoded threes --------------------------
-if ! grep -q 'budget.max_impl_blocks' "$ROOT/references/drain-lifecycle.md"; then
-  violation L6 "drain-lifecycle.md does not source escalation caps from budget.max_impl_blocks"
-elif grep -qE 'consecutive_(impl|ci)_blocks >= 3' "$ROOT/references/drain-lifecycle.md"; then
-  violation L6 "drain-lifecycle.md still hardcodes a >= 3 cap"
+if ! grep -q 'budget.max_impl_blocks' "$ROOT/references/lifecycle.md"; then
+  violation L6 "lifecycle.md does not source escalation caps from budget.max_impl_blocks"
+elif grep -qE 'consecutive_(impl|ci)_blocks >= 3' "$ROOT/references/lifecycle.md"; then
+  violation L6 "lifecycle.md still hardcodes a >= 3 cap"
 else
   ok L6
 fi
 
-# --- L7: batching doc matches drain-lifecycle ----------------------------------
+# --- L7: batching doc matches lifecycle.md ----------------------------------
 b="$ROOT/references/tracker-delta-batching.md"
 l7_bad=0
 grep -q 'D1\.0\.6' "$b" && { violation L7 "tracker-delta-batching.md references nonexistent step D1.0.6"; l7_bad=1; }
@@ -123,8 +123,8 @@ else
 fi
 
 # --- L10: one estimated_size vocabulary ----------------------------------------
-if grep -qE '`xs`|`s\+s`|`s` or `m`|→ `m`' "$ROOT/references/generate-lifecycle.md"; then
-  violation L10 "generate-lifecycle.md uses out-of-vocabulary lowercase sizes (planner emits S|M|L)"
+if grep -qE '`xs`|`s\+s`|`s` or `m`|→ `m`' "$ROOT/references/lifecycle.md"; then
+  violation L10 "lifecycle.md uses out-of-vocabulary lowercase sizes (planner emits S|M|L)"
 else
   ok L10
 fi
@@ -220,7 +220,7 @@ if hits=$(grep_docs '(scoped|runs?|running) pytest'); then
   violation L15 "bare 'pytest' phrasing (use gates.* with a Python-default annotation) in: $(tr '\n' ' ' <<<"$hits")"
   l15_bad=1
 fi
-grep -q 'gates.test_scoped' "$ROOT/references/drain-lifecycle.md" || { violation L15 "drain-lifecycle D6.1 does not reference gates.test_scoped"; l15_bad=1; }
+grep -q 'gates.test_scoped' "$ROOT/references/lifecycle.md" || { violation L15 "lifecycle.md D6.1 does not reference gates.test_scoped"; l15_bad=1; }
 grep -q '^gates:' "$ROOT/references/runbook-template.md" || { violation L15 "runbook-template.md does not define the gates: block"; l15_bad=1; }
 (( l15_bad == 0 )) && ok L15
 
@@ -270,7 +270,7 @@ if hits=$(grep_docs "$per_subtask_pr"); then
 fi
 # SKILL.md must carry the PR-per-Story wording and the Story-branch shape.
 grep -q 'PR-per-Story' "$ROOT/SKILL.md" || { violation L17 "SKILL.md does not carry the PR-per-Story contract wording"; l17_bad=1; }
-grep -q 'autopilot/<slug>/<story-id>' "$ROOT/references/drain-lifecycle.md" || { violation L17 "drain-lifecycle.md does not name the Story branch autopilot/<slug>/<story-id>"; l17_bad=1; }
+grep -q 'autopilot/<slug>/<story-id>' "$ROOT/references/lifecycle.md" || { violation L17 "lifecycle.md does not name the Story branch autopilot/<slug>/<story-id>"; l17_bad=1; }
 (( l17_bad == 0 )) && ok L17
 
 # --- L18: AP-3 projection allow-list tracks the AV3 planner schema (AV3-02/07) -
@@ -305,9 +305,9 @@ done
 l19_bad=0
 # (a) the file-surface block markers are pinned where they are emitted/documented.
 grep -q 'autopilot:file-surface:begin' "$ROOT/references/runbook-template.md" || { violation L19 "runbook-template.md missing the file-surface block markers"; l19_bad=1; }
-grep -q 'autopilot:file-surface:begin' "$ROOT/references/generate-lifecycle.md" || { violation L19 "generate-lifecycle.md G7 missing the file-surface block markers"; l19_bad=1; }
+grep -q 'autopilot:file-surface:begin' "$ROOT/references/lifecycle.md" || { violation L19 "lifecycle.md G7 missing the file-surface block markers"; l19_bad=1; }
 # (b) the Runbook PR branch is named as the bookkeeping home.
-grep -q 'autopilot/<slug>/runbook' "$ROOT/references/drain-lifecycle.md" || { violation L19 "drain-lifecycle.md does not name the Runbook PR branch autopilot/<slug>/runbook"; l19_bad=1; }
+grep -q 'autopilot/<slug>/runbook' "$ROOT/references/lifecycle.md" || { violation L19 "lifecycle.md does not name the Runbook PR branch autopilot/<slug>/runbook"; l19_bad=1; }
 # (c) no doc reasserts the retired rolling-(tracker-)PR framing as active — any
 #     surviving mention must be flagged 'retired' on the same line.
 if hits=$(grep -nE 'rolling (tracker )?PR' "${DOCS[@]}" 2>/dev/null | grep -vi 'retired'); then
@@ -328,8 +328,8 @@ fi
 # grep-able, marker-delimited `## Behavior coverage` block the PR Gate parses
 # (MS §13.11). Pin the heading + marker so the format cannot silently drift.
 l20_bad=0
-dlc="$ROOT/references/drain-lifecycle.md"
-grep -q '## Behavior coverage' "$dlc" || { violation L20 "drain-lifecycle.md does not define the '## Behavior coverage' PR-body section"; l20_bad=1; }
+dlc="$ROOT/references/lifecycle.md"
+grep -q '## Behavior coverage' "$dlc" || { violation L20 "lifecycle.md does not define the '## Behavior coverage' PR-body section"; l20_bad=1; }
 grep -q 'autopilot:behavior-coverage' "$dlc" || { violation L20 "the Behavior coverage block is missing its grep-able marker (autopilot:behavior-coverage)"; l20_bad=1; }
 (( l20_bad == 0 )) && ok L20
 

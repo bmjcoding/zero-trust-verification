@@ -124,7 +124,7 @@ Any script that talks to Bitbucket must:
 > Added v2.3.0 (AP-23); rewritten v2.4.0 to describe the ACTUAL transport mix
 > (the original text specified per-operation REST request budgets and 429
 > handling for operations that use git transport and have no HTTP status
-> codes — machinery that did not and could not exist; see docs/GAPS_SPEC.md B5).
+> codes — machinery that did not and could not exist; see CHANGELOG.md §2.4.0, gap B5).
 > Applies to `scripts/repo_shape_probe.sh` (G1.5) only.
 
 The repo-shape probe is a one-shot capability discovery that runs at G1.5 on

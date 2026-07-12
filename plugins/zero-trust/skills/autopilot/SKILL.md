@@ -52,7 +52,7 @@ Loop-safety invariants (what the loop may NEVER do, and which mechanism enforces
 | `/autopilot --generate @<doc>... --consolidate=auto` | GENERATE + AP-21 consolidation | Enables G3.6 Subtask consolidation for eligible same-kind config / docs Subtasks. Equivalent to `pack_subtasks: true` in the runbook. |
 | `/autopilot --drain @<runbook>` | DRAIN | Arms the adaptive cron and starts the work loop on a previously generated runbook. |
 | `/autopilot --generate @<doc>... --slug=<name>` | GENERATE + slug override | Overrides the auto-derived slug. Combine with any other GENERATE flag. Slug must match `[a-z0-9][a-z0-9-]*` and be unique across in-flight drains. |
-| `/autopilot --resume @<runbook>` | RESUME | Resume a paused drain — or reclaim a stale-ACTIVE one. `STATUS: PAUSED` → validates runbook + tracker, flips `STATUS: ACTIVE`, re-arms the cron at appropriate cadence, and continues. `STATUS: ACTIVE` → refused while the session lock is live; reclaimed (`ACTIVE → PAUSED`, then the normal PAUSED path) only when the lock is null/expired AND a dead-session signal holds — `last_heartbeat_at` > 90 min stale (the D1.3 crash standard) or `awaiting_ci: true` with no in-flight Subtask work (drain-lifecycle §Resume step 2). Never hand-flip `STATUS`. |
+| `/autopilot --resume @<runbook>` | RESUME | Resume a paused drain — or reclaim a stale-ACTIVE one. `STATUS: PAUSED` → validates runbook + tracker, flips `STATUS: ACTIVE`, re-arms the cron at appropriate cadence, and continues. `STATUS: ACTIVE` → refused while the session lock is live; reclaimed (`ACTIVE → PAUSED`, then the normal PAUSED path) only when the lock is null/expired AND a dead-session signal holds — `last_heartbeat_at` > 90 min stale (the D1.3 crash standard) or `awaiting_ci: true` with no in-flight Subtask work (lifecycle.md §Resume step 2). Never hand-flip `STATUS`. |
 | `/autopilot --force ...` | Any mode + force override | Bypass the matching refusal (concurrent drain, existing artifacts, etc.). Every use is logged to the tracker's `## Force Audit` section with timestamp + flag + reason. AP-11. |
 | `/autopilot ... --reprobe` | Any mode + probe refresh | Re-run the G1.5 repo-shape probe against an existing runbook and refresh the `Repo constraints (detected)` block (operator edits newer than the probe are preserved). |
 | `/autopilot ... --no-probe` | GENERATE without probe | Skip G1.5 entirely; the runbook keeps hand-authored `Repo constraints (detected)` values (or defaults when none). |
@@ -119,7 +119,7 @@ Autopilot has two primary lifecycles plus a small recovery mode. Full step text 
 ### GENERATE mode (G1..G8)
 
 
-Extract work from spec documents, plan Subtasks, review the plan, write the runbook + tracker, and either exit for operator review (default) or arm the drain cron (`--yolo`). Full step text: `references/generate-lifecycle.md`.
+Extract work from spec documents, plan Subtasks, review the plan, write the runbook + tracker, and either exit for operator review (default) or arm the drain cron (`--yolo`). Full step text: `references/lifecycle.md`.
 
 
 | Step | Purpose | Key contract |
@@ -140,7 +140,7 @@ Extract work from spec documents, plan Subtasks, review the plan, write the runb
 ### DRAIN mode (D1..D8)
 
 
-Each fire is one Subtask end-to-end. Per-fire scope is HARD: one Subtask — its commit series lands on the Story branch, opening or updating the draft Story PR (PR-per-Story) — or one `[BLOCKED]` reason, then exit after writing the next cron and updating the tracker. Full step text: `references/drain-lifecycle.md`.
+Each fire is one Subtask end-to-end. Per-fire scope is HARD: one Subtask — its commit series lands on the Story branch, opening or updating the draft Story PR (PR-per-Story) — or one `[BLOCKED]` reason, then exit after writing the next cron and updating the tracker. Full step text: `references/lifecycle.md`.
 
 
 | Step | Purpose | Key contract |
@@ -159,13 +159,13 @@ Each fire is one Subtask end-to-end. Per-fire scope is HARD: one Subtask — its
 ### RESUME mode
 
 
-Triggered by `/autopilot --resume @<runbook>`. Recovers a paused drain — and reclaims a stale-ACTIVE tracker whose owning session died (step 2's stale-ACTIVE reclaim; gated on an expired lock PLUS a dead-session signal, never lock expiry alone) — without requiring the operator to re-paste a resume prompt. Full step text: `references/drain-lifecycle.md` §"Resume mode".
+Triggered by `/autopilot --resume @<runbook>`. Recovers a paused drain — and reclaims a stale-ACTIVE tracker whose owning session died (step 2's stale-ACTIVE reclaim; gated on an expired lock PLUS a dead-session signal, never lock expiry alone) — without requiring the operator to re-paste a resume prompt. Full step text: `references/lifecycle.md` §"Resume mode".
 
 
 ### Failure escalation, STATUS state machine, tracker-PR availability, end-of-drain output
 
 
-All defined in `references/drain-lifecycle.md`. The short version: `consecutive_impl_blocks` and `consecutive_ci_blocks` escalate independently at the runbook's `budget.max_impl_blocks` / `budget.max_ci_blocks` caps (defaults 3 / 2); external faults route straight to `HUMAN_NEEDED` without incrementing counters; the Runbook PR (AV3-08) is the only place bookkeeping ever lands; `STATUS: DRAINED` produces `MERGE-ORDER.md`.
+All defined in `references/lifecycle.md`. The short version: `consecutive_impl_blocks` and `consecutive_ci_blocks` escalate independently at the runbook's `budget.max_impl_blocks` / `budget.max_ci_blocks` caps (defaults 3 / 2); external faults route straight to `HUMAN_NEEDED` without incrementing counters; the Runbook PR (AV3-08) is the only place bookkeeping ever lands; `STATUS: DRAINED` produces `MERGE-ORDER.md`.
 
 
 ---
@@ -177,7 +177,7 @@ All defined in `references/drain-lifecycle.md`. The short version: `consecutive_
 All tracker bookkeeping lands on the Runbook PR (`autopilot/<slug>/runbook`, AV3-08). Under `branching.no_force_push: true` (auto-set by G1.5 when the repo rejects force pushes), deltas cannot be reconciled by force-push, so instead of committing each one directly they queue inside the tracker file at the `## Pending Tracker Deltas (batched)` section, and D7.1a flushes the queue as an append commit onto the runbook branch (never mixed into a Story PR — one bookkeeping home, no self-intersecting claim surfaces). Full contract: `references/tracker-delta-batching.md`.
 
 
-Queue entry schema, valid `delta_kind:` values, durability across BLOCKED fires, recovery semantics, and schema migration all live in the reference. Lifecycle integration points (D1.0.4 injection + crash-recovery, D1.0 hydrate, D2 in_progress claim, D7.1a fold + commit body block, D7.3 PR-body section, D7.4 status-change queue) are documented in `references/drain-lifecycle.md`.
+Queue entry schema, valid `delta_kind:` values, durability across BLOCKED fires, recovery semantics, and schema migration all live in the reference. Lifecycle integration points (D1.0.4 injection + crash-recovery, D1.0 hydrate, D2 in_progress claim, D7.1a fold + commit body block, D7.3 PR-body section, D7.4 status-change queue) are documented in `references/lifecycle.md`.
 
 
 ---
@@ -188,8 +188,8 @@ Queue entry schema, valid `delta_kind:` values, durability across BLOCKED fires,
 
 | File | Purpose | When loaded |
 |---|---|---|
-| `references/generate-lifecycle.md` | Full G1..G8 step text (AP-21, AP-23 G1.5 probe) | GENERATE (all steps) |
-| `references/drain-lifecycle.md` | Full D1..D8 step text; Resume mode; failure escalation; STATUS state machine; tracker-PR availability; end-of-drain output | DRAIN (all steps), RESUME |
+| `references/lifecycle.md` §GENERATE | Full G1..G8 step text (AP-21, AP-23 G1.5 probe) | GENERATE (all steps) |
+| `references/lifecycle.md` §DRAIN | Full D1..D8 step text; Resume mode; failure escalation; STATUS state machine; tracker-PR availability; end-of-drain output | DRAIN (all steps), RESUME |
 | `references/tracker-delta-batching.md` | AP-23 queue contract; `delta_kind:` catalog; recovery semantics; schema migration | DRAIN under `branching.no_force_push: true` |
 | `references/extraction-prompt.md` | Tier-1 LLM extractor role prompt | GENERATE Step G2 |
 | `references/planner-prompt.md` | Tier-2 planner role prompt with TDD schema requirements | GENERATE Step G3 |

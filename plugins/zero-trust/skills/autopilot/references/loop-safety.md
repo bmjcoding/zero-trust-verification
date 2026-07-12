@@ -1,11 +1,15 @@
 # Loop-safety invariants
 
-> Binding on every GENERATE/DRAIN/RESUME step. A loop that acts on flawed logic
-> is worse than no loop: it damages the codebase at machine speed. These
-> invariants bound the blast radius of any orchestrator or script defect so a
-> wrong loop costs wrong reports or a stalled drain — never damaged code, lost
-> history, or a stolen lock. Each invariant names its enforcement mechanism;
-> an invariant without an enforcement point is a wish, not an invariant.
+> Binding on every GENERATE/DRAIN/RESUME step. The shared blast-radius
+> guarantee — a wrong loop must cost wrong reports, never damaged code — is
+> stated once, canonically, in
+> `skills/cleanup-audit/references/loop-safety.md`; this file is its drain-loop
+> specialization. A loop that acts on flawed logic is worse than no loop: it
+> damages the codebase at machine speed. These invariants bound the blast
+> radius of any orchestrator or script defect so a wrong loop costs wrong
+> reports or a stalled drain — never damaged code, lost history, or a stolen
+> lock. Each invariant names its enforcement mechanism; an invariant without
+> an enforcement point is a wish, not an invariant.
 
 ## 1. Probes never mutate operator-visible state
 
@@ -20,7 +24,7 @@ refusal to have passed first. `--dry-run` previews every operation.
 Probe results of `unknown` never seed runbook frontmatter; they surface as G8
 review warnings and the operator decides. A failed probe therefore degrades to
 "operator decides", never to "loop guesses".
-*Enforced by:* generate-lifecycle G1.5 auto-seed rules; runbook-template
+*Enforced by:* lifecycle.md G1.5 auto-seed rules; runbook-template
 auto-seed table.
 
 ## 3. Guards fail closed
@@ -115,7 +119,7 @@ drift is caught by `lint_consistency.sh`.
   injector — contradictory instructions — but drain-time compliance is
   measured only by real drains and Drift Notes.
 - Under `branching.no_force_push: true`, the AP-4 session lock is
-  checkout-local until the next D7.1a fold lands (see drain-lifecycle D1.0
+  checkout-local until the next D7.1a fold lands (see lifecycle.md D1.0
   note); cross-clone concurrency relies on the branch-namespace check.
 - Bitbucket DC behavior is verified against a mock in the self-test;
   DC-version quirks remain field-verified.

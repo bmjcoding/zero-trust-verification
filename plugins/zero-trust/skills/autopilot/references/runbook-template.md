@@ -243,7 +243,7 @@ Its body carries the drain's **predicted file surface** as a grep-able block, de
 
 ## Tracker file
 
-The dispatcher writes a sibling tracker at `.autopilot/runbooks/<slug>.tracker.md`. Operators do not edit this; it is the dispatcher's append-only state log. The frontmatter is the CANONICAL schema (v2.4.0 — this section previously documented a divergent legacy field set that neither G7 nor `detect_concurrent_drain.sh` could interoperate with; see docs/GAPS_SPEC.md C2):
+The dispatcher writes a sibling tracker at `.autopilot/runbooks/<slug>.tracker.md`. Operators do not edit this; it is the dispatcher's append-only state log. The frontmatter is the CANONICAL schema (v2.4.0 — this section previously documented a divergent legacy field set that neither G7 nor `detect_concurrent_drain.sh` could interoperate with; see CHANGELOG.md §2.4.0, gap C2):
 
 ```yaml
 ---
@@ -288,7 +288,7 @@ Body is a Markdown log of dispatch events in append-only order (`## Drift Notes`
 
 ## How autopilot reads the runbook
 
-The operative step graphs are GENERATE G1..G8 (`references/generate-lifecycle.md`) and DRAIN D1..D8 (`references/drain-lifecycle.md`); those files are canonical for step semantics. In brief, each DRAIN fire: D1 claims the session lock (AP-4, via `session_lock`/`session_lock_expires_at`), verifies branch shape (AP-7) and heartbeat freshness (AP-6), and recovers WIP; D2 claims the next eligible Subtask; D3 plans and reviews on the projection (AP-3) after the D3.0 `audited_sha` staleness gate (AP-5); D4 implements TDD-vertically with per-cycle commits (AP-1); D5 validates in parallel; D6 runs the `gates:` commands and the git-log commit-shape audit; D7 rebases, folds batched deltas (D7.1a), pushes, opens the PR; D7.5 takes one CI observation; D8 re-arms the adaptive cron.
+The operative step graphs are GENERATE G1..G8 (`references/lifecycle.md`) and DRAIN D1..D8 (`references/lifecycle.md`); those files are canonical for step semantics. In brief, each DRAIN fire: D1 claims the session lock (AP-4, via `session_lock`/`session_lock_expires_at`), verifies branch shape (AP-7) and heartbeat freshness (AP-6), and recovers WIP; D2 claims the next eligible Subtask; D3 plans and reviews on the projection (AP-3) after the D3.0 `audited_sha` staleness gate (AP-5); D4 implements TDD-vertically with per-cycle commits (AP-1); D5 validates in parallel; D6 runs the `gates:` commands and the git-log commit-shape audit; D7 rebases, folds batched deltas (D7.1a), pushes, opens the PR; D7.5 takes one CI observation; D8 re-arms the adaptive cron.
 
 ## Validators
 
