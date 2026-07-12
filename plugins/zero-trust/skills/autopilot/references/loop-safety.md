@@ -24,8 +24,8 @@ refusal to have passed first. `--dry-run` previews every operation.
 Probe results of `unknown` never seed runbook frontmatter; they surface as G8
 review warnings and the operator decides. A failed probe therefore degrades to
 "operator decides", never to "loop guesses".
-*Enforced by:* lifecycle.md G1.5 auto-seed rules; runbook-template
-auto-seed table.
+*Enforced by:* the auto-seed table (canonical in runbook-template.md
+§"Repo constraints (detected)"); lifecycle.md G1.5.
 
 ## 3. Guards fail closed
 
