@@ -36,7 +36,7 @@
 #             5 PENDING (--once only), 64 usage.
 #
 # LAST_STATE=<value> is emitted on stderr immediately before every exit so the
-# dispatcher (drain-lifecycle D7.5 dispatch) can classify the terminal state
+# dispatcher (lifecycle.md D7.5 dispatch) can classify the terminal state
 # without re-parsing preceding stderr lines.
 
 set -u
