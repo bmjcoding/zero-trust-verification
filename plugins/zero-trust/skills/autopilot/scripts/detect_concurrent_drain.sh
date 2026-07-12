@@ -18,6 +18,10 @@
 #
 # Exit codes (fail-closed — GAPS A5d):
 #   0  no tracker file, no lock, or lock held by THIS session
+#   1  environment error            CLAUDE_SESSION_ID unset (the :? guard
+#                                 below; stderr carries the message). Callers
+#                                 fail LOUDLY — an env error is never a claim
+#                                 conflict (lifecycle G1 / D1.0)
 #   2  lock-held-by-other:<sid>   live foreign lock (expires_at > now)
 #   3  lock-stale:<sid>           foreign lock past expiry (caller may reclaim)
 #   4  tracker-unreadable         frontmatter present but lock fields

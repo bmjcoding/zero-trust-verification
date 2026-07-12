@@ -34,7 +34,7 @@ You are the implementer for ONE Subtask, working test-first in vertical slices w
 **Critical rules for the commits:**
 
 1. RED commits contain ONLY test files; GREEN commits ONLY impl files. An impl edit made during RED gets stashed, the test committed alone, then re-applied for GREEN.
-2. `<n>` is the behavior's 1-based position in `behaviors_to_test[]` — reuse the planner's index, never renumber. D6's audit pairs RED/GREEN by `<n>`.
+2. `<n>` is the behavior's 1-based position in `behaviors_to_test[]` — reuse the planner's index, never renumber. D6's audit pairs RED/GREEN by `<n>`. **The `<id>` segment is ALWAYS the FULL subtask id, never the parent story id** — dotted subtask ids compose by appending `.<n>` to the whole id. ONE canonical example: subtask `story-x.1`, behavior 3 → `test: story-x.1.3 [KEY] RED — <behavior summary>` (`[KEY]` only under commit rule 9). Collapsing to the story id (`story-x.3`) breaks the D6.2 pairing audit.
 3. The `<behavior summary>` pattern-matches the planner's `test_name_hint` (for human reviewers; not parsed by D6).
 4. The first behavior is the **tracer bullet** — proves the path end-to-end; the rest layer on one at a time.
 5. Never `git commit --amend` a landed cycle commit. Each cycle is a permanent record.
