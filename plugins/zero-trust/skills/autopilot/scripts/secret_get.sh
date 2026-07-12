@@ -25,7 +25,7 @@
 #
 # Candidate service names, in priority order (v2.4.0 adds #4 and the
 # $<SERVICE>_HOST derivation source — both were claimed by the v2.1.0
-# changelog but never implemented; see docs/GAPS_SPEC.md B3):
+# changelog but never implemented; see CHANGELOG.md §2.4.0, gap B3):
 #
 #   1. $AUTOPILOT_<SERVICE>_KEYCHAIN_NAME               (operator override)
 #   2. autopilot-<service>                              (canonical)
