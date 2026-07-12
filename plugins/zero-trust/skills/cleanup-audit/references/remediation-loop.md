@@ -37,7 +37,9 @@ false` by default). A wrong loop must cost wrong *reports*, never damaged code
 4. **Drainer — autopilot.** A complete-manifest register drains via GENERATE:
    Pickup opens the **Runbook PR**, and the drain files **one-or-more Story
    PRs** (ADR 0007/0009 — not necessarily one). A human reviews once, at the
-   end.
+   end. A drain-classed finding that touches a vital/CORE path still degrades
+   to spec-gen's own S5 on the way in (ADR 0008) — the register route never
+   bypasses the human confirmation those paths require.
 
 ## Escalate-instead-of-drain (ADR 0002, vendored + lint-pinned)
 
