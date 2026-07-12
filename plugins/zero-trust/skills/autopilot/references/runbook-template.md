@@ -1,16 +1,15 @@
 # Runbook Template (autopilot v3.1.0)
 
-> Loading preamble reminder: the runbook is the operator's contract with
-> autopilot. Read it in full before every drain; do not cache stale
-> frontmatter across auto-compaction boundaries. Frontmatter flags override
-> defaults only within the scope declared by that flag (repo-wide vs
-> drain-scoped) — see SKILL.md for the override-scoping table.
+> The runbook is the operator's contract with autopilot. Read it in full
+> before every drain; never cache stale frontmatter across auto-compaction
+> boundaries. Frontmatter flags override defaults only within their declared
+> scope — see SKILL.md §"Override scoping".
 
-A runbook is a single YAML+Markdown file that defines a unit of autonomous work for autopilot to execute. The operator writes this once (or GENERATE seeds it); the dispatcher reads it on every step. Since v2.3.0 the runbook also carries the auto-detected repo-shape flags produced by G1.5 (see the `Repo constraints (detected)` block below).
+A runbook is one YAML+Markdown file defining a unit of autonomous work. The operator writes it once (or GENERATE seeds it); the dispatcher reads it on every step. It also carries the G1.5 auto-detected repo-shape flags (the `Repo constraints (detected)` block below).
 
 ## File location (canonical artifact paths)
 
-Runbooks live under `.autopilot/runbooks/<slug>.md` in the repository root; the sibling tracker is `.autopilot/runbooks/<slug>.tracker.md`. These are the ONLY artifact paths (v2.4.0 removed a competing scheme under the repo's design-docs tree that GENERATE and DRAIN disagreed on). The slug is kebab-case, matches the branch prefix used in `autopilot/<slug>/...`, and is the only identifier the dispatcher uses to correlate plans, trackers, and PRs.
+Runbooks live at `.autopilot/runbooks/<slug>.md`; the sibling tracker at `.autopilot/runbooks/<slug>.tracker.md`. These are the ONLY artifact paths. The slug is kebab-case, matches the `autopilot/<slug>/...` branch prefix, and is the only identifier correlating plans, trackers, and PRs.
 
 ## Frontmatter
 
@@ -18,28 +17,28 @@ Runbooks live under `.autopilot/runbooks/<slug>.md` in the repository root; the 
 ---
 slug: <kebab-case-identifier>            # required, matches filename and branch prefix
 title: <human-readable title>            # required, used in PR titles
-audit_handoff: <path-or-null>            # path to TRIAGE.md from codebase-health audit, or null for non-audit runbooks
-audited_sha: <git-sha>                   # AP-5: required if audit_handoff is set; the SHA the audit was run against
+audit_handoff: <path-or-null>            # path to TRIAGE.md from a codebase-health audit, or null
+audited_sha: <git-sha>                   # AP-5: required if audit_handoff is set; the SHA the audit ran against
 priority: <high|medium|low>              # affects budget allocation only, not ordering
 budget:
   max_subtasks: 20                       # hard cap on planner output
   max_cycles_per_subtask: 8              # hard cap on TDD cycles per subtask (D4)
   max_impl_blocks: 3                     # AP-2: consecutive_impl_blocks cap before HUMAN_NEEDED
   max_ci_blocks: 2                       # AP-2: consecutive_ci_blocks cap before HUMAN_NEEDED
-  max_claim_waits: 16                    # AV3-09: consecutive claim-blocked fires before HUMAN_NEEDED — claim-deadlock
-  max_runtime_minutes: 240               # wall-clock cap; dispatcher emits HUMAN_NEEDED at expiry
+  max_claim_waits: 16                    # AV3-09: consecutive claim-blocked fires before claim-deadlock
+  max_runtime_minutes: 240               # wall-clock cap; HUMAN_NEEDED at expiry
   max_mutants_per_subtask: 40            # ADR 0016 (MT-07): D6.5 mutant budget; exceeding → partial [note], never a false block
-  max_mutation_seconds: 120              # ADR 0016 (MT-07): D6.5 wall-clock budget; exceeding → partial [note], never a false block
-validators:                              # validator names run on every D5; catalog = validator-prompts.md
+  max_mutation_seconds: 120              # ADR 0016 (MT-07): D6.5 wall-clock budget; same degrade rule
+validators:                              # run on every D5; catalog = validator-prompts.md
   - integration                          # always
   - design                               # always
   - quality                              # always
-  # - security                           # optional; auto-added by planner on auth/secret/token/cookie paths
-  # - sre                                # optional; auto-added by planner on operational hot paths
+  # - security                           # optional; planner-added on auth/secret/token/cookie paths
+  # - sre                                # optional; planner-added on operational hot paths
 cadence:                                 # AP-19: in-session only, no external_scheduler field
   mode: in-session                       # only legal value
-  step_pause_seconds: 0                  # operator-facing pause between dispatch steps; 0 = no pause
-gates:                                   # v2.4.0: language-agnostic gate commands (D6.1, D5 quality,
+  step_pause_seconds: 0                  # operator-facing pause between dispatch steps
+gates:                                   # language-agnostic gate commands (D6.1, D5 quality,
                                          # conflict-resolution, implementer). Placeholders: {paths} =
                                          # changed module/dir scope, {files} = changed file list,
                                          # {test} = single test id. Defaults shown are the Python pack;
@@ -75,67 +74,57 @@ regen_rituals: []                        # optional: generated-artifact regen ri
                                          #     classification: additive-vs-breaking   # `breaking`
                                          #                     # requires operator sign-off
                                          # Producer: implementer commit rule 8 writes the `regen:`
-                                         # classification line into the regenerating commit's body
-                                         # (implementer-prompt.md; the entries are implementer input 6).
-                                         # Enforcement: the integration validator blocks a diff touching
-                                         # a matching path without that evidence (validator-prompts.md,
-                                         # integration check 7, fed by validator input 7) — an auto-regen
-                                         # must never fold silently into a PR.
+                                         # line into the regenerating commit's body. Enforcement:
+                                         # integration validator check 7 blocks a matching diff
+                                         # without that evidence — an auto-regen must never fold
+                                         # silently into a PR.
 ci:
-  platform: bitbucket-dc                 # informational only; host.sh detects the backend (bitbucket-dc | github) from origin at runtime (ADR 0013)
-  skip_wait: false                       # AP-23: when true, do not poll for build; treat push as terminal. Auto-flipped true by G1.5 when CI_PRESENT=false.
-  build_states:                          # RESERVED (documentation of the host adapter's build-status vocabulary).
-    success: [SUCCESSFUL]                # every backend's build-status emits exactly these tokens
-    failure: [FAILED]                    # exact names; the field is validated but not yet consumed.
+  platform: bitbucket-dc                 # informational only; host.sh detects the backend from origin (ADR 0013)
+  skip_wait: false                       # when true, do not poll for build; push is terminal. Auto-flipped by G1.5.
+  build_states:                          # RESERVED (documents the host adapter's build-status vocabulary;
+    success: [SUCCESSFUL]                # validated but not yet consumed)
+    failure: [FAILED]
     in_progress: [INPROGRESS]
 branching:
-  no_force_push: false                   # AP-23: when true, tracker deltas queue in-tracker and flush at D7.1a; disables rolling tracker-PR pattern. Auto-flipped true by G1.5 when FORCE_PUSH_ALLOWED=false.
-  single_branch_single_pr: false         # AP-06/23: when true, the whole drain collapses to one feature branch + one PR (the coarser collapse over PR-per-Story); the tracker fold appends to that single branch.
-enforce_jira_key: false                  # AP-22: when true, every commit message must satisfy the JIRA-key regex. Auto-flipped true by G1.5 when JIRA_HOOK_ENFORCED=true.
-pack_subtasks: false                     # AP-21: when true, planner consolidates Subtasks per G3.6 heuristic; equivalent to `--consolidate=auto` at invocation.
+  no_force_push: false                   # AP-23: when true, tracker deltas queue in-tracker and flush at D7.1a. Auto-flipped by G1.5.
+  single_branch_single_pr: false         # when true, the whole drain collapses to one feature branch + one PR
+enforce_jira_key: false                  # AP-22: every commit subject must carry [<JIRA-KEY>]. Auto-flipped by G1.5 or --jira.
+pack_subtasks: false                     # AP-21: G3.6 consolidation; equivalent to --consolidate=auto
 merge:
   strategy: merge-commit                 # AP-10: required for stacked PRs to preserve cycle history
   delete_source_on_merge: true
-force_audit: []                          # AP-11: appended to by dispatcher when --force is used; do not edit
+force_audit: []                          # AP-11: dispatcher-appended on --force; do not edit
 ---
 ```
 
 ## Removed fields (migration from v1)
 
-The following frontmatter fields are NOT accepted. Runbooks containing them are read with a warning and the fields ignored:
+Runbooks containing these are read with a warning and the fields ignored:
 
-- `external_scheduler` and any `cron_*` keys (AP-19: external scheduler removed)
-- `gh_cli_path` (host binding is never a runbook field; `host.sh` detects the backend from origin — ADR 0013. The GitHub backend uses `gh`, but the caller surface stays host-agnostic.)
-- `consecutive_failures_cap` (AP-2: replaced by split impl/ci caps above)
-- `secrets_inline` and any inline credential field (sidecar/keychain only — no inline secrets ever)
-- `validator_contradiction_resolution: <strategy>` (AP-18: contradictions always escape to HUMAN_NEEDED)
-- `tracker_pr.force_push` (AP-23: superseded by `branching.no_force_push`)
-- `wait_for_ci` (AP-23: superseded by `ci.skip_wait`)
-- `test_runner` (v2.4.0: superseded by `gates:`; accepted as a legacy alias — `test_runner.cmd: X` is read as `gates.test_scoped: "X -x -q {paths}"` — with a warning)
+- `external_scheduler` / any `cron_*` keys (AP-19)
+- `gh_cli_path` (host binding is never a runbook field — `host.sh` detects the backend from origin, ADR 0013)
+- `consecutive_failures_cap` (AP-2: replaced by the split impl/ci caps)
+- `secrets_inline` / any inline credential field (sidecar/keychain only — no inline secrets ever)
+- `validator_contradiction_resolution` (AP-18: contradictions always escape to HUMAN_NEEDED)
+- `tracker_pr.force_push` (superseded by `branching.no_force_push`)
+- `wait_for_ci` (superseded by `ci.skip_wait`)
+- `test_runner` (superseded by `gates:`; legacy alias `test_runner.cmd: X` is read as `gates.test_scoped: "X -x -q {paths}"` with a warning)
 
 ## Body sections
 
-The runbook body is plain Markdown. The dispatcher reads the sections below by name (Goal / Constraints / Non-Goals, plus the G1.5-owned `Repo constraints (detected)` block); everything else is operator notes.
+The dispatcher reads these sections by name (Goal / Constraints / Non-Goals, plus the G1.5-owned `Repo constraints (detected)` block); everything else is operator notes.
 
 ### Goal
 
-One paragraph describing the user-visible outcome. The planner reads this as the highest-level intent. Keep it crisp; if it's longer than a paragraph, the goal is probably two goals and the runbook should be split.
+One paragraph of user-visible outcome — the planner's highest-level intent. Longer than a paragraph usually means two goals and two runbooks.
 
 ### Constraints
 
-Bullet list of invariants the work must preserve. The planner echoes these into every subtask's contract; validators check for violations. Examples:
-
-- Public API of `frobnicator.py` must not change.
-- All new endpoints require `@requires_auth("admin")`.
-- No new direct imports of `legacy_db`; route through the repository layer.
+Bullet list of invariants the work must preserve; the planner echoes them into every Subtask's contract and validators check for violations. E.g. "Public API of `frobnicator.py` must not change"; "All new endpoints require `@requires_auth(\"admin\")`"; "No new direct imports of `legacy_db`; route through the repository layer."
 
 ### Non-Goals
 
-Bullet list of work explicitly out of scope. The planner uses this to reject candidate subtasks that drift into adjacent territory. Examples:
-
-- Refactoring the test infrastructure.
-- Removing deprecated endpoints (separate runbook).
-- Adding telemetry to existing code paths.
+Bullet list of work explicitly out of scope; the planner uses it to reject candidate Subtasks drifting into adjacent territory. E.g. "Refactoring the test infrastructure"; "Removing deprecated endpoints (separate runbook)."
 
 ### Stories (sizing + coverage ledger)
 
@@ -148,53 +137,32 @@ Bullet list of work explicitly out of scope. The planner uses this to reject can
 |---|---|---|---|---|
 | `S-pricing` | A1, A2, A3 | 28 | `B-pricing-001`, `B-pricing-002` | `docs/journeys/pricing.md` |
 
-- **predicted_hours (Σ)** — sum of the Story's Subtasks' `predicted_hours`; G4
-  refuses any Story summing to more than 48 hours (`story-oversized`) and any
-  Subtask whose hours exceed its `estimated_size` ceiling (`story-size-inconsistent`).
-  ADR 0012 / AV3-07.
-- **Behavior IDs** — the active manifest Behavior IDs the Story's Subtasks own
-  (planner `behavior_ids[]`, mapped at G3, verified at D6). Empty column only for
-  manifest-less drains (v2.4.0 semantics).
-- **As-built docs** — the journey-doc / README deltas the Story must ship inside
-  its own Story PR when the Story's behaviors are journey-bearing per the manifest.
+- **predicted_hours (Σ)** — Story sum; G4 refuses >48 (`story-oversized`) and any Subtask over its size ceiling (`story-size-inconsistent`). ADR 0012 / AV3-07.
+- **Behavior IDs** — the active manifest Behaviors the Story's Subtasks own (planner `behavior_ids[]`, verified at D6.3). Empty only for manifest-less drains.
+- **As-built docs** — the journey-doc / README deltas the Story must ship inside its own Story PR when its behaviors are journey-bearing (integration validator check 8).
 
 ### Authoring guidance — byte-stability refactors (scope-expansion clauses)
 
-A `kind: refactor` Subtask that imposes byte-stability constraints (an output
-file must not change; a binder/signature stays frozen) frequently discovers
-mid-flight that satisfying the constraint requires touching a file outside its
-strict `owned_files[]` — and burns zero-commit `[BLOCKED: ownership-overflow]`
-cycles before anyone authorizes the expansion. Two authoring patterns prevent
-that (the planner-prompt kind-selection rules carry the same guidance; this
-section exists for operators hand-authoring runbooks):
+A `kind: refactor` imposing byte-stability constraints (frozen output file, frozen binder/signature) frequently discovers mid-flight that the constraint forces touches outside its strict `owned_files[]` — and burns zero-commit `[BLOCKED: ownership-overflow]` cycles before anyone authorizes the expansion. Two authoring patterns prevent that (planner Rule 4 carries the same guidance; this section is for operators hand-authoring runbooks):
 
-1. **Pre-declare the conditional surface.** Include the likely-touched adjacent
-   files in `owned_files[]` up front and note in `acceptance_criteria`:
-   `owned_files may expand to include <X, Y> if <constraint> requires` — the D3
-   plan refinement can then expand within the declared envelope without a
-   blocked fire.
-2. **Plan it as `kind: code`.** When the true surface is genuinely unknowable up
-   front, `kind: code` (TDD-style scope discovery) is more honest than a pure
-   `kind: refactor` with a guessed file list.
+1. **Pre-declare the conditional surface** in `owned_files[]` with an acceptance-criteria note (`owned_files may expand to include <X, Y> if <constraint> requires`) — D3 can then expand within the declared envelope without a blocked fire.
+2. **Plan it as `kind: code`** when the true surface is genuinely unknowable — TDD-style scope discovery is more honest than a guessed file list.
 
 ### Repo constraints (detected)
 
-> This block is written by G1.5 (`scripts/repo_shape_probe.sh`) on the first
-> drain against a fresh runbook, or on any drain where the operator passes
-> `--reprobe`. Operators may edit the block manually to override auto-detected
-> values; the dispatcher treats operator edits as authoritative and will not
-> overwrite them on subsequent probes (a `probed_at:` timestamp older than the
-> current probe run acts as the freshness marker).
+> Written by G1.5 (`scripts/repo_shape_probe.sh`) on the first drain against a
+> fresh runbook, or on `--reprobe`. Operator edits are authoritative — the
+> dispatcher never overwrites values newer than the probe (`probed_at:` is the
+> freshness marker).
 
 ```yaml
 probed_at: <iso8601>
 probed_from: G1.5
-TRUNK: main                              # detected trunk branch name; used to shape autopilot/<slug>/... branches
+TRUNK: main                              # detected trunk; shapes autopilot/<slug>/... branches
 CI_PRESENT: true|false|unknown           # `unknown` does NOT auto-flip ci.skip_wait
 CI_STATUS_REPORTING: true|false|unknown  # does CI post to the host build-status API? `false` =
-                                         # CI config exists but the endpoint never populates
-                                         # (sampled over recent trunk commits); `unknown` does
-                                         # NOT auto-flip anything
+                                         # CI config exists but the endpoint never populates;
+                                         # `unknown` does NOT auto-flip anything
 FORCE_PUSH_ALLOWED: true|false|unknown   # `unknown` does NOT auto-flip branching.no_force_push
 JIRA_HOOK_ENFORCED: true|false|unknown   # `unknown` does NOT auto-flip enforce_jira_key
 notes: |
@@ -202,34 +170,27 @@ notes: |
   used, cleanup status). Preserved verbatim across drains.
 ```
 
-Auto-seed rules (applied only on `unknown` → `true|false` transitions, never
-on `unknown` values themselves):
+Auto-seed rules (applied only on `unknown` → `true|false` transitions, never on `unknown` itself — loop-safety invariant 2):
 
 - `CI_PRESENT=false` → `ci.skip_wait: true`
-- `CI_PRESENT=true` **and** `CI_STATUS_REPORTING=false` → `ci.skip_wait: true`
-  (CI runs but never posts to the host build-status API — a `skip_wait: false`
-  runbook would poll a void forever. The local test gates remain the merge
-  gate, and the degradation is declared here instead of discovered mid-drain.)
+- `CI_PRESENT=true` **and** `CI_STATUS_REPORTING=false` → `ci.skip_wait: true` (CI runs but never posts to the host build-status API — polling would spin to `ci-stuck-pending` on every Subtask; the local test gates remain the merge gate and the degradation is declared here instead of discovered mid-drain)
 - `FORCE_PUSH_ALLOWED=false` → `branching.no_force_push: true`
 - `JIRA_HOOK_ENFORCED=true` → `enforce_jira_key: true`
 
-Operators disable auto-seed globally by passing `--no-auto-seed` to the
-dispatcher; the probe still runs and populates this block, but flags are
-not flipped.
+`--no-auto-seed` disables the flips globally; the probe still runs and populates this block.
 
 ### Pending Tracker Deltas (batched)
 
-> Present only in the tracker file (`<slug>.tracker.md`), not in the runbook
-> itself. See `references/tracker-delta-batching.md` for the full contract.
-> This section header is injected by D1.0.4 on the first drain against a
-> pre-v2.3 tracker. Do not hand-edit entries under this header; the
-> dispatcher owns append and flush semantics.
+> Present only in the tracker file, not the runbook. Full contract:
+> `references/tracker-delta-batching.md`. The header is injected by D1.0.4 on
+> the first drain against a pre-v2.3 tracker. Never hand-edit entries — the
+> dispatcher owns append and flush.
 
 ## Runbook PR (bookkeeping home — AV3-08)
 
-G7 opens ONE long-lived **Runbook PR** at Pickup on branch `autopilot/<slug>/runbook`, carrying the runbook + tracker. It is the single home for all tracker bookkeeping under both `no_force_push` settings (the pre-v3 rolling tracker PR is retired), and it is the FINAL entry in `MERGE-ORDER.md` — the operator (or the Marshal, once built) merges it; autopilot never merges its own PRs.
+G7 opens ONE long-lived Runbook PR at Pickup on `autopilot/<slug>/runbook`, carrying the runbook + tracker — the single home for all tracker bookkeeping under both `no_force_push` settings (the pre-v3 rolling tracker PR is retired), and the FINAL entry in `MERGE-ORDER.md` (the operator or Marshal merges it; autopilot never merges its own PRs).
 
-Its body carries the drain's **predicted file surface** as a grep-able block, delimited by literal marker comments so foreign planners and the AV3-09 claim consultation can parse it without prose heuristics:
+Its body carries the drain's predicted file surface, delimited by literal marker comments so foreign planners and AV3-09 claim consultation parse it without prose heuristics:
 
 ```markdown
 ## Predicted file surface
@@ -239,11 +200,11 @@ Its body carries the drain's **predicted file surface** as a grep-able block, de
 <!-- autopilot:file-surface:end -->
 ```
 
-`scripts/runbook_pr.sh file-surface <body-file>` extracts the entries (marker contract; a missing/unbalanced pair is a hard error, never a silent empty surface).
+`scripts/runbook_pr.sh file-surface <body-file>` extracts the entries (a missing/unbalanced marker pair is a hard error, never a silent empty surface).
 
 ## Tracker file
 
-The dispatcher writes a sibling tracker at `.autopilot/runbooks/<slug>.tracker.md`. Operators do not edit this; it is the dispatcher's append-only state log. The frontmatter is the CANONICAL schema (v2.4.0 — this section previously documented a divergent legacy field set that neither G7 nor `detect_concurrent_drain.sh` could interoperate with; see CHANGELOG.md §2.4.0, gap C2):
+The dispatcher writes the sibling tracker at `.autopilot/runbooks/<slug>.tracker.md` — its append-only state log; operators do not edit it. The frontmatter below is the CANONICAL schema (defined once, here):
 
 ```yaml
 ---
@@ -256,7 +217,7 @@ drain_started_at: <iso8601>       # seeded by the first fire; budget.max_runtime
 audited_sha: <sha>                # AP-5: SHA at planner-spawn time
 manifest_revision: <int-or-absent> # AV3-04: frozen at GENERATE from the Spec's manifest;
                                   #   D1.0.6 compares it against the live manifest each fire.
-                                  #   Absent on manifest-less drains (v2.4.0 semantics).
+                                  #   Absent on manifest-less drains.
 status_reason: <string-or-absent> # set alongside STATUS: PAUSED|HUMAN_NEEDED (e.g.
                                   #   manifest-revision-drift, runtime-budget-expired). Cleared on Resume.
 trunk_branch: <name>              # from G1.5 TRUNK=
@@ -284,99 +245,26 @@ force_audit: []                   # AP-11
 ---
 ```
 
-Body is a Markdown log of dispatch events in append-only order (`## Drift Notes`, the Subtask sections, `## Force Audit`, and — under `branching.no_force_push: true` — `## Pending Tracker Deltas (batched)`). Each entry: `<iso8601> <step> <subtask-id-or-->: <one-line-summary>`. Multi-line details (validator findings, conflict patches) go in collapsible sections.
+Body: a Markdown log of dispatch events in append-only order (`## Drift Notes`, the Subtask sections, `## Force Audit`, and — under `branching.no_force_push: true` — `## Pending Tracker Deltas (batched)`). Each entry: `<iso8601> <step> <subtask-id-or-->: <one-line-summary>`; multi-line detail (validator findings, conflict patches) goes in collapsible sections.
 
 ## How autopilot reads the runbook
 
-The operative step graphs are GENERATE G1..G8 (`references/lifecycle.md`) and DRAIN D1..D8 (`references/lifecycle.md`); those files are canonical for step semantics. In brief, each DRAIN fire: D1 claims the session lock (AP-4, via `session_lock`/`session_lock_expires_at`), verifies branch shape (AP-7) and heartbeat freshness (AP-6), and recovers WIP; D2 claims the next eligible Subtask; D3 plans and reviews on the projection (AP-3) after the D3.0 `audited_sha` staleness gate (AP-5); D4 implements TDD-vertically with per-cycle commits (AP-1); D5 validates in parallel; D6 runs the `gates:` commands and the git-log commit-shape audit; D7 rebases, folds batched deltas (D7.1a), pushes, opens the PR; D7.5 takes one CI observation; D8 re-arms the adaptive cron.
+The operative step graphs are GENERATE G0..G8 and DRAIN D1..D8 in `references/lifecycle.md` — canonical for step semantics. In brief, each DRAIN fire: D1 claims the session lock, verifies branch shape and heartbeat freshness, recovers WIP; D2 claims the next eligible Subtask; D3 plans and reviews on the projection after the D3.0 `audited_sha` gate; D4 implements TDD-vertically with per-cycle commits; D5 validates in parallel; D6 runs the `gates:` commands and the git-log commit-shape audit; D7 rebases, folds batched deltas, pushes, opens the PR; D7.5 takes one CI observation; D8 re-arms the adaptive cron.
 
 ## Validators
 
-Validator names listed in frontmatter `validators:` map to prompts in `references/validator-prompts.md`. The dispatcher runs all listed validators in parallel on every D5. Contradictions (AP-18) escape to HUMAN_NEEDED; non-contradictory findings spawn a fix subtask.
+Frontmatter `validators:` names map to `references/validator-prompts.md` sections; all run in parallel on every D5. Contradictions (AP-18) escape to HUMAN_NEEDED; non-contradictory findings spawn a fix pass.
 
 ## Failure routing
 
-Every `[BLOCKED: <reason>]` entry must be tagged `(impl)`, `(ci)`, or `(external)`:
+Every `[BLOCKED: <reason>]` is tagged `(impl)`, `(ci)`, or `(external)`:
 
-- `(impl)` increments `consecutive_impl_blocks`; cap `max_impl_blocks` → HUMAN_NEEDED.
-- `(ci)` increments `consecutive_ci_blocks`; cap `max_ci_blocks` → HUMAN_NEEDED.
-- `(external)` does NOT increment counters; routes immediately to HUMAN_NEEDED with `reason: external-fault`.
+- `(impl)` → `consecutive_impl_blocks`; cap `max_impl_blocks` → HUMAN_NEEDED.
+- `(ci)` → `consecutive_ci_blocks`; cap `max_ci_blocks` → HUMAN_NEEDED.
+- `(external)` → no counter; straight to HUMAN_NEEDED with `reason: external-fault`.
 
-The taxonomy of reasons and their categories is in `references/conflict-resolution.md` and `references/validator-prompts.md`. Adding a new reason requires updating both.
+The reason taxonomy lives in `references/conflict-resolution.md` and `references/validator-prompts.md`; a new reason updates both.
 
 ## Resuming a runbook
 
-To resume after HUMAN_NEEDED:
-1. Read the tracker, find the last entry, identify the blocking subtask.
-2. Resolve the block (re-auth, fix the contradictory validator, rebase the branch manually, etc.).
-3. Append a manual entry to the tracker body documenting the resolution.
-4. Reset the relevant counter (`consecutive_impl_blocks: 0` or `consecutive_ci_blocks: 0`) in tracker frontmatter.
-5. Re-dispatch autopilot in-session.
-
-`--force` resumes (AP-11): if the operator passes `--force` to override a HUMAN_NEEDED, the dispatcher appends to `force_audit:` with the step, reason, and timestamp. This is read-only audit; the dispatcher never inspects it for control flow.
-
-## Minimal runbook example
-
-```markdown
----
-slug: extract-token-bucket
-title: Extract token-bucket rate limiter from monolith
-audit_handoff: .codebase-health/runs/2026-06-25/TRIAGE.md
-audited_sha: a3f8c91e0b
-priority: medium
-budget:
-  max_subtasks: 8
-  max_cycles_per_subtask: 6
-  max_impl_blocks: 3
-  max_ci_blocks: 2
-  max_runtime_minutes: 180
-validators:
-  - integration
-  - design
-  - quality
-  - security
-cadence:
-  mode: in-session
-  step_pause_seconds: 0
-gates:
-  test_scoped: "pytest -x -q {paths}"
-  test_single: "pytest {test} -x"
-  typecheck: "mypy {paths}"
-  lint: "ruff check {paths}"
-  precommit: "pre-commit run --files {files}"
-ci:
-  platform: bitbucket-dc
-  skip_wait: false
-  build_states:
-    success: [SUCCESSFUL]
-    failure: [FAILED]
-    in_progress: [INPROGRESS]
-branching:
-  no_force_push: false
-  single_branch_single_pr: false
-enforce_jira_key: false
-pack_subtasks: false
-merge:
-  strategy: merge-commit
-  delete_source_on_merge: true
-force_audit: []
----
-
-## Goal
-
-Extract the in-memory token bucket from `api/limiter.py` into a standalone module
-under `lib/rate_limit/` with a clean interface, so the bucket can be unit-tested
-in isolation and reused by the new ingestion service.
-
-## Constraints
-
-- Public callers of `api.limiter.acquire()` must not change signature or semantics.
-- No new direct Redis access; the bucket stays in-memory.
-- Logging format on rate-limit denial must remain byte-identical (downstream parser depends on it).
-
-## Non-Goals
-
-- Replacing the bucket with a distributed limiter (separate runbook).
-- Migrating other limiters in the codebase.
-- Adding metrics to the bucket (covered by observability runbook).
-```
+After HUMAN_NEEDED: read the tracker's last entry and identify the blocking Subtask; resolve the block; append a manual tracker-body entry documenting the resolution; reset the relevant counter to 0 in the frontmatter; re-dispatch in-session. `--force` resumes append to `force_audit:` (AP-11) — read-only audit, never control flow.

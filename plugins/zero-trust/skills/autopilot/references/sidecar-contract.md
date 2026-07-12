@@ -1,172 +1,84 @@
 # Sidecar Contract v0
 
+The contract between autopilot's REST-calling scripts (`bitbucket.sh`, `ci_check.sh`, `secret_get.sh`) and the workspace's optional identity-proxy sidecar. The sidecar is OPTIONAL: when absent (`sidecar_detect.sh` outputs `MODE=local`), scripts fall back to the OS-native keychain, then environment variables (the resolver chain at the bottom).
 
-This document defines the contract between autopilot's REST-calling scripts (`bitbucket.sh`, `ci_check.sh`, `secret_get.sh`) and the workspace's optional identity-proxy sidecar.
-
-
-The sidecar is OPTIONAL. When absent (`sidecar_detect.sh` outputs `MODE=local`), scripts fall back to the OS-native keychain (macOS Keychain, Linux libsecret) and then to environment variables. The whole resolver chain is documented at the bottom of this file.
-
-
-This contract is versioned. v0 is the current minimum; future versions may add headers, error codes, or session-renewal semantics. Implementations MUST NOT reject unknown headers from the sidecar; they MUST surface unknown error codes as opaque failures.
-
+Versioned: v0 is the current minimum. Implementations MUST NOT reject unknown headers from the sidecar and MUST surface unknown error codes as opaque failures — so v1 additions can't break v0 callers.
 
 ## Environment variables (sidecar mode)
 
-
-When `sidecar_detect.sh` reports `MODE=sidecar`, the following env vars are guaranteed to be set in the workspace container:
-
+Guaranteed set in the workspace container when `MODE=sidecar`:
 
 | Variable | Purpose | Example |
 |---|---|---|
-| `IDENTITY_PROXY_URL` | Base URL of the sidecar. Always reachable from the workspace. Always HTTPS in production; may be HTTP on `localhost` in dev. | `https://identity-proxy.workspace.svc:8443` |
-| `IDENTITY_PROXY_PLATFORMS` | Comma-separated list of platform ids the sidecar can proxy. Scripts MUST check this before issuing a request. The canonical Bitbucket DC platform id is `bitbucketdc`; consumers (e.g. `bitbucket.sh`) also accept legacy `bitbucket` and use the matched id as the URL path segment. | `bitbucketdc,jira,github` |
-| `WORKSPACE_SESSION_ID` | Opaque session identifier the sidecar uses to map requests back to the authenticated user (OBO). Treat as a credential — do not log. | `ws-7a3f2e1d9c8b4f56` |
-| `WORKSPACE_USER_SUB` | User's stable subject identifier (NOT a credential — safe to log). Used by scripts when they need to construct user-scoped audit trails. | `u_42198765` |
+| `IDENTITY_PROXY_URL` | Base URL of the sidecar. Always HTTPS in production; may be HTTP on `localhost` in dev. | `https://identity-proxy.workspace.svc:8443` |
+| `IDENTITY_PROXY_PLATFORMS` | Comma-separated platform ids the sidecar can proxy; scripts MUST check it before issuing a request. Canonical Bitbucket DC id is `bitbucketdc`; consumers also accept legacy `bitbucket` and use the matched id as the URL path segment. | `bitbucketdc,jira,github` |
+| `WORKSPACE_SESSION_ID` | Opaque session id mapping requests to the authenticated user (OBO). Treat as a credential — never log. | `ws-7a3f2e1d9c8b4f56` |
+| `WORKSPACE_USER_SUB` | User's stable subject id (NOT a credential — safe to log); for user-scoped audit trails. | `u_42198765` |
 
-
-Absence of `IDENTITY_PROXY_URL` is the canonical signal that sidecar mode is unavailable. `sidecar_detect.sh` checks this and additionally pings `${IDENTITY_PROXY_URL}/healthz` to confirm reachability. **Sidecar implementations MUST return HTTP 200 with a body containing `ok` from `/healthz`** — detectors verify both, and a 200 with a different body is treated as sidecar-unavailable (local-mode fallback).
-
+Absence of `IDENTITY_PROXY_URL` is the canonical sidecar-unavailable signal. `sidecar_detect.sh` additionally pings `${IDENTITY_PROXY_URL}/healthz`: implementations MUST return HTTP 200 with a body containing `ok` — a 200 with a different body is treated as sidecar-unavailable (local fallback).
 
 ## URL shape
-
-
-All sidecar requests follow this shape:
-
 
 ```
 {IDENTITY_PROXY_URL}/{platform}/{upstream-path}
 ```
 
-
-Examples:
-- `${IDENTITY_PROXY_URL}/bitbucketdc/rest/api/1.0/projects/PROJ/repos/repo/pull-requests`
-- `${IDENTITY_PROXY_URL}/bitbucketdc/rest/build-status/1.0/commits/<sha>`
-- `${IDENTITY_PROXY_URL}/jira/rest/api/3/issue/PROJ-1234`
-
-
-Scripts MUST NOT URL-encode the `{platform}` segment. They MUST URL-encode path components inside `{upstream-path}` per RFC 3986.
-
+E.g. `${IDENTITY_PROXY_URL}/bitbucketdc/rest/api/1.0/projects/PROJ/repos/repo/pull-requests`, `${IDENTITY_PROXY_URL}/bitbucketdc/rest/build-status/1.0/commits/<sha>`. Never URL-encode the `{platform}` segment; URL-encode path components inside `{upstream-path}` per RFC 3986.
 
 ## Authentication
 
+The sidecar terminates the user's credentials: scripts pass NO `Authorization` and NO `Cookie` header. The sidecar injects upstream auth based on `WORKSPACE_SESSION_ID` (read from the TLS-terminated connection, not the request). **The upstream token never enters the workspace process tree** — which makes sidecar mode strictly more secure than keychain mode, where the token is read into a subshell and written to a 0600 temp header file consumed via curl's `-H @file` (never curl argv, which is world-readable via /proc/*/cmdline), briefly existing in process memory and on tmpfs.
 
-The sidecar terminates the user's credentials. Scripts pass NO `Authorization` header and NO `Cookie` header to the sidecar. The sidecar injects the appropriate upstream auth (OAuth on-behalf-of, service-account token, etc.) based on `WORKSPACE_SESSION_ID` (passed via the workspace container's TLS-terminated socket; the sidecar reads it from the connection, not from the request).
+**TLS termination:** the sidecar terminates TLS for the upstream host at its own boundary. Scripts MUST set `--cacert ${IDENTITY_PROXY_CA:-<system default>}`; a self-signed CA bundle is mounted at the path advertised via `IDENTITY_PROXY_CA`.
 
-
-**This means the upstream token NEVER enters the workspace process tree.** It is held by the sidecar process and only exists in the sidecar's memory. This is the property that makes sidecar mode strictly more secure than keychain mode: in keychain mode the token is read into a subshell `$(...)` and written to a 0600 temp header file consumed via curl's `-H @file` (v2.4.0 — never into curl's argv, which is world-readable via /proc/*/cmdline while curl runs), so it briefly exists in workspace process memory and on tmpfs. In sidecar mode it never does.
-
-
-### TLS termination
-
-
-The sidecar terminates TLS for the upstream Bitbucket DC host (e.g. `bitbucket-dc.internal.example.com`) at its own boundary. Scripts MUST set `--cacert ${IDENTITY_PROXY_CA:-<system default>}` when calling the sidecar; the sidecar's self-signed CA bundle (if any) is mounted into the workspace at a path advertised via `IDENTITY_PROXY_CA`.
-
-
-## Session scoping
-
-
-Sidecar sessions are scoped to the lifetime of the workspace container. There is no session-renewal API in v0; if the workspace container restarts, all in-flight sidecar sessions are invalidated. Scripts MUST surface `407 sidecar misconfigured` as `[BLOCKED: sidecar-session-invalid]` (impl) and exit; the user reconnects the workspace to get a fresh session.
-
+**Session scoping:** sessions live as long as the workspace container; there is no renewal API in v0. On container restart all sessions are invalid — scripts surface `407` as `[BLOCKED: sidecar-session-invalid]` (impl) and exit; the user reconnects the workspace.
 
 ## Error codes
 
-
 | Sidecar HTTP status | Meaning | Script behavior |
 |---|---|---|
-| `200..299` | Success. Body is the upstream's response verbatim. | Forward to caller. |
-| `401 unauthorized` | User's upstream credentials expired or revoked. Sidecar attempted re-auth and failed. | Surface as `[BLOCKED: bitbucket-token-missing]` (impl). The wider system (workspace UI) will prompt re-auth on the user's next interactive turn. |
-| `403 forbidden` | User authenticated but lacks scope for this operation. | Surface as `[BLOCKED: bitbucket-scope-denied]` (impl) with the operation name. |
-| `407 sidecar misconfigured` | Sidecar's own configuration is broken (missing platform mapping, expired service cert, etc.). NOT a user fault. | Surface as `[BLOCKED: sidecar-session-invalid]` (impl) and CronDelete. Operator triage required. |
-| `502 upstream` | Upstream (Bitbucket DC) returned 5xx or timed out. Sidecar gave up after its own retry policy. | Retry once with backoff; on second 502 surface as transient failure (NOT a BLOCKED — the orchestrator's per-script retry logic decides). |
-| `429 rate-limited` | Sidecar or upstream rate-limit hit. Body includes `Retry-After`. | Honor `Retry-After`; max 1 retry per script invocation. |
-| `4xx other` | Upstream returned a 4xx that the sidecar passed through verbatim. | Surface as the original Bitbucket error code in the BLOCKED reason. |
+| `200..299` | Success; body is the upstream response verbatim. | Forward to caller. |
+| `401 unauthorized` | Upstream credentials expired/revoked; sidecar re-auth failed. | `[BLOCKED: bitbucket-token-missing]` (impl); the workspace UI prompts re-auth on the next interactive turn. |
+| `403 forbidden` | Authenticated but lacks scope. | `[BLOCKED: bitbucket-scope-denied]` (impl) with the operation name. |
+| `407 sidecar misconfigured` | Sidecar's own config broken (missing platform mapping, expired service cert). NOT a user fault. | `[BLOCKED: sidecar-session-invalid]` (impl) and CronDelete; operator triage. |
+| `502 upstream` | Upstream 5xx/timeout after the sidecar's own retries. | Retry once with backoff; second 502 → transient failure (NOT a BLOCKED — per-script retry logic decides). |
+| `429 rate-limited` | Rate limit; body includes `Retry-After`. | Honor `Retry-After`; max 1 retry per invocation. |
+| `4xx other` | Upstream 4xx passed through verbatim. | Surface the original error code in the BLOCKED reason. |
 
-
-Scripts MUST NOT log response bodies for `401`, `403`, or `407` — those may contain token-shaped error strings.
-
+Never log response bodies for `401`, `403`, or `407` — they may contain token-shaped error strings.
 
 ## Resolver chain (used by `secret_get.sh`)
 
+1. **Sidecar (preferred)** — `MODE=sidecar`: scripts call the sidecar directly; `secret_get.sh` is not invoked; the token never exists in the workspace process tree.
+2. **OS-native keychain (local-dev)** — macOS `security find-generic-password -s autopilot-bitbucket -w`; Linux `secret-tool lookup service autopilot-bitbucket`. Lookups are scoped by service name only (not account), so entries created by other tools under the conventional names stay resolvable — see the candidate list in `secret_get.sh`. The token is read into a subshell, written to a 0600 temp file as a complete `Authorization:` header line, passed to a single `curl` via `-H @file` (deleted immediately after) — no exported variables, no argv exposure, no echo, no log. The automode classifier permits the keychain read because it's invoked from a script and the token never enters Claude's input or output.
+3. **Environment variable (CI / Windows fallback)** — `AUTOPILOT_BITBUCKET_TOKEN` (the `AUTOPILOT_<SERVICE>_TOKEN` pattern; the bare `BITBUCKET_TOKEN` name is NOT read). The only fallback for platforms without a supported keychain (e.g. Windows VDIs); reachable on every platform before the resolver gives up.
+4. **No token** — `[BLOCKED: bitbucket-token-missing]` (impl); the user runs `bash scripts/secret_set.sh` once.
 
-Scripts that need a token follow this order:
-
-
-1. **Sidecar mode (preferred)** — if `sidecar_detect.sh` returns `MODE=sidecar`, scripts call the sidecar directly. `secret_get.sh` is not invoked in this path; the token never exists in the workspace process tree.
-2. **OS-native keychain (local-dev preferred)** — on macOS: `security find-generic-password -s autopilot-bitbucket -w 2>/dev/null`. On Linux with libsecret: `secret-tool lookup service autopilot-bitbucket`. (Lookups are scoped by service name only — not by account — so entries created by other tools under the conventional names remain resolvable; see the candidate list in `secret_get.sh`.) The token is read into a subshell `$(...)`, written to a 0600 temp file as a complete `Authorization:` header line, and passed to a single `curl` call via `-H @file` (deleted immediately after); no intermediate exported variables, no argv exposure, no echo, no log. The Claude Code automode classifier permits the keychain read because it's invoked from a script (not from Claude's tool calls) and the token never enters Claude's input or output.
-3. **Environment variable (CI / Windows fallback)** — if `AUTOPILOT_BITBUCKET_TOKEN` (the `AUTOPILOT_<SERVICE>_TOKEN` pattern; the bare `BITBUCKET_TOKEN` name is NOT read) is set in the workspace environment, use it. This is the only fallback for platforms without a supported keychain (e.g. Windows VDIs); users are expected to source a `.env` file at workspace start. This tier is reachable on every platform — including unsupported-keychain platforms — before the resolver gives up.
-4. **No token available** — surface as `[BLOCKED: bitbucket-token-missing]` (impl). The user runs `bash scripts/secret_set.sh` once to populate the keychain entry.
-
-
-At no point in the chain is the token ever:
-- Passed as a positional argument to a script (visible in `ps`)
-- Written to a file outside `~/.cache/autopilot/` (and then only encrypted blobs that the keychain owns)
-- Echoed to stdout or stderr
-- Logged in `set -x` trace output (scripts MUST disable `-x` around the resolver call)
-
+At no point is the token: a positional script argument (visible in `ps`); written to a file outside `~/.cache/autopilot/` (and then only keychain-owned encrypted blobs); echoed to stdout/stderr; or visible in `set -x` traces (scripts disable `-x` around the resolver call).
 
 ## Implementation checklist for scripts
 
-
-Any script that talks to Bitbucket must:
-
-
-1. Run `MODE=$(bash ${SKILL_DIR}/scripts/sidecar_detect.sh)` first.
-2. Branch on `$MODE`:
-   - `MODE=sidecar`: construct sidecar URL; call with no Authorization header; export `AUTOPILOT_SIDECAR_MODE=1` for child scripts.
-   - `MODE=local`: call `secret_get.sh bitbucket` (the service name, not a keychain entry name) and pass the header via a 0600 `-H @file`.
-3. Set `set +x` immediately before any curl call that includes credentials.
-4. Treat any HTTP status code documented above according to the table.
-5. Never echo response headers; only parse and forward the body.
-
+1. `MODE=$(bash ${SKILL_DIR}/scripts/sidecar_detect.sh)` first.
+2. `MODE=sidecar` → sidecar URL, no Authorization header, export `AUTOPILOT_SIDECAR_MODE=1` for children. `MODE=local` → `secret_get.sh bitbucket` (the service name) and a 0600 `-H @file`.
+3. `set +x` immediately before any credentialed curl.
+4. Handle every HTTP status per the table.
+5. Never echo response headers; parse and forward the body only.
 
 ## Probe budget under sidecar mode
 
-> Added v2.3.0 (AP-23); rewritten v2.4.0 to describe the ACTUAL transport mix
-> (the original text specified per-operation REST request budgets and 429
-> handling for operations that use git transport and have no HTTP status
-> codes — machinery that did not and could not exist; see CHANGELOG.md §2.4.0, gap B5).
-> Applies to `scripts/repo_shape_probe.sh` (G1.5) only.
+Applies to `scripts/repo_shape_probe.sh` (G1.5) only. The probe is a one-shot capability discovery; its upstream exposure is bounded BY CONSTRUCTION — the script has no loops. A full probe performs at most:
 
-The repo-shape probe is a one-shot capability discovery that runs at G1.5 on
-the first drain against a new runbook, or on any drain invoked with
-`--reprobe`. Its upstream exposure is bounded BY CONSTRUCTION — the script has
-no loops; a full probe performs at most:
+| Operation | Transport | Count |
+|---|---|---|
+| Trunk detection (`ls-remote`, symref) | git | ≤ 2 |
+| CI check: trunk-tip `build-status` GET | REST (via `bitbucket.sh`) | ≤ 1 |
+| CI check: tree listing | git (local) + ≤1 fetch | ≤ 1 |
+| Force-push probe (fetch, push, force-push) | git | ≤ 3 |
+| JIRA-hook probe (push) | git | ≤ 1 |
+| Temp-branch cleanup (delete pushes) | git | ≤ 2 |
 
-| Operation                                   | Transport      | Count |
-|---------------------------------------------|----------------|-------|
-| Trunk detection (`ls-remote`, symref)       | git            | ≤ 2   |
-| CI check: trunk-tip `build-status` GET      | REST (via `bitbucket.sh`) | ≤ 1 |
-| CI check: tree listing                      | git (local) + ≤1 fetch | ≤ 1 |
-| Force-push probe (fetch, push, force-push)  | git            | ≤ 3   |
-| JIRA-hook probe (push)                      | git            | ≤ 1   |
-| Temp-branch cleanup (delete pushes)         | git            | ≤ 2   |
-
-The only sidecar-mediated call is the single `build-status` GET, which goes
-through `bitbucket.sh` and inherits its error handling (429 `Retry-After`
-honored with max 1 retry; 407 → `[BLOCKED: sidecar-session-invalid]` (impl)
-per the general table). If that call fails for any reason, `CI_PRESENT`
-falls back to manifest inspection or `unknown` — a probe failure never
-auto-flips a frontmatter flag (`unknown` never seeds).
-
-Probe pushes to short-lived temp branches (`autopilot/probe-force-push-<PID>`,
-`autopilot/probe-jira-hook-<PID>`) can still trigger server-side webhook
-chains and hook validations; operators with sensitive receive-hooks should
-review `--dry-run` output first, or skip the probe entirely with `--no-probe`
-— the runbook is then assumed to carry hand-authored
-`Repo constraints (detected)` values (or none, in which case defaults apply
-per SKILL.md override-scoping).
+The single sidecar-mediated call is the `build-status` GET, inheriting `bitbucket.sh` error handling (429/407 per the table). If it fails, `CI_PRESENT` falls back to manifest inspection or `unknown` — a probe failure never auto-flips a flag (`unknown` never seeds). Probe pushes to `autopilot/probe-*-<PID>` temp branches can still trigger server-side webhooks and hook validations; operators with sensitive receive-hooks review `--dry-run` first or skip with `--no-probe` (the runbook then carries hand-authored `Repo constraints (detected)` values, or defaults).
 
 ## What's NOT in v0
 
-
-Deliberately omitted from this version:
-
-
-- Session renewal API (scripts handle 407 as terminal).
-- Multi-platform token bundling (each platform is a separate sidecar call).
-- WebSocket or SSE channels (sidecar is request/response only).
-- Sidecar-side audit log query (workspace doesn't read sidecar logs).
-- Encryption-at-rest for `WORKSPACE_SESSION_ID` (it's already short-lived and treated as a credential by callers).
-
-
-These can be added in v1+ without breaking v0 callers — every v1 addition will be opt-in via an additional env var or header.
+Deliberately omitted (addable in v1+ behind opt-in env vars/headers): session renewal (407 is terminal); multi-platform token bundling; WebSocket/SSE channels; sidecar-side audit-log query; encryption-at-rest for `WORKSPACE_SESSION_ID` (already short-lived and credential-handled).
