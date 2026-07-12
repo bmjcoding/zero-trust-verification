@@ -5,22 +5,10 @@ argument-hint: "[--profile <name>] <intent...> | @draft.md | --resume @<spec>.ma
 
 # /spec
 
-Run the Spec Generation tier's `spec` skill on `$ARGUMENTS`.
-
-Mode is inferred from the arguments (spec skill §2):
-
-- `--resume @<spec>.manifest.yaml` → **Resume** a prior (possibly crashed)
-  session: re-validate FIRST, project the validator's exit-3 output into work
-  slots, continue the interrogation.
-- `--amend @<spec>.manifest.yaml <intent...>` → **Amend** a merged Spec, producing
-  `manifest_revision` N+1.
-- `@draft.md` or bare `<intent...>` → **Fresh** session. `--profile <name>`
-  overrides Config-Profile resolution (flag → `spec-gen.config.yaml` → default).
-
-Then follow the S1–S7 lifecycle in the `spec` skill (`skills/spec/SKILL.md`)
-exactly, honouring its seven §4 hard contracts — refuse-to-finalize, no agent path
-to confirmed-CORE, one-writer, one-at-a-time escalations, session-death-safe
-per-boundary commits, vanilla-agents-only, and monotonic ID allocation. Use the
-deterministic
+Load the `spec` skill (`skills/spec/SKILL.md`) and run it on `$ARGUMENTS`,
+following the S1–S7 lifecycle and its seven §4 hard contracts exactly. Mode
+is inferred from the arguments per the skill's invocation table: `--resume` /
+`--amend` / `--from-findings` / `@draft.md` or bare intent (Fresh; `--profile
+<name>` overrides Config-Profile resolution). Use the deterministic
 `scripts/` (validator, ID allocator, resume projection, profile resolver,
 emission-shape gate) rather than reasoning their logic out by hand.

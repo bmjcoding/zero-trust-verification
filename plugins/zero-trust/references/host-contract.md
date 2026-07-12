@@ -1,35 +1,32 @@
 # The host adapter surface the Merge Marshal drives
 
-The Marshal is host-agnostic by contract (ADR 0013): it issues **every** PR and
-build operation as `host.sh <subcommand>` and never branches on the host. It
-drives exactly one adapter entrypoint — `$MARSHAL_HOST`, which defaults to the
-sibling `skills/autopilot/scripts/host.sh` (same plugin) — and works unchanged on GitHub, Bitbucket
-Data Center, or the hermetic mock (`scripts/mock_host.py`).
+The Marshal is host-agnostic by contract (ADR 0013): it issues **every** PR
+and build operation as `host.sh <subcommand>` and never branches on the host.
+It drives exactly one adapter entrypoint — `$MARSHAL_HOST`, defaulting to the
+sibling `skills/autopilot/scripts/host.sh` — and works unchanged on GitHub,
+Bitbucket Data Center, or the hermetic mock (`scripts/mock_host.py`).
 
 ## Subcommands the Marshal calls
 
-All but the first already ship in `host.sh` / `github.sh` / `bitbucket.sh` on
-main (the AV3-15 host adapter). The Marshal uses:
+| Subcommand | Used for |
+|---|---|
+| `pr-list-ready` | enumerate the queue (FIFO + approval) — defined below |
+| `build-status --sha <sha>` | composed-state verification on the post-rebase head |
+| `pr-comment --num <n> --body-file <path>` | kickback comments (budget / conflict / Composition Break) |
+| `pr-merge --num <n> [--strategy <s>]` | the merge (smallest write scope, with rebase-push) |
 
-| Subcommand | Direction | Used for |
-|---|---|---|
-| `pr-list-ready` | **NEW — see below** | enumerate the queue (FIFO + approval) |
-| `build-status --sha <sha>` | existing | composed-state verification on the post-rebase head |
-| `pr-comment --num <n> --body-file <path>` | existing | kickback comments (budget / conflict / Composition Break) |
-| `pr-merge --num <n> [--strategy <s>]` | existing | the merge (smallest write scope, with rebase-push) |
+The Marshal deliberately does **not** call `pr-open`, `pr-ready`,
+`pr-approve`, or `pr-decline` in the merge path — its write scope is
+rebase-push + merge only (ADR 0011). Rebase-push is a plain
+`git push --force-with-lease` to the PR's source branch, not a host
+subcommand.
 
-The Marshal deliberately does **not** call `pr-open`, `pr-ready`, `pr-approve`,
-or `pr-decline` in the merge path — its write scope is rebase-push + merge only
-(ADR 0011). Rebase-push is a plain `git push --force-with-lease` to the PR's
-source branch, not a host subcommand.
+## `pr-list-ready`
 
-## The one new primitive: `pr-list-ready`
-
-The queue cannot be enumerated with the adapter's current surface — `pr-state`
-answers only for a PR you already name, and there is no way to list ready PRs,
-read their ready-for-review timestamp, or read their approval state. FIFO by
-ready-for-review timestamp over *approved* PRs (ADR 0010, step 1) needs all
-three. So the Marshal requires one new host subcommand:
+FIFO by ready-for-review timestamp over *approved* PRs (ADR 0010, step 1)
+needs three things `pr-state` cannot give (it answers only for a PR you
+already name): a listing, the ready timestamp, and the approval state. Hence
+this contract:
 
 ```
 pr-list-ready
@@ -49,33 +46,29 @@ pr-list-ready
 ### Reference backend mappings
 
 Trunk resolution is shared by both backends: `--base <b>` (explicit) →
-`$AUTOPILOT_TRUNK` → the repo's default branch. The Marshal need not pass a base;
-set `$AUTOPILOT_TRUNK` only when the merge trunk is not the default branch.
+`$AUTOPILOT_TRUNK` → the repo's default branch. Set `$AUTOPILOT_TRUNK` only
+when the merge trunk is not the default branch.
 
 - **GitHub (`github.sh`)** — `gh pr list --state open --base <trunk>
-  --json number,headRefName,headRefOid,reviewDecision,createdAt,isDraft`; drafts
-  are excluded client-side on `isDraft` (`gh --draft` filters to drafts-ONLY, not
-  the inverse). `reviewDecision == "APPROVED"` → `APPROVED`, else `PENDING`. The
-  ready-for-review timestamp is the most recent `ReadyForReviewEvent` (GraphQL
-  `timelineItems`, one lookup per PR), falling back to `createdAt` for PRs opened
-  non-draft; ISO→epoch is done in `jq` (`strptime|mktime`, UTC) for BSD/GNU
-  stability.
-- **Bitbucket DC (`bitbucket.sh`)** — paginated `GET /rest/api/1.0/projects/{k}/
-  repos/{s}/pull-requests?state=OPEN&order=NEWEST&withProperties=false`, filtered
-  client-side to `toRef == <trunk>`. Approval is `reviewers[].approved` (≥1
-  reviewer and ALL approved → `APPROVED`, else `PENDING`). Drafts are excluded via
-  `AUTOPILOT_BITBUCKET_DRAFT_MODE` (native `draft` flag / `[DRAFT] ` title prefix).
-  Ready timestamp: `createdDate` (epoch millis ÷ 1000) — DC's REST surface exposes
-  no draft→ready transition timestamp, so `createdDate` is the contract's
-  documented fallback for this backend.
+  --json number,headRefName,headRefOid,reviewDecision,createdAt,isDraft`;
+  drafts excluded client-side on `isDraft` (`gh --draft` filters to
+  drafts-ONLY, not the inverse). `reviewDecision == "APPROVED"` → `APPROVED`,
+  else `PENDING`. Ready timestamp: the most recent `ReadyForReviewEvent`
+  (GraphQL `timelineItems`, one lookup per PR), falling back to `createdAt`
+  for PRs opened non-draft; ISO→epoch in `jq` (`strptime|mktime`, UTC) for
+  BSD/GNU stability.
+- **Bitbucket DC (`bitbucket.sh`)** — paginated `GET /rest/api/1.0/projects/
+  {k}/repos/{s}/pull-requests?state=OPEN&order=NEWEST&withProperties=false`,
+  filtered client-side to `toRef == <trunk>`. Approval is
+  `reviewers[].approved` (≥1 reviewer and ALL approved → `APPROVED`, else
+  `PENDING`). Drafts excluded via `AUTOPILOT_BITBUCKET_DRAFT_MODE` (native
+  `draft` flag / `[DRAFT] ` title prefix). Ready timestamp: `createdDate`
+  (epoch millis ÷ 1000) — DC's REST surface exposes no draft→ready
+  transition timestamp, so `createdDate` is the contract's documented
+  fallback for this backend.
 
-## Status of `pr-list-ready` on main
-
-`pr-list-ready` is **implemented on main** across `host.sh` + `github.sh` +
-`bitbucket.sh`, matching this contract in its observable output and covered by a
-real-backend contract matrix in `skills/autopilot/scripts/self_test.sh` (gh argv shim
-for GitHub, the loopback DC mock server for Bitbucket) plus an end-to-end
-`marshal.sh`-through-`github.sh` run in this plugin's `scripts/self_test.sh`
-(section `MG`). The hermetic mock (`scripts/mock_host.py`) remains the canonical
-reference implementation the Marshal loop's own self-test drives. The Marshal
-therefore runs end-to-end against GitHub, Bitbucket DC, and the mock alike.
+`pr-list-ready` ships across `host.sh` + `github.sh` + `bitbucket.sh`,
+covered by the real-backend contract matrix in
+`skills/autopilot/scripts/self_test.sh` and the end-to-end marshal run in
+this plugin's `scripts/self_test.sh` (section `MG`); the hermetic mock
+(`scripts/mock_host.py`) is the canonical reference implementation.
