@@ -31,7 +31,7 @@ flag. Like the merge loop, both are pure, git/API-provable functions.
    overlapping foreign claim:
 
    ```bash
-   bash "${CLAUDE_PLUGIN_ROOT}/scripts/claim_overlap.sh" \
+   bash "${CLAUDE_PLUGIN_ROOT}/skills/autopilot/scripts/claim_overlap.sh" \
      --self-namespace story/ --inventory inventory.tsv <owned-file>...
    ```
 
@@ -39,9 +39,9 @@ flag. Like the merge loop, both are pure, git/API-provable functions.
    on those files; `advisory=<ref>` is a stale (>2 business-day) overlap to nudge,
    not block; `excluded=<ref>` is our own drain's branch (never a foreign claim).
 
-   This is the SAME kernel autopilot's G4 planner vendors — the Marshal ships
-   autopilot's canonical copy byte-identical (see the header in
-   `scripts/claim_overlap.sh`); do not fork it.
+   This is the SAME kernel autopilot's G4 planner consults — since ADR 0025 it is
+   the ONE canonical copy for the whole plugin (see the header in
+   `skills/autopilot/scripts/claim_overlap.sh`); do not fork it.
 
 3. Report the flags plainly. These are nudges (ADR 0009: enforce by nudge, not
    gate) — comment and move on; nothing here blocks or merges.

@@ -26,7 +26,7 @@ set -uo pipefail
 export LC_ALL=C
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SUITE_ROOT="$(cd "$HERE/../../.." && pwd)"   # plugins/marshal/scripts -> repo root
+SUITE_ROOT="$(cd "$HERE/../../.." && pwd)"   # plugins/zero-trust/scripts -> repo root
 PYDORA="$SUITE_ROOT/scripts/outcome_dora.py"
 PYASM="$SUITE_ROOT/scripts/outcome_assemble.py"
 STORE_SH="$SUITE_ROOT/scripts/outcome_store.sh"

@@ -6,7 +6,7 @@
 # — NEVER FTS ranking / recall / latency, which are [drain] residuals listed in the
 # register's Honest Residuals and NOT asserted here.
 #
-# Ground rules (mirroring plugins/marshal/scripts/self_test.sh):
+# Ground rules (mirroring plugins/zero-trust/scripts/self_test_marshal.sh):
 #   - Hermetic: fixtures live in a mktemp -d sandbox; no network, no host API, no
 #     credentials, no writes outside the sandbox.
 #   - Non-vacuous: a real seeded SQLite index backs every query; the MCP tool truly
@@ -15,7 +15,7 @@
 #   - Python (jsonschema/ruamel via the repo pyproject) runs through `uv run`; the
 #     dependency-free logic (MCP stdio server, JSON parsing) runs on plain python3.
 #
-# Usage: bash plugins/org-memory/scripts/self_test.sh
+# Usage: bash plugins/zero-trust/scripts/self_test_org_memory.sh
 # Exit 0 = all [det] assertions pass; non-zero = at least one failure.
 # Portability: bash 3.2 (macOS default) + BSD userland safe.
 

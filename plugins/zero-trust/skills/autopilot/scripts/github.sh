@@ -46,7 +46,7 @@
 #                          unspecified (the Marshal sorts). Trunk resolution:
 #                          --base > $AUTOPILOT_TRUNK > the repo's default branch.
 #                          (The Merge Marshal's queue primitive — see
-#                           plugins/marshal/reference/host-contract.md.)
+#                           plugins/zero-trust/references/host-contract.md.)
 #
 # Repo coords (OWNER/REPO) are derived from `git remote get-url origin`.
 # Expected origin shapes: https://github.com/<owner>/<repo>(.git)
@@ -410,7 +410,7 @@ gh_ready_for_review_iso() {  # <pr_num> -> ISO-8601 or ""
 
 # pr-list-ready: enumerate the merge queue as the marshal-consumable 5-column TSV
 #   <ready_ts>\t<pr_num>\t<src_branch>\t<head_sha>\t<approval>
-# See the header block and plugins/marshal/reference/host-contract.md.
+# See the header block and plugins/zero-trust/references/host-contract.md.
 cmd_pr_list_ready() {
   require_gh; require_jq
   local base=""

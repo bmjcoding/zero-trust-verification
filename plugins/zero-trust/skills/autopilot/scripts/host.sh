@@ -19,7 +19,7 @@
 #   pr-approve  pr-decline  pr-merge-strategies  build-status
 #   pr-list-ready      -> enumerate the ready+approval-tagged merge queue as TSV
 #                         (the Merge Marshal's queue primitive; see
-#                          plugins/marshal/reference/host-contract.md)
+#                          plugins/zero-trust/references/host-contract.md)
 #
 # Plus one introspection subcommand, host-local (not delegated):
 #   backend            -> prints the detected backend id (BITBUCKET_DC | GITHUB)

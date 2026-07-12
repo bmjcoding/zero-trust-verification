@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
-# self_test.sh — hermetic self-test for the Merge Marshal plugin's deterministic
-# substrate (marshal.sh, claim_overlap.sh, branch_age_watcher.sh) driven end-to-
-# end through a MOCK host backend (mock_host.py via uv, ADR 0015).
+# self_test_marshal.sh — hermetic self-test for the Merge Marshal domain's
+# deterministic substrate (marshal.sh, the canonical claim_overlap.sh,
+# branch_age_watcher.sh) driven end-to-end through a MOCK host backend
+# (mock_host.py via uv, ADR 0015). Lives inside plugins/zero-trust (ADR 0025).
 #
-# Ground rules (mirroring plugins/autopilot/scripts/self_test.sh):
+# Ground rules (mirroring skills/autopilot/scripts/self_test.sh):
 #   - Hermetic: everything runs inside a mktemp -d sandbox with local BARE repos
 #     standing in for `origin`. No network, no host API, no credentials, no
 #     writes outside the sandbox.
@@ -13,7 +14,7 @@
 #     The loop sections drive the mock host and therefore require uv (ADR 0015);
 #     they are gated on UV_OK and skipped-with-warning if uv is absent.
 #
-# Usage: bash plugins/marshal/scripts/self_test.sh
+# Usage: bash plugins/zero-trust/scripts/self_test_marshal.sh
 # Exit 0 = all assertions pass; non-zero = at least one failure.
 #
 # Portability: bash 3.2 (macOS default) + BSD userland safe.
@@ -24,7 +25,7 @@ export LC_ALL=C
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$HERE/../../.." && pwd)"   # repo root (has pyproject.toml)
 MARSHAL="$HERE/marshal.sh"
-CLAIM="$HERE/claim_overlap.sh"
+CLAIM="$HERE/../skills/autopilot/scripts/claim_overlap.sh"   # the ONE canonical copy (ADR 0009/0025)
 WATCH="$HERE/branch_age_watcher.sh"
 MOCK="$HERE/mock_host.sh"
 TAB="$(printf '\t')"
@@ -46,12 +47,12 @@ export GIT_AUTHOR_NAME=selftest GIT_AUTHOR_EMAIL=selftest@local \
 export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null
 
 # ==============================================================================
-# claim_overlap.sh — the VENDORED byte-identical canonical primitive (ADR 0009).
-# The Marshal adopts autopilot's canonical copy (plugins/autopilot/scripts/claim_overlap.sh)
-# verbatim; it does NOT ship an independent implementation. These assertions mirror
-# autopilot's AV3-09 matrix so this vendored copy is exercised in-plugin and any
-# drift from the canonical behaviour reds here. (Byte-identity itself is asserted
-# by CO10 below and enforced by the packaging byte-identity lint.)
+# claim_overlap.sh — the CANONICAL primitive (ADR 0009), single copy since
+# ADR 0025 (skills/autopilot/scripts/claim_overlap.sh). The Marshal consumes it
+# directly; it does NOT ship an independent implementation. These assertions
+# mirror autopilot's AV3-09 matrix so the primitive is exercised from the
+# Marshal's calling side too, and any behaviour drift reds here. (Single-copy
+# uniqueness itself is asserted by CO10 below.)
 # ==============================================================================
 echo "== claim_overlap.sh (CO) =="
 
@@ -101,12 +102,13 @@ assert_eq       CO06 "blocked_by DRAFT -> ineligible (exit 2)" "2" "$(bash "$CLA
 ( bash "$CLAIM" --inventory "$CLAIM_INV" >/dev/null 2>&1 ); assert_eq CO07 "no owned files is a usage error -> exit 64" "64" "$?"
 ( bash "$CLAIM" eligibility --pr-state BOGUS >/dev/null 2>&1 ); assert_eq CO07 "unknown pr-state is a usage error -> exit 64" "64" "$?"
 
-# CO10 — determinism (the byte-identity lint depends on stable output) AND
-# byte-identity with autopilot's canonical copy (pre-empt the packaging lint).
+# CO10 — determinism (stable output) AND single-copy uniqueness (ADR 0025: the
+# canonical claim_overlap.sh is the ONLY copy in the tree — a second copy would
+# reintroduce the vendored-drift class the consolidation retired).
 r1="$(co api/limiter.py core/engine.py 2>&1)"; r2="$(co api/limiter.py core/engine.py 2>&1)"
 assert_eq       CO10 "output is deterministic across runs" "$r1" "$r2"
-assert_eq       CO10 "vendored copy is byte-identical to autopilot's canonical" \
-  "" "$(diff "$ROOT/plugins/autopilot/scripts/claim_overlap.sh" "$CLAIM" 2>&1)"
+assert_eq       CO10 "exactly ONE claim_overlap.sh in the tree (the canonical; no vendored copy to drift)" \
+  "1" "$(find "$ROOT" -path "$ROOT/.git" -prune -o -path "$ROOT/.claude" -prune -o -name 'claim_overlap.sh' -print 2>/dev/null | wc -l | tr -d ' ')"
 
 # ==============================================================================
 # branch_age_watcher.sh — staleness / 48h planning-failure watcher (ADR 0012/0009)
@@ -553,7 +555,7 @@ SHIMEOF
 chmod +x "$MGSHIM/gh"
 
 mg_out="$( cd "$GWC" && PATH="$MGSHIM:$PATH" GH_SHIM_REPO="$GBARE" \
-    MARSHAL_HOST="$ROOT/plugins/autopilot/scripts/host.sh" \
+    MARSHAL_HOST="$ROOT/plugins/zero-trust/skills/autopilot/scripts/host.sh" \
     MARSHAL_BUILD_POLL_MAX=1 MARSHAL_BUILD_POLL_INTERVAL=0 \
     bash "$MARSHAL" 2>&1 )"
 assert_contains MG01 "real github.sh pr-list-ready enumerates the queue (strict FIFO: 11 before 10)" "candidates n=2 order=11,10" "$mg_out"

@@ -29,7 +29,7 @@
 #
 # Env:
 #   MARSHAL_HOST              path to the host adapter CLI (default: the sibling
-#                             plugins/autopilot/scripts/host.sh). Tests point it at the
+#                             plugins/zero-trust/skills/autopilot/scripts/host.sh). Tests point it at the
 #                             mock backend.
 #   MARSHAL_MAIN              trunk branch name (default: main).
 #   MARSHAL_REBASE_FILE_BUDGET  D7.0 file budget (default: 2).

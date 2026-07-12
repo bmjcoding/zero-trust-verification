@@ -16,7 +16,7 @@ response in, a SCHEMA-VALID TR-02 record out (jsonschema-asserted, no live call)
 Live queries resolve tokens through `secret_get.sh` and are the honest [drain] residual.
 
 Each backend honors the observable contract VERBATIM. The block below is vendored
-byte-for-byte from the canonical `reference/telemetry-contract.md` and pinned by
+byte-for-byte from the canonical `references/telemetry-contract.md` and pinned by
 lint **V9** (the host-contract precedent) so no backend can silently drift from it:
 
 <!-- vendored:telemetry-contract:begin (ADR 0006/0013 — byte-identical across every telemetry backend contract copy; do NOT edit one copy) -->

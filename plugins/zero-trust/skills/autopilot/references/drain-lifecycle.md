@@ -402,7 +402,7 @@ When the repo has no randomization mechanism (`gates.test_random` unset), the or
 ### D6.5 — Anti-vacuous (mutation) gate (ADR 0016)
 
 
-D6.4 catches a test that passes for the wrong reason (nondeterminism); D6.5 catches a test that passes for NO reason (vacuity). After D6.1–D6.4, D6.5 runs the repo's mutation tool over THIS Subtask's changed product FILES, then filters the survivors to the changed LINES of `prev_pushed_sha..HEAD` (the D6.2 range). A survived mutant on a changed line is deterministic proof a test executes that line and constrains nothing. OPTIONAL: runs only when `gates.test_mutation` is set and the language has an adapter (`references/mutation-adapters.md` — the MT-01 map, vendored byte-identical from codebase-health, pinned by root lint V7).
+D6.4 catches a test that passes for the wrong reason (nondeterminism); D6.5 catches a test that passes for NO reason (vacuity). After D6.1–D6.4, D6.5 runs the repo's mutation tool over THIS Subtask's changed product FILES, then filters the survivors to the changed LINES of `prev_pushed_sha..HEAD` (the D6.2 range). A survived mutant on a changed line is deterministic proof a test executes that line and constrains nothing. OPTIONAL: runs only when `gates.test_mutation` is set and the language has an adapter (`references/mutation-adapters.md` — the pointer to the MT-01 map, whose ONE copy lives in `skills/cleanup-audit/references/cross-language-tooling.md` since ADR 0025).
 
 
 ```bash

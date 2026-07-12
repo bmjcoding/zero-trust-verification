@@ -13,7 +13,7 @@ the current assertion count) that drives the whole loop through a mock host
 backend. One host primitive it needs
 (`pr-list-ready`) is specified here and implemented in the mock; wiring it into the
 real GitHub / Bitbucket DC adapters is a tracked follow-up — see
-[`reference/host-contract.md`](reference/host-contract.md).
+[`references/host-contract.md`](../../references/host-contract.md).
 
 ## Why a merge queue still exists
 
@@ -43,7 +43,7 @@ not *absent*.
    the Force Audit.
 
 The full state machine, the cron entry, and every environment knob are in
-[`reference/marshal-loop.md`](reference/marshal-loop.md).
+[`references/marshal-loop.md`](../../references/marshal-loop.md).
 
 ## Wiring, not a checker
 
@@ -60,28 +60,28 @@ scope is the smallest possible: rebase-push and merge, nothing else.
 Every PR/build operation goes through one adapter entrypoint (`host.sh`, ADR
 0013), so the loop is identical on GitHub and Bitbucket Data Center — and on the
 hermetic mock. A new host is a new backend, never a new caller path. See
-[`reference/host-contract.md`](reference/host-contract.md) for the exact surface.
+[`references/host-contract.md`](../../references/host-contract.md) for the exact surface.
 
 ## What's in the box
 
 | Path | Role |
 |---|---|
 | `scripts/marshal.sh` | the serial backstop loop (ADR 0010/0011) |
-| `scripts/claim_overlap.sh` | the vendored claim-overlap check (ADR 0009) — **byte-identical** with autopilot's canonical copy (`plugins/autopilot/scripts/claim_overlap.sh`), adopted verbatim; not forked |
+| `skills/autopilot/scripts/claim_overlap.sh` | the claim-overlap check (ADR 0009) — the ONE canonical copy in the plugin (ADR 0025); not forked |
 | `scripts/branch_age_watcher.sh` | the 48h staleness / planning-failure watcher (ADR 0012/0009) |
 | `scripts/mock_host.py` + `mock_host.sh` | the hermetic mock host backend (Python via `uv`, ADR 0015) |
 | `scripts/self_test.sh` | the hermetic self-test |
 | `commands/marshal-pass.md` | `/marshal-pass` — run one serial pass by hand |
 | `commands/marshal-staleness.md` | `/marshal-staleness` — the branch-age + claim-overlap sweep |
-| `reference/*.md` | loop semantics + host contract |
+| `references/*.md` (plugin root) | loop semantics + host contract |
 
 ## Usage
 
-Cron drives it unattended (see `reference/marshal-loop.md`). To run one pass by
+Cron drives it unattended (see `references/marshal-loop.md`). To run one pass by
 hand from the shared repo's working clone:
 
 ```bash
-bash /path/to/plugins/marshal/scripts/marshal.sh
+bash /path/to/plugins/zero-trust/scripts/marshal.sh
 ```
 
 or `/marshal-pass` inside Claude Code. A human hotfix pin:
@@ -102,7 +102,7 @@ bash scripts/branch_age_watcher.sh --refs 'refs/heads/story/*' --max-age-hours 4
 ## Tests
 
 ```bash
-bash plugins/marshal/scripts/self_test.sh
+bash plugins/zero-trust/scripts/self_test_marshal.sh
 ```
 
 Hermetic: a `mktemp -d` sandbox with local **bare** repos standing in for

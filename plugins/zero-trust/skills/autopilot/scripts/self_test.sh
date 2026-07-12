@@ -1687,9 +1687,9 @@ assert_contains "AV3-12.9" "deterministic verdict despite bracketed volatile noi
 echo "== mutation_gate.sh (D6.5 anti-vacuous gate — ADR 0016 / MT-02,03,05,07,08) =="
 
 MG="$HERE/mutation_gate.sh"
-MADP="$HERE/mutation_adapter.sh"
+MADP="$HERE/../../cleanup-audit/scripts/mutation_adapter.sh"   # the ONE canonical map (ADR 0016/0025)
 
-# Vendored adapter (byte-pinned to codebase-health by root lint V7) resolves +
+# The canonical adapter (single copy since ADR 0025) resolves +
 # counts — inline canned tool output, no external fixture dependency (hermetic).
 out=$(printf '3 mutants tested, 1 missed\nsrc/pay.rs:42:9: replace calc with 0\n' | bash "$MADP" normalize cargo-mutants)
 assert_eq "MT-01.a" "vendored adapter normalizes cargo survivor to file:line" "src/pay.rs:42" "$out"

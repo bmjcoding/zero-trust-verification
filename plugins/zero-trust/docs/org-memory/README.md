@@ -86,7 +86,7 @@ the same kebab name in two repos is two records disambiguated by `repo`, never a
 ## Self-test
 
 ```
-bash plugins/org-memory/scripts/self_test.sh          # all [det] assertions
+bash plugins/zero-trust/scripts/self_test_org_memory.sh          # all [det] assertions
 ```
 Runs hermetically (bash 3.2 + BSD-safe; Python via `uv run`, ADR 0015). The MCP
 protocol test is dependency-free (a real stdio JSON-RPC round trip); the optional

@@ -4,7 +4,7 @@
 The LLM interrogation (S2–S5 judgment) cannot be self-tested; the deterministic
 seam can and is (spec-gen §7). Case groups map 1:1 to the deliverable acceptance:
 
-  0. Byte-identity ...... vendored validate_manifest.{sh,py} + schema == repo root (SG-3/SG-6)
+  0. Canonical copies ... validate_manifest.{sh,py} + schema present ONCE in the plugin (SG-3/SG-6, ADR 0025)
   A. Validator reuse .... the vendored (== repo) validator over the repo fixtures
                           + a rule-8 mutation + the mid-session manifest       (SG-3)
   B. ID allocator ....... §6 grammar: next-id, 999→new-slug, reuse refusal      (SG-4/§7.3)
@@ -31,7 +31,7 @@ REPO = PLUGIN.parent.parent
 SCRIPTS = PLUGIN / "scripts"
 sys.path.insert(0, str(SCRIPTS))
 
-import validate_manifest as V          # noqa: E402  (vendored, byte-identical to repo)
+import validate_manifest as V          # noqa: E402  (the canonical copy, ADR 0025)
 import id_alloc                         # noqa: E402
 import resume_projection                # noqa: E402
 import profile_resolve                  # noqa: E402
@@ -60,23 +60,19 @@ def load(path):
         return _yaml.load(fh)
 
 
-def same_bytes(a: Path, b: Path) -> bool:
-    return a.read_bytes() == b.read_bytes()
-
-
-# ---- 0. Byte-identity (SG-3/SG-6) ------------------------------------------------
-print("== 0. vendored-copy byte-identity (schema + validator) ==")
-pairs = [
-    ("validate_manifest.sh", SCRIPTS / "validate_manifest.sh", REPO / "scripts/validate_manifest.sh"),
-    ("validate_manifest.py", SCRIPTS / "validate_manifest.py", REPO / "scripts/validate_manifest.py"),
-    ("v1.schema.json",
-     PLUGIN / "schema/verification-manifest/v1.schema.json",
-     REPO / "schema/verification-manifest/v1.schema.json"),
+# ---- 0. Canonical single copies present (SG-3/SG-6, post-ADR-0025) ---------------
+# The consolidation collapsed the vendored pairs into ONE canonical copy inside
+# the plugin; the byte-identity checks became presence checks (nothing left to
+# drift — a MISSING canonical is the failure mode now).
+print("== 0. canonical validator + schema single copies (ADR 0025) ==")
+singles = [
+    ("validate_manifest.sh", SCRIPTS / "validate_manifest.sh"),
+    ("validate_manifest.py", SCRIPTS / "validate_manifest.py"),
+    ("v1.schema.json", PLUGIN / "schema/verification-manifest/v1.schema.json"),
 ]
-for label, vend, root in pairs:
-    check(f"{label} vendored copy is byte-identical to repo root",
-          vend.exists() and root.exists() and same_bytes(vend, root),
-          f"({vend} vs {root})")
+for label, canon in singles:
+    check(f"{label} canonical copy present in the plugin (the ONE copy)",
+          canon.exists(), f"({canon})")
 
 
 # ---- A. Validator reuse over the merged repo fixtures (SG-3) ----------------------

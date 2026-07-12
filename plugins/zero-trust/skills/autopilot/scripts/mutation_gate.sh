@@ -48,7 +48,9 @@
 set -u
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ADAPTER="$HERE/mutation_adapter.sh"
+# The ONE mutation adapter map (ADR 0016/0025): the canonical resolver lives in
+# the cleanup-audit skill of the same plugin; no vendored sibling copy anymore.
+ADAPTER="$HERE/../../cleanup-audit/scripts/mutation_adapter.sh"
 
 TOOL=""; RUN_CMD=""; BASE=""; FILES=""; LANG_LABEL=""
 MAX_MUTANTS=40; MAX_SECONDS=120
@@ -71,7 +73,7 @@ done
 
 case "$MAX_MUTANTS" in ''|*[!0-9]*) usage ;; esac
 case "$MAX_SECONDS" in ''|*[!0-9]*) usage ;; esac
-[ -x "$ADAPTER" ] || { echo "[note] mutation-gate: mutation_adapter.sh not found beside this script — D6.5 skipped" >&2; exit 0; }
+[ -x "$ADAPTER" ] || { echo "[note] mutation-gate: the canonical mutation_adapter.sh (skills/cleanup-audit/scripts/) not found — D6.5 skipped" >&2; exit 0; }
 
 supported_tool() { case "$1" in stryker|cargo-mutants|mutmut|go-mutesting) return 0 ;; *) return 1 ;; esac; }
 

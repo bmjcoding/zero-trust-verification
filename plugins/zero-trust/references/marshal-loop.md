@@ -73,7 +73,7 @@ working clone:
 ```cron
 # Merge Marshal — one serial pass every 10 minutes.
 */10 * * * *  cd /srv/repos/<repo> && \
-  /path/to/plugins/marshal/scripts/marshal.sh >> /var/log/marshal.log 2>&1
+  /path/to/plugins/zero-trust/scripts/marshal.sh >> /var/log/marshal.log 2>&1
 ```
 
 Cold builds bound throughput (ADR 0010's accepted residual: ~3 merges/hour at
@@ -86,7 +86,7 @@ fire is harmless.
 
 | Var | Default | Meaning |
 |---|---|---|
-| `MARSHAL_HOST` | sibling `plugins/autopilot/scripts/host.sh` | host adapter entrypoint |
+| `MARSHAL_HOST` | sibling `skills/autopilot/scripts/host.sh` (same plugin) | host adapter entrypoint |
 | `MARSHAL_MAIN` | `main` | trunk branch |
 | `MARSHAL_REBASE_FILE_BUDGET` | `2` | D7.0 file budget |
 | `MARSHAL_REBASE_HUNK_BUDGET` | `3` | D7.0 hunk budget |
