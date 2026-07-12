@@ -11,8 +11,9 @@ gate → next wave, until the audit is drained.
 
 Read the `cleanup-audit` skill → `references/health-loop.md` FIRST and follow
 it as written — it is the canonical loop text: wiring-not-a-checker posture,
-computed position (no stored state machine; the journal's three exclusive
-facts), the refuse-checks, the per-invocation dispatch table, the merge step
+computed position (derived from three records, none of them the journal —
+the journal holds only its three exclusive facts and is never read to compute
+position), the refuse-checks, the per-invocation dispatch table, the merge step
 with the auto-class definition and double-keyed hatch, the verify-gate
 routing, failure ownership, and the non-goals. This command adds only
 invocation modes and the posture summary below.

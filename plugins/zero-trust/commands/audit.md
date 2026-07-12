@@ -36,7 +36,8 @@ hints: rushed and high-churn code first.
 
 ### 3. Deterministic pass
 Run the skill's `scripts/run_audit.sh <target>` to collect the raw evidence
-into `audit/` (the artifact inventory is the skill's Phase 1). Everything is
+into `audit/` (the script is the executable inventory of what gets collected;
+the skill's Phase 1 lists the categories). Everything is
 signal, not verdict. Coverage and mutation reports are **ingested** when
 present — never run by this command or any agent; absent → a loud note, not
 silence.
