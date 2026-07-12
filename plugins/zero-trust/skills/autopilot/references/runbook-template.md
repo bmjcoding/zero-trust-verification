@@ -112,7 +112,7 @@ Runbooks containing these are read with a warning and the fields ignored:
 
 ## Body sections
 
-The dispatcher reads these sections by name (Goal / Constraints / Non-Goals, plus the G1.5-owned `Repo constraints (detected)` block); everything else is operator notes.
+The dispatcher reads these sections by name (Goal / Constraints / Non-Goals / Stories / Subtasks (tier-2 plan) / Role prompts, plus the G1.5-owned `Repo constraints (detected)` block); everything else is operator notes.
 
 ### Goal
 
@@ -140,6 +140,26 @@ Bullet list of work explicitly out of scope; the planner uses it to reject candi
 - **predicted_hours (Σ)** — Story sum; G4 refuses >48 (`story-oversized`) and any Subtask over its size ceiling (`story-size-inconsistent`). ADR 0012 / AV3-07.
 - **Behavior IDs** — the active manifest Behaviors the Story's Subtasks own (planner `behavior_ids[]`, verified at D6.3). Empty only for manifest-less drains.
 - **As-built docs** — the journey-doc / README deltas the Story must ship inside its own Story PR when its behaviors are journey-bearing (integration validator check 8).
+
+### Subtasks (tier-2 plan)
+
+> Written by G7 from the reviewed planner union (post-G3.5 review, post-G3.6
+> consolidation) — one full tier-2 schema block per Subtask, VERBATIM. D3.1
+> and D4 dispatch a Subtask's block from here word-for-word (it is
+> implementer-prompt input 1); the dispatcher never paraphrases or summarizes
+> a block.
+
+### Role prompts
+
+> Written by G7; the dispatcher reads a role's block verbatim at dispatch
+> time. One block per in-drain role WITHOUT a standalone reference prompt
+> (the G3 planner, the D4 implementer, and the D5 validators have their own
+> reference files and are never duplicated here). Currently exactly one:
+
+**Plan agent (dispatched at D3.1; re-invoked in REVIEW mode at D3.2).** The block G7 writes:
+
+- *Plan mode (D3.1):* "You are the Plan agent for ONE Subtask. Refine the Subtask's schema block into an implementation plan: file-by-file intent for every `owned_files[]` entry (what changes in each file and why), the integration contract each `interface_change.public_api` symbol promises its callers, and a mapping of every `behaviors_to_test[]` entry to its `test_gates[]` gate. Plan only — never edit files."
+- *Review mode (D3.2):* the same role re-invoked on the schema-only projection; it re-checks feasibility, file-path existence, dependency gaps, ownership overlap, and behaviors-to-test completeness — mirroring what `references/plan-reviewer-projection.md` expects.
 
 ### Authoring guidance — byte-stability refactors (scope-expansion clauses)
 
@@ -267,4 +287,12 @@ The reason taxonomy lives in `references/conflict-resolution.md` and `references
 
 ## Resuming a runbook
 
-After HUMAN_NEEDED: read the tracker's last entry and identify the blocking Subtask; resolve the block; append a manual tracker-body entry documenting the resolution; reset the relevant counter to 0 in the frontmatter; re-dispatch in-session. `--force` resumes append to `force_audit:` (AP-11) — read-only audit, never control flow.
+After HUMAN_NEEDED — the operator recovery procedure. `HUMAN_NEEDED` exits the automated loop by design: `--resume` refuses it, and this procedure is the sanctioned re-entry (lifecycle.md Resume step 2 and D1.4 point here).
+
+1. Read the tracker's last entry and identify the blocking Subtask; resolve the block.
+2. Append a manual tracker-body entry documenting the resolution and NAMING the resolved block (e.g. `<iso8601> operator-recovery <subtask-id>: resolved [BLOCKED: orphan-resume] — <how>`).
+3. Reset the relevant counter (`consecutive_impl_blocks` / `consecutive_ci_blocks`) to 0 in the tracker frontmatter.
+4. Flip `STATUS: HUMAN_NEEDED → ACTIVE` in the same edit. This operator flip — with the manual entry (2) and counter reset (3) alongside it — is the ONE sanctioned hand-edit of `STATUS`; the lifecycle's "never hand-flip `STATUS`" rule governs the automated loop and `PAUSED` recovery, not this procedure.
+5. Re-dispatch in-session: `/autopilot --drain @<runbook-path>` — that fire's D8 re-arms the cron, so the hand-flip strands nothing.
+
+`--force` resumes append to `force_audit:` (AP-11) — read-only audit, never control flow.

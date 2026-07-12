@@ -31,7 +31,7 @@ Read in parallel: each input doc; `git status --short`; `git rev-parse --abbrev-
 
 Refuse if the working tree is dirty, if not on trunk, or if any input doc is missing.
 
-Derive `<slug>` now (same derivation G7 uses; `--slug=` wins) — the tracker path and every branch name need it. Then run `bash ${SKILL_DIR}/scripts/detect_concurrent_drain.sh .autopilot/runbooks/<slug>.tracker.md` (takes the TRACKER PATH, not a bare slug): exit 2 (live foreign lock) → refuse `STATUS: STOPPED — concurrent drain detected`; exit 4 (unreadable lock state) → refuse, fail closed; exit 64 (malformed invocation) → refuse, fix the call; exit 3 (stale lock) may be reclaimed. `--force` overrides, logged per AP-11.
+Derive `<slug>` now — THE derivation rule, stated once here (G7 cites it): kebab-case of the input doc's H1 title (the first doc on multi-doc invocations); no H1 → kebab-case of the doc's basename; `--slug=` always wins. The tracker path and every branch name need it. Then run `bash ${SKILL_DIR}/scripts/detect_concurrent_drain.sh .autopilot/runbooks/<slug>.tracker.md` (takes the TRACKER PATH, not a bare slug): exit 1 (environment error — e.g. `CLAUDE_SESSION_ID` unset) → refuse LOUDLY citing the script's stderr message (an env error is never a claim conflict); exit 2 (live foreign lock) → refuse `STATUS: STOPPED — concurrent drain detected`; exit 4 (unreadable lock state) → refuse, fail closed; exit 64 (malformed invocation) → refuse, fix the call; exit 3 (stale lock) may be reclaimed. `--force` overrides, logged per AP-11.
 
 ## Step G1.5 — Repo-shape probe (AP-23)
 
@@ -83,7 +83,7 @@ A consolidated group becomes one Subtask: `id` = `<lowest-id>+` (e.g. `B2+`); un
 
 **Manifest union (MS §2 / AV3-03), multi-doc only.** `bash ${SKILL_DIR}/scripts/validate_manifest.sh --union <a.manifest.yaml> <b.manifest.yaml> ...`: a Journey/Behavior ID shared across manifests → `[GENERATE-FAILED: manifest-id-collision: <id>]` (interrogation-log `DL-###` IDs are per-manifest and not unioned); differing `observability.profile` or `environments` → `[GENERATE-FAILED: manifest-union-mismatch: <profile|environments>]`.
 
-**Sizing + mapping gate (ADR 0012 / AV3-07 + MS §13.6 / AV3-02).** Render the planner union to `plan.json`; run `bash ${SKILL_DIR}/scripts/validate_plan_mapping.sh <plan.json> [<manifest.yaml>]` (manifest arg only on manifest-backed drains):
+**Sizing + mapping gate (ADR 0012 / AV3-07 + MS §13.6 / AV3-02).** Render the planner union to `.autopilot/plan.json` — repo-relative, alongside the `.autopilot/runbooks/` artifacts (a GENERATE-time intermediate, not part of the runbook/tracker canonical artifact set); run `bash ${SKILL_DIR}/scripts/validate_plan_mapping.sh .autopilot/plan.json [<manifest.yaml>]` (manifest arg only on manifest-backed drains):
 
 - Sizing (always): `predicted_hours` within its `estimated_size` ceiling (S≤4, M≤16, L≤48) → `[GENERATE-FAILED: story-size-inconsistent: <subtask-id>]`; Story roll-up ≤48h → `[GENERATE-FAILED: story-oversized: <story-id>]`. Deterministic over a declared prediction — the Marshal owns actuals (ADR 0012). On `story-oversized`, re-spawn that Story's planner to split into sequential, independently mergeable Stories (each its own Story branch/PR).
 - Behavior mapping (manifest only): every `kind: code | test-only` Subtask maps ≥1 Behavior → `[GENERATE-FAILED: unmapped-subtask]`; every mapped ID active in the manifest → `[GENERATE-FAILED: unknown-behavior]`; every active Behavior owned by ≥1 Subtask → `[GENERATE-FAILED: unowned-behavior]` (refactor/config/docs exempt). On a mapping refusal, re-spawn the planner with the offending IDs. G7 records the behavior-IDs-per-Story ledger so the audit tier can distinguish not-yet-wired work from Memory Rot.
@@ -105,12 +105,14 @@ Failures here (auth, missing project) → halt with a clear message; the operato
 
 ## Step G7 — Write runbook + tracker
 
-Render `references/runbook-template.md` with the accumulated data. Canonical artifact paths — the ONLY ones:
+Render `references/runbook-template.md` with the accumulated data. `<slug>` comes from the G1 derivation rule (kebab-case of the input doc's H1, else its basename; `--slug=` wins) — defined once at G1, never re-derived differently here. Canonical artifact paths — the ONLY ones:
 
 - `.autopilot/runbooks/<slug>.md` — the runbook (operator-editable until the drain is armed; immutable during an active drain except the G1.5-owned `Repo constraints (detected)` block)
 - `.autopilot/runbooks/<slug>.tracker.md` — the seeded tracker
 
 Seed the tracker frontmatter per the CANONICAL schema — defined once in `references/runbook-template.md` §"Tracker file", never restated here — with its seed values (`STATUS: ACTIVE`, counters + `claim_waits` at 0, null `in_progress`/locks, `force_audit: []`). This GENERATE captures `drain_start_sha` and `audited_sha` (AP-5); `manifest_revision` is frozen from the Spec's manifest (AV3-04; omitted when manifest-less); `trunk_branch` from G1.5 `TRUNK=`; `ci.skip_wait` / `branching.no_force_push` / `enforce_jira_key` per the auto-seed table (`--jira` also sets `enforce_jira_key`); `branching.single_branch_single_pr` and `pack_subtasks` are operator-toggles only. Under `branching.no_force_push: true`, seed an empty `## Pending Tracker Deltas (batched)` section (`_(empty)_`).
+
+The rendered runbook body carries — alongside Goal / Constraints / Non-Goals / Stories — the two dispatch-consumed sections: `## Subtasks (tier-2 plan)` (the reviewed planner union's schema blocks, verbatim — D3.1 and D4 dispatch from here) and `## Role prompts` (the D3.1/D3.2 Plan-agent role; content spec: `references/runbook-template.md` §"Role prompts").
 
 The runbook's first commit creates `autopilot/<slug>/setup` with shape verification (AP-7).
 
@@ -142,7 +144,7 @@ Orchestrator-direct work in this step: reading the tracker/runbook, short single
 
 ### D1.0 — Session lock claim (AP-4)
 
-Run `bash ${SKILL_DIR}/scripts/detect_concurrent_drain.sh .autopilot/runbooks/<slug>.tracker.md` as the fast pre-check: exit 2 → foreign live lock, refuse the fire (`CronDelete`, exit silently — the other session's cron keeps firing); exit 4 → corrupt lock state, `STATUS: HUMAN_NEEDED — tracker-lock-unreadable` (fail closed); exit 64 → `STATUS: HUMAN_NEEDED — lock-check-usage-error` (external fault); exit 0 or 3 → the dispatch table below.
+Run `bash ${SKILL_DIR}/scripts/detect_concurrent_drain.sh .autopilot/runbooks/<slug>.tracker.md` as the fast pre-check: exit 1 → environment error (e.g. `CLAUDE_SESSION_ID` unset), fail the fire LOUDLY — `STATUS: HUMAN_NEEDED — lock-check-env-error` citing the script's stderr message (external fault; an env error is never a claim conflict, so never the silent exit-2 path); exit 2 → foreign live lock, refuse the fire (`CronDelete`, exit silently — the other session's cron keeps firing); exit 4 → corrupt lock state, `STATUS: HUMAN_NEEDED — tracker-lock-unreadable` (fail closed); exit 64 → `STATUS: HUMAN_NEEDED — lock-check-usage-error` (external fault); exit 0 or 3 → the dispatch table below.
 
 Read the tracker frontmatter; compute `now_iso = $(date -u +%Y-%m-%dT%H:%M:%SZ)`.
 
@@ -218,7 +220,7 @@ Read in parallel: the tracker; `git status --short`; `git fetch origin && git re
 | `subtask_id` set (not awaiting CI), Story branch exists with commits ahead of `prev_pushed_sha` | RESUME — rebase the Story branch, re-run the D6 gate over `prev_pushed_sha..HEAD`; green → push + open-or-update the Story PR (D7); red → ONE `general-purpose` fix attempt, then push or `[BLOCKED: resume-failed]` (impl). |
 | `subtask_id` set, Story branch missing or empty | ABANDON — clear `in_progress`, `[BLOCKED: orphan-resume]` (impl) on that Subtask, continue to D2. |
 
-Refuse the fire if `STATUS != ACTIVE`. On terminal statuses the cron is already deleted (Hard Contract 9); a stray fire no-ops WITHOUT re-arming. Recovery from `PAUSED` is exclusively `/autopilot --resume` — never hand-flip `STATUS` (a hand-flip to ACTIVE strands the drain with no cron and no resume path).
+Refuse the fire if `STATUS != ACTIVE`. On terminal statuses the cron is already deleted (Hard Contract 9); a stray fire no-ops WITHOUT re-arming. Recovery from `PAUSED` is exclusively `/autopilot --resume` — never hand-flip `STATUS` (a hand-flip to ACTIVE strands the drain with no cron and no resume path). ONE sanctioned exception: `HUMAN_NEEDED` exits the automated loop, and re-entry is the operator recovery procedure in `references/runbook-template.md` §"Resuming a runbook" — an operator STATUS flip back to ACTIVE with a manual resolution entry + counter reset, followed by an in-session re-dispatch (whose D8 re-arms the cron, so nothing strands).
 
 External churn > 100 commits since drain start → `## Drift Notes` warning; don't auto-restart.
 
@@ -260,7 +262,7 @@ MISSING → `[BLOCKED: plan-stale-missing]` (impl); DRIFTED → `[BLOCKED: plan-
 
 ### D3.1 — Plan
 
-Spawn a `Plan` agent. Prompt: the Subtask's full schema block + the runbook's role-prompt section for the Plan agent (G7 writes it into the runbook body; see `references/runbook-template.md`).
+Spawn a `Plan` agent. Prompt: the Subtask's full schema block (verbatim from the runbook's `## Subtasks (tier-2 plan)` section) + the runbook's `## Role prompts` Plan-agent block (G7 writes both into the runbook body; the Plan-agent content spec is `references/runbook-template.md` §"Role prompts").
 
 ### D3.2 — Plan review (schema-only projection)
 
@@ -287,6 +289,8 @@ The agent's `kind`-aware shape (D6.2 audits it from git log):
 | `docs`, `config` | No TDD inner loop; single `docs:`/`chore:` commit; kind-specific gate if any |
 
 Refresh heartbeat (AP-6); under `no_force_push: true` queue it as a `delta_kind: other` entry.
+
+**Dead implementer (in-fire).** A dispatched implementer that dies or vanishes mid-Subtask is NOT recovered in-fire — exit the fire; the NEXT fire's D1.4 WIP table owns recovery (the ABANDON row for a missing/empty Story branch, RESUME for a branch with commits). Design note (deliberate fail-safe): a single implementer death on a critical-path Subtask can leave D2 with no eligible Subtask and terminate the drain to `HUMAN_NEEDED` — an autonomy tier never auto-retries what it cannot diagnose; the sanctioned re-entry is the operator recovery procedure in `references/runbook-template.md` §"Resuming a runbook".
 
 ## Step D5 — Validate (parallel)
 
@@ -469,7 +473,8 @@ Triggered by `/autopilot --resume @<runbook>`. Steps in order:
      - Lock held and unexpired → refuse: `Resume refused: drain already ACTIVE. Either a fire is in flight or the previous session is still draining.`
      - Lock null or expired → expiry alone is NOT proof of death: the lock is refreshed only at fire start (now + 30 min, D1.0) while mid-fire liveness is `last_heartbeat_at`, and a normal implementation fire routinely outlives its 30-minute lock. Reclaim ONLY when a dead-session signal ALSO holds — `last_heartbeat_at` > 90 min old (the D1.3 crash standard), or `in_progress.awaiting_ci: true` (pushed, between CI polls, no implementation work in flight — the classic stranding, D8 §Terminal-fire contract). Then flip `ACTIVE → PAUSED` (`status_reason: "session_ended_between_ci_polls"` when awaiting CI, else `"session_ended_mid_fire"`), drift-note the reclaim, and continue as the normal PAUSED path.
      - Lock null/expired but NEITHER signal holds (fresh heartbeat, not awaiting CI) → a live fire is likely mid-implementation past its lock; reclaiming would race its tracker writes and working tree. Refuse: `Resume refused: drain ACTIVE with a recent heartbeat (<last_heartbeat_at>) — a fire may still be live. Retry after the heartbeat is 90+ min stale.`
-   - `DRAINED | HUMAN_NEEDED | STOPPED` → refuse: `Resume refused: drain is in terminal state <STATUS>. Use --generate to start a new drain.`
+   - `DRAINED | STOPPED` → refuse: `Resume refused: drain is in terminal state <STATUS>. Use --generate to start a new drain.`
+   - `HUMAN_NEEDED` → refuse: `Resume refused: HUMAN_NEEDED exits the automated loop; re-entry is the operator recovery procedure in runbook-template.md §"Resuming a runbook".` (That procedure's operator STATUS flip is the ONE sanctioned hand-edit of `STATUS` — see D1.4.)
 2a. **Refuse manifest-revision drift (MS §6 / AV3-04).** `bash ${SKILL_DIR}/scripts/manifest_revision_gate.sh resume-check .autopilot/runbooks/<slug>.tracker.md` — exit 2 (`status_reason: manifest-revision-drift`) → plain resume REFUSED (it would re-plan nothing against the new revision); print the revision-regen pointer and stop. Recovery is `--generate --merge` **revision-regen**: re-plans the open (`[ ]`) Subtasks against the new `manifest_revision`, preserves `[x] Done` history (a Hard Contract 8 carve-out — regen is neither overwrite nor plain merge; §6's ID-stability lets surviving Behavior IDs re-plan without rework), supersedes the old Runbook PR (AV3-08), and closes the orphaned draft Story PRs it lists. Exit 0 → continue.
 3. **Validate session lock.** Set and unexpired → refuse: `Resume refused: session lock held by <session>; expires <iso8601>.`
 4. **Flip STATUS.** `PAUSED → ACTIVE`; delete `status_reason`.
@@ -483,7 +488,7 @@ Triggered by `/autopilot --resume @<runbook>`. Steps in order:
 
 The tracker carries `consecutive_impl_blocks` and `consecutive_ci_blocks`. Every `[BLOCKED]` is tagged `(impl)`, `(ci)`, or `(external)` and increments its counter (external never does). Both reset to 0 whenever a Subtask goes `[x] Done` during a fire. G5 already-shipped Subtasks never touch counters (marked Done before any drain started).
 
-External faults (`foreign-commits-on-branch`, `trunk-renamed`, `runbook-pr-blocked`, `unexpected-branch-shape`, `dirty-drain-state`, `ci-check-usage-error`, `claim-eligibility-usage-error`) route straight to `HUMAN_NEEDED`, no counters.
+External faults (`foreign-commits-on-branch`, `trunk-renamed`, `runbook-pr-blocked`, `unexpected-branch-shape`, `dirty-drain-state`, `ci-check-usage-error`, `claim-eligibility-usage-error`, `lock-check-env-error`) route straight to `HUMAN_NEEDED`, no counters.
 
 Caps are runbook-configured: `budget.max_impl_blocks` (default 3), `budget.max_ci_blocks` (default 2 — CI flakes are usually environmental; retrying past 2 burns budget). At either cap: write `STATUS: HUMAN_NEEDED`; list the tripped counter + contributing Subtask IDs and reasons in `## Escalation`; `CronDelete`; exit.
 
