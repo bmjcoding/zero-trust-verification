@@ -22,7 +22,9 @@ that pins this manifest choke, mis-map, or find unmapped work?" Hunt:
   appetite.
 - **Alert-seam / emission gaps** — a non-null vital step missing
   `required_emission`, `event_name`, or `alert_seam.default` (rule 1), which
-  the audit needs to grade OBSERVED/LOG-ONLY/DARK against intent.
+  the audit needs to grade OBSERVED/LOG-ONLY/DARK against intent. As with
+  idempotency: verify a proposal EXISTS and is join-valid; the default's
+  VALUE is an org standard you cannot observe → `flagged:external-fact` → S5.
 - **Criticality that under-scopes rigor** — a vital step buried in a
   DEV-marked journey still pays rules 1–2 interrogation (§5 floor); flag any
   journey whose criticality would wrongly exempt its vital steps.
@@ -33,9 +35,11 @@ Identical discipline to the decomposition-refuter: resolve agent-vs-agent
 ONLY inside ADR 0002's agent-decidable class (reversible AND
 downstream-verifiable), and record the trilist verdict in `escalation_check`
 on every resolution — a `flagged:*` verdict is a recommendation the human
-decides at S5. *Whether* a step needs an idempotency key is agent-decidable
-(the schema forces the question mechanically); *what happens on a duplicate*
-is risk appetite → `flagged:values` → S5.
+decides at S5. *Whether* a step needs an idempotency key or an alert seam is
+agent-decidable (the schema forces the question mechanically); *what happens
+on a duplicate* is risk appetite → `flagged:values` → S5, and *what a seam's
+default should be* is an unobservable org standard → `flagged:external-fact`
+→ S5.
 
 ## OUTPUT SCHEMA (strict — the orchestrator parses this)
 
