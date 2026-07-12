@@ -30,7 +30,7 @@
 > never-act pattern, scripts/lint_consistency.sh V1-V10 (V11 is the next free rule),
 > scripts/suite_self_test.sh component_skips skip-honesty, validate_manifest.py
 > EXIT_COMPLETE/INCOMPLETE/SCHEMA_INVALID/UNSUPPORTED = 0/3/4/5, the Marshal's
-> operator-wired single-fire cron entry (plugins/marshal, README §cron entry).
+> operator-wired single-fire cron entry (the marshal domain of plugins/zero-trust — docs/marshal/README.md §cron entry).
 >
 > This register delivers a NEW capability as MODES of two existing plugins plus one
 > shared store + renderer. NOT greenfield, NOT a fifth plugin (ADR 0023). Every
@@ -331,7 +331,7 @@ code (always 0).
 ### OM-08 — Scheduled digest mode (ride the MARSHAL's existing cron entry) [ADR 0010/0011]
 Corrected from r1 (H3): there is NO wired audit ambient-cron to reuse. The digest is an
 ADDED per-fire step on the Marshal's EXISTING operator-wired single-fire cron entry
-(plugins/marshal, the same entry that runs the merge pass), OR a manual/CI-invoked mode.
+(the marshal domain of plugins/zero-trust, the same entry that runs the merge pass), OR a manual/CI-invoked mode.
 A fire runs `outcome-capture` (OM-03) + (if the LAST audit produced a journeys.json)
 `outcome-emit` (OM-04, NO fresh audit trigger — H6) + `outcome_report.sh` (OM-07). Exits
 0 always. DIGEST POSTING is the Marshal's (it already holds write scope) via `host.sh

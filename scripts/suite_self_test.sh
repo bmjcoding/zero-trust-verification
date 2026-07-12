@@ -1,27 +1,30 @@
 #!/usr/bin/env bash
 # suite_self_test.sh — ONE command that proves the whole Zero-Trust Verification
-# suite (ADR 0001/0019/0020: one product, six independently installable plugins). It runs,
-# in order, and reports a single green/red:
+# suite (ADR 0001, consolidated to a single plugin by ADR 0025). It runs, in
+# order, and reports a single green/red:
 #
-#   1. cross-plugin vendoring lints (scripts/lint_consistency.sh) — GREEN run
-#   2. vendoring-lint RED-tests — plant a drift per byte-identity/integrity rule
-#      (V1 schema, V3 validator + its exemption, V4 claim-overlap, V5 escalation,
-#      V6 marketplace incl. name<->source swap and a rogue plugin, V7 mutation
-#      adapter map/resolver/producer+consumer tokens, V8 OWM manifest-parse fork,
-#      V9 triage telemetry-contract byte-identity, V10 remediation tables,
-#      V11 outcome-store schema/contract byte-identity + the H1 anti-laundering guard,
-#      V12 System-Design Coverage unfalsifiability + no-parallel-comparator guards)
-#      and assert the lint catches it, plus a few false-POSITIVE guards — so no
-#      vendor lint is vacuous and none reds on a benign reformat/prose mention
-#   3. the root manifest-validator self-test (scripts/self_test.sh)
-#   4. every plugin's own self-test: autopilot, spec-gen, codebase-health, marshal,
-#      org-memory, triage
+#   1. cross-domain contract lints (scripts/lint_consistency.sh) — GREEN run
+#   2. lint RED-tests — plant a violation per surviving integrity rule
+#      (V6 marketplace incl. a wrong name<->source pairing and a rogue 2nd
+#      plugin, V9 triage telemetry-contract byte-identity + resume-helper
+#      re-vendor pin, V10 remediation tables, V11 outcome-store schema/contract
+#      byte-identity + the H1 anti-laundering guard, V12 System-Design Coverage
+#      unfalsifiability + no-parallel-comparator guards, V13 health-loop pins)
+#      and assert the lint catches it, plus false-POSITIVE guards — so no
+#      surviving lint is vacuous and none reds on a benign reformat/prose
+#      mention. (The retired byte-identity vendoring rules V1/V3/V4/V5/V7/V8
+#      were deleted with the vendored copies they policed — ADR 0025; their
+#      planted-drift red-tests went with them.)
+#   3. the manifest-validator self-test (scripts/self_test.sh — drives the
+#      canonical validator inside plugins/zero-trust)
+#   4. every domain's own self-test: autopilot, spec-gen, codebase-health,
+#      marshal, org-memory, triage (all inside the one plugin)
 #   5. the outcome-measurement layer self-test (scripts/outcome_self_test.sh,
 #      ADR 0023; OM-01..OM-08), skip-honest on the Marshal MOCK host
 #   6. the System-Design Coverage tier self-test (scripts/sd_self_test.sh,
 #      ADR 0021/0022; SD-01..SD-12), skip-honest without the validator toolchain
 #
-# HONESTY: a plugin self-test can `exit 0` while SKIPPING guarded sections when an
+# HONESTY: a domain self-test can `exit 0` while SKIPPING guarded sections when an
 # optional dep is absent (autopilot's mock server, marshal's uv/jq loop backends,
 # codebase-health's ruff C901 checks). This orchestrator DETECTS those skip
 # notices and refuses to report an unqualified green: a skipped run is PASS-but-
@@ -41,6 +44,7 @@ export LC_ALL=C
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$HERE/.." && pwd)"
 LINT="$ROOT/scripts/lint_consistency.sh"
+ZT="$ROOT/plugins/zero-trust"
 
 if ! command -v uv >/dev/null 2>&1; then
   echo "suite_self_test: uv not found — install uv (https://docs.astral.sh/uv/) per ADR 0015" >&2
@@ -59,7 +63,7 @@ note() { printf '\n========== %s ==========\n' "$1"; }
 record() { RESULTS="${RESULTS}${1}=${2}
 "; return 0; }
 
-# skip signals across the plugins: autopilot and marshal print an uppercase SKIPPED
+# skip signals across the domains: autopilot and marshal print an uppercase SKIPPED
 # note (+ autopilot an "N skipped" counter); codebase-health prints a line-start
 # "[skip]". A mid-line "[skip]" inside an assertion label is NOT a real skip.
 component_skips() { { grep -nE 'SKIPPED|[1-9][0-9]* skipped' "$1"; grep -nE '^[[:space:]]*\[skip\]' "$1"; } 2>/dev/null; }
@@ -69,7 +73,7 @@ run_ok() {  # <name> <cmd...>
   local name="$1"; shift
   note "$name"
   if "$@" > "$LOGDIR/$name.log" 2>&1; then
-    grep -hE 'passed|PASS=|self-test:|run_cases:|all cross-plugin' "$LOGDIR/$name.log" | tail -1
+    grep -hE 'passed|PASS=|self-test:|run_cases:|all cross-domain' "$LOGDIR/$name.log" | tail -1
     local sk; sk="$(component_skips "$LOGDIR/$name.log")"
     if [ -n "$sk" ]; then
       echo "  -> $name PASS *WITH SKIPS* (optional sections not run):"
@@ -85,13 +89,15 @@ run_ok() {  # <name> <cmd...>
 }
 
 # ==============================================================================
-# 1. Vendoring lints — GREEN run (all rules pass against the real tree)
+# 1. Contract lints — GREEN run (all surviving rules pass against the real tree)
 # ==============================================================================
 run_ok "lint-consistency" bash "$LINT"
 
 # ==============================================================================
-# 2. Vendoring lints — RED-tests (each byte-identity/integrity rule must catch a
-#    planted drift) + a few false-POSITIVE guards (a benign change stays green).
+# 2. Lint RED-tests (each surviving integrity rule must catch a planted
+#    violation) + false-POSITIVE guards (a benign change stays green).
+#    The V1/V3/V4/V5/V7/V8 planted-drift tests were DELETED with their rules
+#    (ADR 0025 — the vendored copies they policed no longer exist).
 # ==============================================================================
 note "lint-red-tests (planted-drift teeth + false-positive guards)"
 RED_FAIL=0
@@ -118,278 +124,139 @@ expect_no_fail() {  # <rule> <sandbox-root> <desc> — rule must NOT fire (no fa
   fi
 }
 
-# seed the four pinned escalation prompts (identical blocks) into a sandbox
-seed_esc() {
-  local d="$1"
-  mkdir -p "$d/plugins/autopilot/references" "$d/plugins/spec-gen/skills/spec" \
-           "$d/plugins/codebase-health/skills/cleanup-audit/references" \
-           "$d/plugins/triage/skills/triage"
-  cp "$ROOT/plugins/autopilot/references/planner-prompt.md"     "$d/plugins/autopilot/references/"
-  cp "$ROOT/plugins/autopilot/references/implementer-prompt.md" "$d/plugins/autopilot/references/"
-  cp "$ROOT/plugins/spec-gen/skills/spec/SKILL.md"      "$d/plugins/spec-gen/skills/spec/"
-  cp "$ROOT/plugins/codebase-health/skills/cleanup-audit/references/severity-rubric.md" \
-     "$d/plugins/codebase-health/skills/cleanup-audit/references/"
-  cp "$ROOT/plugins/triage/skills/triage/SKILL.md"     "$d/plugins/triage/skills/triage/"
-}
-# seed the six plugin.json source dirs into a sandbox
+# seed the single plugin.json source dir into a sandbox
 seed_plugins() {
-  local d="$1" src
-  for src in plugins/spec-gen plugins/autopilot plugins/codebase-health plugins/marshal plugins/org-memory plugins/triage; do
-    mkdir -p "$d/$src/.claude-plugin"; cp "$ROOT/$src/.claude-plugin/plugin.json" "$d/$src/.claude-plugin/"
-  done
+  local d="$1"
+  mkdir -p "$d/plugins/zero-trust/.claude-plugin"
+  cp "$ZT/.claude-plugin/plugin.json" "$d/plugins/zero-trust/.claude-plugin/"
 }
 # seed the two triage telemetry-contract copies (canonical + vendored) for the V9 red-test.
 seed_tel() {
   local d="$1"
-  mkdir -p "$d/plugins/triage/reference"
-  cp "$ROOT/plugins/triage/reference/telemetry-contract.md" "$d/plugins/triage/reference/"
-  cp "$ROOT/plugins/triage/reference/backends.md"           "$d/plugins/triage/reference/"
-}
-# seed the V7 mutation-adapter-map artifacts (ADR 0016): the two vendored doc-block
-# copies + the two byte-identical resolver copies + the producer/consumer scripts.
-seed_mut() {
-  local d="$1"
-  mkdir -p "$d/plugins/codebase-health/skills/cleanup-audit/references" \
-           "$d/plugins/autopilot/references" \
-           "$d/plugins/codebase-health/skills/cleanup-audit/scripts" \
-           "$d/plugins/autopilot/scripts"
-  cp "$ROOT/plugins/codebase-health/skills/cleanup-audit/references/cross-language-tooling.md" "$d/plugins/codebase-health/skills/cleanup-audit/references/"
-  cp "$ROOT/plugins/autopilot/references/mutation-adapters.md"                                  "$d/plugins/autopilot/references/"
-  cp "$ROOT/plugins/codebase-health/skills/cleanup-audit/scripts/mutation_adapter.sh"           "$d/plugins/codebase-health/skills/cleanup-audit/scripts/"
-  cp "$ROOT/plugins/autopilot/scripts/mutation_adapter.sh"                                       "$d/plugins/autopilot/scripts/"
-  cp "$ROOT/plugins/autopilot/scripts/mutation_gate.sh"                                          "$d/plugins/autopilot/scripts/"
-  cp "$ROOT/plugins/codebase-health/skills/cleanup-audit/scripts/check_mutation_survivors.sh"   "$d/plugins/codebase-health/skills/cleanup-audit/scripts/"
+  mkdir -p "$d/plugins/zero-trust/references"
+  cp "$ZT/references/telemetry-contract.md" "$d/plugins/zero-trust/references/"
+  cp "$ZT/references/backends.md"           "$d/plugins/zero-trust/references/"
 }
 
-# seed what lint V8 (OWM vendoring) needs into a sandbox: the canonical validator +
-# manifest schema, and the whole org-memory plugin (its engine + vendored copies).
-seed_owm() {
-  local d="$1"
-  mkdir -p "$d/scripts" "$d/schema/verification-manifest" "$d/plugins"
-  cp "$ROOT/scripts/validate_manifest.py" "$d/scripts/"
-  cp "$ROOT/scripts/validate_manifest.sh" "$d/scripts/"
-  cp "$ROOT/schema/verification-manifest/v1.schema.json" "$d/schema/verification-manifest/"
-  cp -R "$ROOT/plugins/org-memory" "$d/plugins/org-memory"
-}
-
-# seed what lint V10 (remediation loop) needs: the whole codebase-health plugin
+# seed what lint V10 (remediation loop) needs: the cleanup-audit skill
 # (classify_fix.sh + slug_provenance.tsv + the audit taxonomy the slugs must exist
 # in) plus the SPEC_1.4.0 §12 doc the provenance anchors cite.
 seed_rl() {
   local d="$1"
-  mkdir -p "$d/plugins" "$d/docs/specs"
-  cp -R "$ROOT/plugins/codebase-health" "$d/plugins/codebase-health"
+  mkdir -p "$d/plugins/zero-trust/skills" "$d/docs/specs"
+  cp -R "$ZT/skills/cleanup-audit" "$d/plugins/zero-trust/skills/cleanup-audit"
   cp "$ROOT/docs/specs/codebase-health-spec-1.4.0.md" "$d/docs/specs/"
 }
 
-# seed what lint V11 (outcome-store vendoring) needs: the canonical outcome schema +
-# a vendored copy, the canonical outcome-store-contract doc + a vendored block copy,
+# seed what lint V11 (outcome-store pins) needs: the canonical outcome schema +
+# a second copy, the canonical outcome-store-contract doc + a vendored block copy,
 # and the register (for the H1 anti-laundering guard). ADR 0023 / register OM-09.
 seed_om() {
   local d="$1"
-  mkdir -p "$d/schema/outcome" "$d/plugins/marshal/schema/outcome" \
-           "$d/docs/specs" "$d/plugins/marshal/reference"
-  cp "$ROOT/schema/outcome/v1.schema.json" "$d/schema/outcome/"
-  cp "$ROOT/schema/outcome/v1.schema.json" "$d/plugins/marshal/schema/outcome/"
+  mkdir -p "$d/plugins/zero-trust/schema/outcome" "$d/plugins/extra/schema/outcome" \
+           "$d/docs/specs" "$d/plugins/zero-trust/references"
+  cp "$ZT/schema/outcome/v1.schema.json" "$d/plugins/zero-trust/schema/outcome/"
+  cp "$ZT/schema/outcome/v1.schema.json" "$d/plugins/extra/schema/outcome/"
   cp "$ROOT/docs/specs/outcome-store-contract.md" "$d/docs/specs/"
-  cp "$ROOT/plugins/marshal/reference/outcome-measurement.md" "$d/plugins/marshal/reference/"
+  cp "$ZT/references/outcome-measurement.md" "$d/plugins/zero-trust/references/"
   cp "$ROOT/docs/specs/outcome-measurement-register.md" "$d/docs/specs/"
 }
 
 # seed what lint V12 (System-Design Coverage guards) reads: the CH-03 join engine
-# (manifest_join.py + its wrapper) + the canonical manifest schema (so V1 stays
-# green and V12 is the rule under test). ADR 0021/0022 / register SD-12.
+# (manifest_join.py + its wrapper) + the canonical manifest schema.
+# ADR 0021/0022 / register SD-12.
 seed_sd() {
   local d="$1"
-  mkdir -p "$d/plugins/codebase-health/skills/cleanup-audit/scripts" "$d/schema/verification-manifest"
-  cp "$ROOT/plugins/codebase-health/skills/cleanup-audit/scripts/manifest_join.py" "$d/plugins/codebase-health/skills/cleanup-audit/scripts/"
-  cp "$ROOT/plugins/codebase-health/skills/cleanup-audit/scripts/manifest_join.sh" "$d/plugins/codebase-health/skills/cleanup-audit/scripts/"
-  cp "$ROOT/schema/verification-manifest/v1.schema.json" "$d/schema/verification-manifest/"
+  mkdir -p "$d/plugins/zero-trust/skills/cleanup-audit/scripts" \
+           "$d/plugins/zero-trust/schema/verification-manifest"
+  cp "$ZT/skills/cleanup-audit/scripts/manifest_join.py" "$d/plugins/zero-trust/skills/cleanup-audit/scripts/"
+  cp "$ZT/skills/cleanup-audit/scripts/manifest_join.sh" "$d/plugins/zero-trust/skills/cleanup-audit/scripts/"
+  cp "$ZT/schema/verification-manifest/v1.schema.json" "$d/plugins/zero-trust/schema/verification-manifest/"
 }
 
-# V1 — a vendored manifest schema copy drifts from canonical.
-dr="$SANDBOX/v1"; mkdir -p "$dr/schema/verification-manifest" "$dr/plugins/x/schema/verification-manifest"
-cp "$ROOT/schema/verification-manifest/v1.schema.json" "$dr/schema/verification-manifest/v1.schema.json"
-{ cat "$ROOT/schema/verification-manifest/v1.schema.json"; printf '\n'; } > "$dr/plugins/x/schema/verification-manifest/v1.schema.json"
-expect_fail V1 "$dr" "drifted vendored v1.schema.json"
-
-# V3 — a vendored validator script drifts from canonical.
-dr="$SANDBOX/v3"; mkdir -p "$dr/scripts" "$dr/plugins/spec-gen/scripts"
-cp "$ROOT/scripts/validate_manifest.sh" "$dr/scripts/"; cp "$ROOT/scripts/validate_manifest.py" "$dr/scripts/"
-cp "$ROOT/scripts/validate_manifest.py" "$dr/plugins/spec-gen/scripts/"; printf '\n# drift\n' >> "$dr/plugins/spec-gen/scripts/validate_manifest.py"
-expect_fail V3 "$dr" "drifted vendored validate_manifest.py"
-
-# V3 exemption guard #1 — a non-union tool squatting the exempt path.
-dr="$SANDBOX/v3x"; mkdir -p "$dr/scripts" "$dr/plugins/autopilot/scripts"
-cp "$ROOT/scripts/validate_manifest.sh" "$dr/scripts/"; cp "$ROOT/scripts/validate_manifest.py" "$dr/scripts/"
-printf '#!/usr/bin/env bash\necho not-the-union-tool\n' > "$dr/plugins/autopilot/scripts/validate_manifest.sh"
-expect_fail V3 "$dr" "non-union tool squatting the exempt validate_manifest.sh path"
-
-# V3 exemption guard #2 — a DRIFTED single-file-validator copy that merely mentions
-# `--union` in a comment must NOT be exempted (it lacks the union-only token).
-dr="$SANDBOX/v3u"; mkdir -p "$dr/scripts" "$dr/plugins/autopilot/scripts"
-cp "$ROOT/scripts/validate_manifest.sh" "$dr/scripts/"; cp "$ROOT/scripts/validate_manifest.py" "$dr/scripts/"
-{ cat "$ROOT/scripts/validate_manifest.sh"; printf '\n# a drifted copy that only mentions --union in a comment\necho INJECTED\n'; } > "$dr/plugins/autopilot/scripts/validate_manifest.sh"
-expect_fail V3 "$dr" "drifted validator merely mentioning --union is still flagged"
-
-# V4 — the Marshal's claim_overlap copy drifts from autopilot's canonical.
-dr="$SANDBOX/v4"; mkdir -p "$dr/plugins/autopilot/scripts" "$dr/plugins/marshal/scripts"
-cp "$ROOT/plugins/autopilot/scripts/claim_overlap.sh" "$dr/plugins/autopilot/scripts/"
-cp "$ROOT/plugins/autopilot/scripts/claim_overlap.sh" "$dr/plugins/marshal/scripts/"; printf '\n# drift\n' >> "$dr/plugins/marshal/scripts/claim_overlap.sh"
-expect_fail V4 "$dr" "drifted vendored claim_overlap.sh"
-
-# V5 — one escalation-block copy is reworded (byte drift).
-dr="$SANDBOX/v5"; seed_esc "$dr"
-sed 's/reject-and-alert/DRIFTED-WORD/' "$dr/plugins/spec-gen/skills/spec/SKILL.md" > "$dr/sk.tmp" \
-  && mv "$dr/sk.tmp" "$dr/plugins/spec-gen/skills/spec/SKILL.md"
-expect_fail V5 "$dr" "reworded escalation block in one tier"
-
-# V5 presence — an expected prompt loses its block entirely (removal / wrong-file move).
-dr="$SANDBOX/v5m"; seed_esc "$dr"
-grep -v 'vendored:escalation-criterion' "$dr/plugins/codebase-health/skills/cleanup-audit/references/severity-rubric.md" > "$dr/sr.tmp" \
-  && mv "$dr/sr.tmp" "$dr/plugins/codebase-health/skills/cleanup-audit/references/severity-rubric.md"
-expect_fail V5 "$dr" "escalation block removed from the audit's pinned prompt"
-
-# V5 false-positive guard — a doc that only MENTIONS the begin marker in prose is ignored.
-dr="$SANDBOX/v5p"; seed_esc "$dr"; mkdir -p "$dr/docs"
-printf 'This guide explains the vendored:escalation-criterion:begin marker.\n' > "$dr/docs/guide.md"
-expect_no_fail V5 "$dr" "prose mention of the begin marker (no pair)"
-
-# V6 — a registered plugin source loses its plugin.json (no longer installable).
+# V6 — the registered plugin source loses its plugin.json (no longer installable).
 dr="$SANDBOX/v6"; mkdir -p "$dr/.claude-plugin"
 cp "$ROOT/.claude-plugin/marketplace.json" "$dr/.claude-plugin/"; seed_plugins "$dr"
-rm "$dr/plugins/marshal/.claude-plugin/plugin.json"
+rm "$dr/plugins/zero-trust/.claude-plugin/plugin.json"
 expect_fail V6 "$dr" "registered plugin missing its plugin.json"
 
 # V6 — a nested/stray marketplace.json reappears (single entry point violated).
 dr="$SANDBOX/v6s"; mkdir -p "$dr/.claude-plugin"
 cp "$ROOT/.claude-plugin/marketplace.json" "$dr/.claude-plugin/"; seed_plugins "$dr"
-cp "$ROOT/.claude-plugin/marketplace.json" "$dr/plugins/marshal/.claude-plugin/marketplace.json"
+cp "$ROOT/.claude-plugin/marketplace.json" "$dr/plugins/zero-trust/.claude-plugin/marketplace.json"
 expect_fail V6 "$dr" "stray nested marketplace.json"
 
-# V6 — name<->source swap (each name and source still present, but paired wrong).
+# V6 — the name<->source pairing breaks (the name is registered against the
+# wrong source dir — the single-plugin analogue of the old swap test).
 if command -v python3 >/dev/null 2>&1; then
   dr="$SANDBOX/v6sw"; mkdir -p "$dr/.claude-plugin"; seed_plugins "$dr"
   python3 -c "
 import json
 d=json.load(open('$ROOT/.claude-plugin/marketplace.json'))
 by={p['name']:p for p in d['plugins']}
-by['marshal']['source'],by['spec-gen']['source']=by['spec-gen']['source'],by['marshal']['source']
+by['zero-trust']['source']='./plugins/zero-trust-old'
 json.dump(d,open('$dr/.claude-plugin/marketplace.json','w'),indent=2)"
-  expect_fail V6 "$dr" "name<->source swap (spec-gen<->marshal)"
+  expect_fail V6 "$dr" "zero-trust registered against the wrong source dir"
 
-  # V6 — a rogue SEVENTH plugin with a non-existent source (triage is the legit 6th).
+  # V6 — a rogue SECOND plugin with a non-existent source (the product is one).
   dr="$SANDBOX/v6r"; mkdir -p "$dr/.claude-plugin"; seed_plugins "$dr"
   python3 -c "
 import json
 d=json.load(open('$ROOT/.claude-plugin/marketplace.json'))
 d['plugins'].append({'name':'rogue-plugin','source':'./rogue'})
 json.dump(d,open('$dr/.claude-plugin/marketplace.json','w'),indent=2)"
-  expect_fail V6 "$dr" "rogue 7th plugin registered (triage is the legit 6th)"
+  expect_fail V6 "$dr" "rogue 2nd plugin registered (the product is exactly zero-trust)"
 
   # V6 false-positive guard — a compact (whitespace-stripped) reserialization is fine.
   dr="$SANDBOX/v6c"; mkdir -p "$dr/.claude-plugin"; seed_plugins "$dr"
   python3 -c "import json;json.dump(json.load(open('$ROOT/.claude-plugin/marketplace.json')),open('$dr/.claude-plugin/marketplace.json','w'),separators=(',',':'))"
   expect_no_fail V6 "$dr" "compact-JSON marketplace reserialization"
 else
-  echo "  [note] python3 absent — V6 structural red-tests (swap / rogue / compact) skipped"
+  echo "  [note] python3 absent — V6 structural red-tests (wrong-source / rogue / compact) skipped"
 fi
 
-# V8 — OWM manifest-parse FORK: a recognizer that parses manifests with its OWN yaml
-# import instead of reusing the canonical validate_manifest is caught RED (ADR 0019 /
-# register OWM-10). The mutation-testing stream owns V7; this is V8 and must not collide.
-dr="$SANDBOX/v8"; seed_owm "$dr"
-cat > "$dr/plugins/org-memory/scripts/owm.py" <<'PYFORK'
-#!/usr/bin/env python3
-# FORKED manifest recognizer (planted drift): parses the Verification Manifest with
-# its OWN yaml import instead of routing through the canonical validate_manifest —
-# exactly the drift V8 exists to catch (a manifest-format change would silently leave
-# this parsing the old shape).
-import yaml
-def extract_manifest(path):
-    return yaml.safe_load(open(path))
-PYFORK
-expect_fail V8 "$dr" "OWM manifest-parse path forks a yaml parser instead of reusing validate_manifest"
-
-# V8 false-positive guard — a BENIGN reference reword of the real engine (a comment
-# change that still routes through validate_manifest) must stay GREEN.
-dr="$SANDBOX/v8p"; seed_owm "$dr"
-printf '\n# benign reword: manifest parsing still routes through the canonical validate_manifest toolchain.\n' \
-  >> "$dr/plugins/org-memory/scripts/owm.py"
-expect_no_fail V8 "$dr" "benign comment reword that still reuses validate_manifest"
-# V7 (ADR 0016 / MT-09) — the mutation adapter map must not drift between the
-# autopilot D6.5 producer and the codebase-health PR-Gate consumer. Plant a drift
-# per guarantee (doc block, resolver script, sole-source, producer/consumer token)
-# and assert V7 fires; a benign out-of-block edit must stay green.
-dr="$SANDBOX/v7"; seed_mut "$dr"
-sed 's#| StrykerJS | TS/JS |#| StrykerJS | DRIFTED |#' "$dr/plugins/autopilot/references/mutation-adapters.md" > "$dr/m.tmp" \
-  && mv "$dr/m.tmp" "$dr/plugins/autopilot/references/mutation-adapters.md"
-expect_fail V7 "$dr" "drifted vendored mutation-adapter-map doc block"
-
-dr="$SANDBOX/v7s"; seed_mut "$dr"
-printf '\n# drift\n' >> "$dr/plugins/autopilot/scripts/mutation_adapter.sh"
-expect_fail V7 "$dr" "drifted vendored mutation_adapter.sh resolver"
-
-dr="$SANDBOX/v7c"; seed_mut "$dr"
-mkdir -p "$dr/plugins/marshal/scripts"; cp "$ROOT/plugins/autopilot/scripts/mutation_adapter.sh" "$dr/plugins/marshal/scripts/"
-expect_fail V7 "$dr" "a THIRD mutation_adapter.sh copy (second map, MT-10)"
-
-dr="$SANDBOX/v7t"; seed_mut "$dr"
-sed 's/BLOCKED: vacuous-test/BLOCKED: renamed-token/g' "$dr/plugins/autopilot/scripts/mutation_gate.sh" > "$dr/g.tmp" \
-  && mv "$dr/g.tmp" "$dr/plugins/autopilot/scripts/mutation_gate.sh"
-expect_fail V7 "$dr" "drifted [BLOCKED: vacuous-test] producer token"
-
-dr="$SANDBOX/v7u"; seed_mut "$dr"
-sed 's/mutant-on-core-path/mutant-elsewhere/g' "$dr/plugins/codebase-health/skills/cleanup-audit/scripts/check_mutation_survivors.sh" > "$dr/c.tmp" \
-  && mv "$dr/c.tmp" "$dr/plugins/codebase-health/skills/cleanup-audit/scripts/check_mutation_survivors.sh"
-expect_fail V7 "$dr" "drifted mutant-on-core-path consumer token"
-
-dr="$SANDBOX/v7p"; seed_mut "$dr"
-printf '\nSome extra prose AFTER the vendored block.\n' >> "$dr/plugins/autopilot/references/mutation-adapters.md"
-expect_no_fail V7 "$dr" "prose appended outside the vendored map markers"
-
 # V9 (register TR-08) — the triage telemetry-adapter observable contract must not
-# drift between the single source (telemetry-contract.md) and a vendored backend-
-# contract copy (backends.md). Plant a drift in the copy's block -> V9 fires; a
-# benign out-of-block append stays green (no false positive). V9 does not collide
-# with V7 (mutation) / V8 (OWM) / V10 (the parallel remediation-loop chip).
+# drift between the single source (references/telemetry-contract.md) and a vendored
+# backend-contract copy (references/backends.md). Plant a drift in the copy's
+# block -> V9 fires; a benign out-of-block append stays green (no false positive).
 dr="$SANDBOX/v9"; seed_tel "$dr"
-sed 's/Never a whole-fleet scan./Never a whole-fleet scan. DRIFTED./' "$dr/plugins/triage/reference/backends.md" > "$dr/t.tmp" \
-  && mv "$dr/t.tmp" "$dr/plugins/triage/reference/backends.md"
+sed 's/Never a whole-fleet scan./Never a whole-fleet scan. DRIFTED./' "$dr/plugins/zero-trust/references/backends.md" > "$dr/t.tmp" \
+  && mv "$dr/t.tmp" "$dr/plugins/zero-trust/references/backends.md"
 expect_fail V9 "$dr" "drifted vendored telemetry-contract block"
 
 dr="$SANDBOX/v9p"; seed_tel "$dr"
-printf '\nSome extra prose AFTER the vendored telemetry-contract block.\n' >> "$dr/plugins/triage/reference/backends.md"
+printf '\nSome extra prose AFTER the vendored telemetry-contract block.\n' >> "$dr/plugins/zero-trust/references/backends.md"
 expect_no_fail V9 "$dr" "prose appended outside the telemetry-contract markers"
 
-# V9 vendored spec-gen script drift (ADR 0001 §18 — closes the missing-pin gap): triage
-# vendors profile_resolve.py/resume_projection.py from spec-gen; drift the vendored copy
-# -> V9 fires. Seed the canonical + vendored pair (and telemetry-contract.md so V9 runs).
+# V9 resume-helper re-vendor pin (ADR 0001 §18, post-0025 shape): the resume
+# helpers live exactly once under plugins/zero-trust/scripts/; a SECOND copy that
+# reappears anywhere must be byte-identical to the canonical. Drift the copy ->
+# V9 fires. Seed the canonical pair (and telemetry-contract.md so V9 runs).
 dr="$SANDBOX/v9s"
-mkdir -p "$dr/plugins/spec-gen/scripts" "$dr/plugins/triage/scripts" "$dr/plugins/triage/reference"
-cp "$ROOT/plugins/triage/reference/telemetry-contract.md" "$dr/plugins/triage/reference/"
-cp "$ROOT/plugins/spec-gen/scripts/profile_resolve.py"   "$dr/plugins/spec-gen/scripts/"
-cp "$ROOT/plugins/spec-gen/scripts/resume_projection.py" "$dr/plugins/spec-gen/scripts/"
-cp "$ROOT/plugins/spec-gen/scripts/profile_resolve.py"   "$dr/plugins/triage/scripts/"
-cp "$ROOT/plugins/spec-gen/scripts/resume_projection.py" "$dr/plugins/triage/scripts/"
-printf '\n# drift\n' >> "$dr/plugins/triage/scripts/profile_resolve.py"
-expect_fail V9 "$dr" "drifted vendored spec-gen script (triage profile_resolve.py != canonical)"
+mkdir -p "$dr/plugins/zero-trust/scripts" "$dr/plugins/extra/scripts" "$dr/plugins/zero-trust/references"
+cp "$ZT/references/telemetry-contract.md" "$dr/plugins/zero-trust/references/"
+cp "$ZT/scripts/profile_resolve.py"   "$dr/plugins/zero-trust/scripts/"
+cp "$ZT/scripts/resume_projection.py" "$dr/plugins/zero-trust/scripts/"
+cp "$ZT/scripts/profile_resolve.py"   "$dr/plugins/extra/scripts/"
+cp "$ZT/scripts/resume_projection.py" "$dr/plugins/extra/scripts/"
+printf '\n# drift\n' >> "$dr/plugins/extra/scripts/profile_resolve.py"
+expect_fail V9 "$dr" "re-vendored resume helper drifted (profile_resolve.py != canonical)"
 
-# V9 vendored-script false-positive guard — an unmodified vendored pair stays GREEN.
+# V9 re-vendor false-positive guard — an unmodified second copy stays GREEN.
 dr="$SANDBOX/v9sp"
-mkdir -p "$dr/plugins/spec-gen/scripts" "$dr/plugins/triage/scripts" "$dr/plugins/triage/reference"
-cp "$ROOT/plugins/triage/reference/telemetry-contract.md" "$dr/plugins/triage/reference/"
-cp "$ROOT/plugins/spec-gen/scripts/profile_resolve.py"   "$dr/plugins/spec-gen/scripts/"
-cp "$ROOT/plugins/spec-gen/scripts/resume_projection.py" "$dr/plugins/spec-gen/scripts/"
-cp "$ROOT/plugins/spec-gen/scripts/profile_resolve.py"   "$dr/plugins/triage/scripts/"
-cp "$ROOT/plugins/spec-gen/scripts/resume_projection.py" "$dr/plugins/triage/scripts/"
-expect_no_fail V9 "$dr" "unmodified vendored spec-gen scripts (byte-identical to canonical)"
+mkdir -p "$dr/plugins/zero-trust/scripts" "$dr/plugins/extra/scripts" "$dr/plugins/zero-trust/references"
+cp "$ZT/references/telemetry-contract.md" "$dr/plugins/zero-trust/references/"
+cp "$ZT/scripts/profile_resolve.py"   "$dr/plugins/zero-trust/scripts/"
+cp "$ZT/scripts/resume_projection.py" "$dr/plugins/zero-trust/scripts/"
+cp "$ZT/scripts/profile_resolve.py"   "$dr/plugins/extra/scripts/"
+cp "$ZT/scripts/resume_projection.py" "$dr/plugins/extra/scripts/"
+expect_no_fail V9 "$dr" "unmodified second resume-helper copies (byte-identical to canonical)"
+
 # V10 (ADR 0017/0018 / register RL-13) — the remediation loop's two lint-pinned
 # tables. Plant a drift in EACH (escalate-class table + slug_provenance §12/taxonomy)
-# and assert V10 fires; a benign TSV comment must stay green. Numbered V10 (V9 is
-# the parallel prod-triage stream's rule — no collision).
-RL_CLASSIFY_REL="plugins/codebase-health/skills/cleanup-audit/scripts/classify_fix.sh"
-RL_PROV_REL="plugins/codebase-health/skills/cleanup-audit/scripts/slug_provenance.tsv"
+# and assert V10 fires; a benign TSV comment must stay green.
+RL_CLASSIFY_REL="plugins/zero-trust/skills/cleanup-audit/scripts/classify_fix.sh"
+RL_PROV_REL="plugins/zero-trust/skills/cleanup-audit/scripts/slug_provenance.tsv"
 TAB="$(printf '\t')"
 
 # V10-a — a Category-TX money/auth slug is dropped from the escalate-class table
@@ -418,14 +285,13 @@ expect_no_fail V10 "$dr" "benign trailing comment appended to slug_provenance.ts
 # not drift between the two producers, and the register must not launder an
 # agent-graded number as [det]. Plant a drift per guarantee and assert V11 fires; two
 # false-positive guards (identical reformat, prose outside the block) stay green.
-# Numbered V11 (V7 mutation / V8 OWM / V9 triage / V10 remediation are taken).
-OM_SCHEMA_REL="plugins/marshal/schema/outcome/v1.schema.json"
-OM_BLOCK_REL="plugins/marshal/reference/outcome-measurement.md"
+OM_SCHEMA_REL="plugins/extra/schema/outcome/v1.schema.json"
+OM_BLOCK_REL="plugins/zero-trust/references/outcome-measurement.md"
 OM_REG_REL="docs/specs/outcome-measurement-register.md"
 
-# V11-a — a vendored outcome-store schema copy drifts from the canonical.
+# V11-a — a second outcome-store schema copy drifts from the canonical.
 dr="$SANDBOX/v11a"; seed_om "$dr"; printf '\n' >> "$dr/$OM_SCHEMA_REL"
-expect_fail V11 "$dr" "drifted vendored outcome-store schema copy"
+expect_fail V11 "$dr" "drifted second outcome-store schema copy"
 
 # V11-b — the vendored outcome-store-contract block drifts from the canonical.
 dr="$SANDBOX/v11b"; seed_om "$dr"
@@ -438,12 +304,12 @@ dr="$SANDBOX/v11c"; seed_om "$dr"
 printf -- '- [det] on a REAL repo the emission share (agent-graded input) is 0.9\n' >> "$dr/$OM_REG_REL"
 expect_fail V11 "$dr" "register [det] acceptance laundering a real-repo agent-graded number"
 
-# V11 false-positive guard #1 — reformatting the canonical AND the vendored copy
+# V11 false-positive guard #1 — reformatting the canonical AND the second copy
 # IDENTICALLY (both get the same trailing newline) stays green: the rule keys on
 # DRIFT, not on formatting.
 dr="$SANDBOX/v11p1"; seed_om "$dr"
-printf '\n' >> "$dr/schema/outcome/v1.schema.json"; printf '\n' >> "$dr/$OM_SCHEMA_REL"
-expect_no_fail V11 "$dr" "canonical + vendored schema reformatted identically (no drift)"
+printf '\n' >> "$dr/plugins/zero-trust/schema/outcome/v1.schema.json"; printf '\n' >> "$dr/$OM_SCHEMA_REL"
+expect_no_fail V11 "$dr" "canonical + second schema copy reformatted identically (no drift)"
 
 # V11 false-positive guard #2 — prose appended OUTSIDE the contract-block markers.
 dr="$SANDBOX/v11p2"; seed_om "$dr"
@@ -452,9 +318,8 @@ expect_no_fail V11 "$dr" "prose appended outside the outcome-store-contract mark
 
 # V12 (ADR 0021/0022 / register SD-12) — the System-Design Coverage tier's two
 # structural guards. Plant a violation per guard and assert V12 fires; a prose
-# mention of a missing-X phrase (no emit) stays green. Numbered V12 (V7 mutation /
-# V8 OWM / V9 triage / V10 remediation / V11 outcome are taken).
-SD_JOINPY_REL="plugins/codebase-health/skills/cleanup-audit/scripts/manifest_join.py"
+# mention of a missing-X phrase (no emit) stays green.
+SD_JOINPY_REL="plugins/zero-trust/skills/cleanup-audit/scripts/manifest_join.py"
 
 # V12-a1 — the CENTRAL PROHIBITION: the join engine EMITS a raw missing-X finding
 # for a non-app control (unfalsifiable against an out-of-repo locus).
@@ -472,7 +337,7 @@ expect_fail V12 "$dr" "the SD locus-guard region stripped from manifest_join.py"
 # the CH-03 engine (ADR 0003 / MT-10 no-parallel-infra).
 dr="$SANDBOX/v12b1"; seed_sd "$dr"
 printf '#!/usr/bin/env bash\n# rogue: emits abuse-controls-drift outside the one join engine\necho "ROW abuse-controls-drift PASS"\n' \
-  > "$dr/plugins/codebase-health/skills/cleanup-audit/scripts/sd_rogue_join.sh"
+  > "$dr/plugins/zero-trust/skills/cleanup-audit/scripts/sd_rogue_join.sh"
 expect_fail V12 "$dr" "a sibling script carries an SD drift slug (parallel comparator)"
 
 # V12-b2 — an SD drift row is moved OUT of the CH-03 engine (renamed away).
@@ -487,21 +352,21 @@ printf '\n# SD honesty note: a raw "missing rate limit" finding is exactly what 
 expect_no_fail V12 "$dr" "prose comment naming a missing-X phrase (no emit/print call)"
 
 # V13 (ADR 0024 / register HL) — the /health-loop presence/vocabulary/read-only
-# pins. Plant a violation per guard; a benign comment stays green. Numbered V13
-# (V7..V12 are taken). The seed carries NO marketplace.json, so the full-tree
-# cross-plugin presence sub-check stays out of these sandboxes by design.
+# pins. Plant a violation per guard; a benign comment stays green. The seed
+# carries NO marketplace.json, so the full-tree cross-domain presence sub-check
+# stays out of these sandboxes by design.
 seed_hl() {
-  local d="$1" ca="plugins/codebase-health/skills/cleanup-audit"
-  mkdir -p "$d/plugins/codebase-health/commands" "$d/$ca/references" "$d/$ca/scripts"
-  cp "$ROOT/plugins/codebase-health/commands/health-loop.md" "$d/plugins/codebase-health/commands/"
-  cp "$ROOT/$ca/loop.config.yaml"                 "$d/$ca/"
-  cp "$ROOT/$ca/references/health-loop.md"        "$d/$ca/references/"
-  cp "$ROOT/$ca/references/audit-state-and-verify.md" "$d/$ca/references/"
-  cp "$ROOT/$ca/scripts/spec_wave.sh" "$ROOT/$ca/scripts/wave_gate.sh" \
-     "$ROOT/$ca/scripts/wave_gate.py" "$ROOT/$ca/scripts/wave_preauth_check.sh" \
+  local d="$1" ca="plugins/zero-trust/skills/cleanup-audit"
+  mkdir -p "$d/plugins/zero-trust/commands" "$d/$ca/references" "$d/$ca/scripts"
+  cp "$ZT/commands/health-loop.md" "$d/plugins/zero-trust/commands/"
+  cp "$ZT/skills/cleanup-audit/loop.config.yaml"                 "$d/$ca/"
+  cp "$ZT/skills/cleanup-audit/references/health-loop.md"        "$d/$ca/references/"
+  cp "$ZT/skills/cleanup-audit/references/audit-state-and-verify.md" "$d/$ca/references/"
+  cp "$ZT/skills/cleanup-audit/scripts/spec_wave.sh" "$ZT/skills/cleanup-audit/scripts/wave_gate.sh" \
+     "$ZT/skills/cleanup-audit/scripts/wave_gate.py" "$ZT/skills/cleanup-audit/scripts/wave_preauth_check.sh" \
      "$d/$ca/scripts/"
 }
-HL_CA_REL="plugins/codebase-health/skills/cleanup-audit"
+HL_CA_REL="plugins/zero-trust/skills/cleanup-audit"
 
 # V13-a — half-shipped loop: the command ships without the gate backend.
 dr="$SANDBOX/v13a"; seed_hl "$dr"
@@ -537,25 +402,26 @@ printf '\n# note: this gate deliberately has no write_text call anywhere\n' >> "
 expect_no_fail V13 "$dr" "prose comment in wave_gate.py naming write_text (no call)"
 
 if [ "$RED_FAIL" -eq 0 ]; then
-  echo "  -> lint-red-tests PASS (every vendor lint caught its planted drift; no false positives)"; record "lint-red-tests" PASS
+  echo "  -> lint-red-tests PASS (every surviving lint caught its planted violation; no false positives)"; record "lint-red-tests" PASS
 else
-  echo "  -> lint-red-tests FAIL (a vendor lint is vacuous or false-firing — see above)"; FAILED="$FAILED lint-red-tests"; record "lint-red-tests" FAIL
+  echo "  -> lint-red-tests FAIL (a lint is vacuous or false-firing — see above)"; FAILED="$FAILED lint-red-tests"; record "lint-red-tests" FAIL
 fi
 
 # ==============================================================================
-# 3. Root manifest-validator self-test (ADR 0014/0015)
+# 3. Manifest-validator self-test (ADR 0014/0015 — the canonical validator
+#    lives inside plugins/zero-trust; the harness stays root-level dev tooling)
 # ==============================================================================
 run_ok "validator-self-test" bash "$ROOT/scripts/self_test.sh"
 
 # ==============================================================================
-# 4. Every plugin's own self-test
+# 4. Every domain's own self-test (all inside the one plugin, ADR 0025)
 # ==============================================================================
-run_ok "autopilot"       bash "$ROOT/plugins/autopilot/scripts/self_test.sh"
-run_ok "spec-gen"        bash "$ROOT/plugins/spec-gen/scripts/self_test.sh"
+run_ok "autopilot"       bash "$ZT/skills/autopilot/scripts/self_test.sh"
+run_ok "spec-gen"        bash "$ZT/scripts/self_test_spec_gen.sh"
 run_ok "codebase-health" bash "$ROOT/tests/codebase-health/self_test.sh"
-run_ok "marshal"         bash "$ROOT/plugins/marshal/scripts/self_test.sh"
-run_ok "org-memory"      bash "$ROOT/plugins/org-memory/scripts/self_test.sh"
-run_ok "triage"          bash "$ROOT/plugins/triage/scripts/self_test.sh"
+run_ok "marshal"         bash "$ZT/scripts/self_test_marshal.sh"
+run_ok "org-memory"      bash "$ZT/scripts/self_test_org_memory.sh"
+run_ok "triage"          bash "$ZT/scripts/self_test_triage.sh"
 
 # ==============================================================================
 # 5. Outcome-measurement layer self-test (ADR 0023; register OM-01..OM-08). Its
@@ -570,7 +436,7 @@ run_ok "outcome-self-test" bash "$ROOT/scripts/outcome_self_test.sh"
 #    Declare-then-verify [det] half: schema additive-safety, the out-of-scope-by-
 #    declaration short-circuit + unfalsifiability guard, the four §12 comparator
 #    rows, the in-repo candidate seeds + must_not_flag negatives. Its join/validator
-#    sections [skip] loudly without the vendored validator toolchain (skip-honest).
+#    sections [skip] loudly without the validator toolchain (skip-honest).
 # ==============================================================================
 run_ok "sd-self-test" bash "$ROOT/scripts/sd_self_test.sh"
 
@@ -587,7 +453,7 @@ if [ -n "$FAILED" ]; then
   exit 1
 fi
 if [ -n "$SKIPPED" ]; then
-  echo "== suite_self_test: PASS — all components green (lints + red-tests + validator + all six plugins) =="
+  echo "== suite_self_test: PASS — all components green (lints + red-tests + validator + all six domains) =="
   echo "   NOTE: optional sections were SKIPPED (missing dev tools) in:$SKIPPED — this run is not zero-skip; see the WARN lines above."
   if [ -n "${SUITE_STRICT:-}" ]; then
     echo "== SUITE_STRICT=1: a skipped section is a failure — exiting non-zero =="
@@ -596,5 +462,5 @@ if [ -n "$SKIPPED" ]; then
   echo "   (set SUITE_STRICT=1 to require a zero-skip proof.)"
   exit 0
 fi
-echo "== suite_self_test: PASS (lints + red-tests + validator + all six plugins, ZERO skips) =="
+echo "== suite_self_test: PASS (lints + red-tests + validator + all six domains, ZERO skips) =="
 exit 0

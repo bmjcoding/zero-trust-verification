@@ -200,7 +200,7 @@ The LLM interrogation cannot be self-tested; the deterministic seam can and is:
 
 | ID | Deliverable | Acceptance |
 |---|---|---|
-| SG-1 | Plugin skeleton (`plugins/spec-gen/`): SKILL.md (S1–S7 lifecycle), marketplace entry | Skill loads; lifecycle table matches §3; lint passes |
+| SG-1 | Plugin skeleton (`plugins/zero-trust/`): SKILL.md (S1–S7 lifecycle), marketplace entry | Skill loads; lifecycle table matches §3; lint passes |
 | SG-2 | Role prompts (S3 proposer, S4 attacker ×2, S5 presenter) as references | Each states its output schema; S4 schema REQUIRES `dissent` + `escalation_check`; fixture prompt-projection asserts the checklist field exists |
 | SG-3 | `validate_manifest.sh` + JSON Schema incl. ⟨MS-AMEND⟩ 1–3 (shared with manifest spec §13.1–2) | Manifest fixture suite + rule-8 fixtures green |
 | SG-4 | Deterministic helpers: ID allocator, resume projection, profile resolution order | §7.2–3 assertions green |
