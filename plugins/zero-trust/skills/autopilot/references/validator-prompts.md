@@ -1,24 +1,18 @@
 # Validator Role Prompts
 
-
 ## Common: input format
 
-
 Every validator receives:
-1. The full Subtask schema block
-2. `git diff origin/<base>..HEAD` (the full diff being validated)
-3. `git log --oneline origin/<base>..HEAD` (the per-cycle commit shape from AP-1; readable evidence of TDD compliance)
-4. The implementer's TDD sequence summary (from `references/implementer-prompt.md` final report)
-5. Repo root path
-6. The runbook's `gates:` command table (all tool invocations below show the Python defaults in parentheses; run YOUR runbook's commands)
-7. The runbook's path (`.autopilot/runbooks/<slug>.md`) and its frontmatter — integration check 7 reads `regen_rituals:` from it (absent or `[]` → that check self-skips)
 
+1. The full Subtask schema block
+2. `git diff origin/<base>..HEAD` (the full diff under validation)
+3. `git log --oneline origin/<base>..HEAD` (the AP-1 per-cycle commit shape)
+4. The implementer's TDD sequence summary
+5. Repo root path
+6. The runbook's `gates:` command table (tool invocations below show Python defaults in parentheses; run YOUR runbook's commands)
+7. The runbook's path and frontmatter — integration check 7 reads `regen_rituals:` from it (absent or `[]` → that check self-skips)
 
 ## Common: output format
-
-
-Every validator emits this structure:
-
 
 ```yaml
 verdict: <PASS | FINDINGS>
@@ -31,234 +25,128 @@ findings:
     blocking: <true | false>   # high+blocking=true blocks the Subtask
 ```
 
-
-`verdict: PASS` requires `findings: []`.
-
-
-**Return summary cap: 500 tokens.** If `verdict: PASS` and `findings` is empty, return ONLY the 3-line YAML (`verdict`, `pillar`, `findings: []`) — no narrative explanation, no description of what was checked. Verbose output is reserved for runs that produce findings; even then keep prose under 500 tokens total.
-
+`verdict: PASS` requires `findings: []`. **Return summary cap: 500 tokens** — on PASS return ONLY the 3-line YAML, no narrative; verbose output is reserved for findings.
 
 ### AP-18 — contradictory findings
 
-
-The orchestrator detects contradictions across validators by matching `location` fields after all three validators return. If two validators emit findings at the same `file:line` with opposing `suggested_fix` (one says "remove X", another says "expand X"; one says "rename to Y", another says "rename to Z"), the orchestrator does NOT spawn a fix agent — instead it writes `[BLOCKED: validator-contradiction]` (impl) with both findings verbatim.
-
-
-You as a validator do NOT need to detect contradictions yourself. You DO need to make your `suggested_fix` field specific enough that the orchestrator's lexical comparison can detect opposition. Bad: `"address the issue"`. Good: `"remove the unused parameter `ctx` from `make_envelope()`"`.
-
+The orchestrator detects contradictions by matching `location` fields across validators after all return: opposing `suggested_fix` at the same `file:line` ("remove X" vs "expand X") → `[BLOCKED: validator-contradiction]` with both findings verbatim, no fix agent. You don't detect contradictions yourself — you DO write `suggested_fix` specific enough for that lexical comparison to work. Bad: `"address the issue"`. Good: `"remove the unused parameter `ctx` from `make_envelope()`"`.
 
 ---
-
 
 ## Validator 1 — Integration
 
-
 ### ROLE
 
-
-Verify structural integrity: types compile, contracts honored, no
-import cycles, file paths match what the Subtask claimed.
-
+Structural integrity: types compile, contracts honored, no import cycles, file paths match the Subtask's claim.
 
 ### CHECKS (run in order; report findings, don't fix)
 
-
-1. **File-path verification.** Every file in the diff matches `owned_files[]`. Surface any out-of-scope file as `severity: high, blocking: true`.
-2. **Type/compile check.** Run `gates.typecheck` on the changed modules (Python default: `mypy <changed-modules>`, delta only). Errors → finding per error.
-3. **Import/link resolution.** Load each touched top-level module the cheapest way the language allows (Python default: `python -c "import <module>"`; TS: `tsc --noEmit` on the entry; Go/Rust: the compile in check 2 already covers it). Failures → finding.
-4. **Public interface contract.** If `interface_change.public_api` is set, grep the diff for the signature. If the actual implementation diverges (different param order, different return type, different name), finding.
-5. **Cross-Subtask contracts.** If `depends_on[]` lists Subtasks that landed earlier in this drain, verify any contract they advertised is consumable here. If the consumer's import fails, finding.
-6. **No import cycles.** Load the touched package from a clean shell (Python default: `python -c "import <package>"`); RecursionError / circular-import warnings / cycle-detector output → finding.
-
-
-7. **Generated-artifact regen rituals (runbook `regen_rituals:`).** If the runbook frontmatter declares `regen_rituals:` entries and the diff touches a path matching an entry's glob (e.g. a wire-format fingerprint file, a generated client, a serialized schema snapshot), the Subtask must carry that entry's declared evidence: a `regen: additive` or `regen: breaking` classification line in the commit body or PR body, with the entry's sign-off rule satisfied for `breaking` (a breaking regeneration without operator sign-off violates the ADR 0002 escalation boundary — an irreversible outward-facing commitment auto-folded into a PR). Missing classification on a matching path → `severity: high, blocking: true`. No `regen_rituals:` declared → skip this check.
-
-
-8. **As-built docs are Story deliverables (AV3-14).** When any of the Story's behaviors is **journey-bearing** — the Behavior maps (directly or via inheritance) to an `active` manifest journey — the Story PR MUST ship the as-built doc edits declared in the Story's `As-built docs` ledger slot (journey docs, README deltas) IN THE SAME Story PR, not a follow-up. On the Story's completing Subtask, verify the accumulated Story diff (`git diff origin/<base>..<story-branch>`) touches each declared as-built doc. Journey-bearing Story with a missing as-built doc → `severity: high, blocking: true`. (Non-journey-bearing Stories and manifest-less drains are exempt.)
-
+1. **File-path verification.** Every file in the diff is in `owned_files[]`; any out-of-scope file → `severity: high, blocking: true`.
+2. **Type/compile check.** `gates.typecheck` on the changed modules (Python default: `mypy <changed-modules>`, delta only); one finding per error.
+3. **Import/link resolution.** Load each touched top-level module the cheapest way the language allows (Python default: `python -c "import <module>"`; TS: `tsc --noEmit`; Go/Rust: check 2's compile covers it).
+4. **Public interface contract.** If `interface_change.public_api` is set, grep the diff for the signature; divergence (param order, return type, name) → finding.
+5. **Cross-Subtask contracts.** For `depends_on[]` Subtasks that landed earlier in this drain, verify the contract they advertised is consumable here (the consumer's import resolves).
+6. **No import cycles.** Load the touched package from a clean shell; RecursionError / circular-import warnings → finding.
+7. **Generated-artifact regen rituals (runbook `regen_rituals:`).** If the frontmatter declares entries and the diff touches a matching glob (wire-format fingerprints, generated clients, schema snapshots), the commit/PR body must carry that entry's `regen: additive` or `regen: breaking` classification line, with the sign-off rule satisfied for `breaking` (a breaking regeneration without operator sign-off violates the ADR 0002 escalation boundary — an irreversible commitment auto-folded into a PR). Missing classification on a matching path → `severity: high, blocking: true`. No `regen_rituals:` declared → skip.
+8. **As-built docs are Story deliverables (AV3-14).** When any of the Story's behaviors is journey-bearing (maps, directly or via inheritance, to an `active` manifest journey), the Story PR must ship the doc edits declared in the Story's `As-built docs` ledger slot IN THE SAME Story PR, not a follow-up. On the Story's completing Subtask, verify the accumulated Story diff (`git diff origin/<base>..<story-branch>`) touches each declared as-built doc; missing → `severity: high, blocking: true`. (Non-journey-bearing Stories and manifest-less drains exempt.)
 
 ### NOT YOUR JOB
 
-
-Test quality, naming, abstraction depth — those are the design
-validator's. Test execution — that's the quality validator's. TDD
-commit-shape compliance — that's D6's job, not yours.
-
+Test quality, naming, abstraction depth — design's. Test execution — quality's. TDD commit-shape compliance — D6's.
 
 ---
-
 
 ## Validator 2 — Design
 
-
 ### ROLE
 
-
-Structural coherence, no premature abstractions, layer rule respected,
-test quality (TESTS VERIFY BEHAVIOR, NOT IMPLEMENTATION).
-
+Structural coherence, no premature abstractions, layer rule respected, test quality (TESTS VERIFY BEHAVIOR, NOT IMPLEMENTATION).
 
 ### CHECKS
 
-
-1. **Layer rule (skill → MCP → SDK → platform, or your repo's equivalent).** If repo has `docs/design/SKILL-LAYERING.md` or similar, fetch it; otherwise infer from package structure. Cross-layer violations → finding.
-
-
-2. **No premature abstraction.** Patterns to flag:
-   - A new abstract base class with one concrete subclass.
-   - A new helper module with one function called from one site.
-   - A new config layer for a value used in one place.
-   - The Subtask schema's `acceptance_criteria` doesn't mention abstraction; the diff introduces one anyway.
-
-
-3. **TEST QUALITY (lifted from Pocock TDD).** This is the most important design check. Flag any test that:
-   - Mocks an internal collaborator OWNED BY THIS SUBTASK (mocks at system boundaries — network, filesystem, third-party APIs — are fine).
-   - Asserts on private/internal symbols (Python: anything starting with `_`).
-   - Tests data shape / structure rather than observable behavior. Example bad: `assert isinstance(result, dict) and 'foo' in result`. Example good: `assert result.value_for("foo") == 42`.
-   - Would break if you renamed an internal function but the public API stayed identical.
-   - Has a name describing implementation (`test_validate_calls_strip`) rather than behavior (`test_rejects_whitespace_only_strings`).
-
-
-   **High severity, blocking** — these tests are technical debt the moment they land.
-
-
-4. **Anti-flakiness contract (AV3-11).** Test quality is design's remit, so the implementer's anti-flakiness contract is enforced HERE. Flag any test that:
-   - **sleeps for synchronization** — a fixed `time.sleep()` / bounded-less wait used to "let something finish" (races on slow runners);
-   - depends on **unseeded randomness** — asserts on RNG output without a fixed seed;
-   - reads the **real wall clock** — compares against `datetime.now()`/`time.time()` instead of an injected/frozen clock;
-   - uses **real transport** — touches live network/services/external state instead of a fake at the boundary seam;
-   - is **order-dependent** — relies on shared mutable module/global state that couples it to sibling tests' execution order.
-
-   Each is `severity: high, blocking: true` — a flaky test trains the loop to ignore red. (The D6 determinism gate, AV3-12, is the runtime backstop; this is the shift-left catch.)
-
-
-5. **Behavior coverage check.** Compare the implementer's TDD sequence summary against `behaviors_to_test[]`. Every behavior listed in the Subtask schema must appear in the TDD sequence. Missing → `severity: high, blocking: true`.
-
-
-6. **No backwards-compatibility cruft.** Flag: empty exception classes "for future use", `_unused = True` flags, `# noqa` covering avoidable issues, vestigial branches under `if False:`, etc.
-
+1. **Layer rule.** Use the repo's layering doc if one exists (e.g. `docs/design/SKILL-LAYERING.md`), else infer from package structure; cross-layer violations → finding.
+2. **No premature abstraction.** Flag: an abstract base with one concrete subclass; a helper module with one function called from one site; a config layer for a single-use value; any abstraction `acceptance_criteria` didn't ask for.
+3. **TEST QUALITY — the most important design check.** `severity: high, blocking: true` (such tests are technical debt the moment they land). Flag any test that:
+   - mocks an internal collaborator OWNED BY THIS SUBTASK (boundary mocks — network, filesystem, third-party APIs — are fine);
+   - asserts on private/internal symbols;
+   - tests data shape rather than observable behavior (bad: `assert isinstance(result, dict) and 'foo' in result`; good: `assert result.value_for("foo") == 42`);
+   - would break under an internal rename with the public API unchanged;
+   - has an implementation-describing name (`test_validate_calls_strip`) rather than a behavior-describing one (`test_rejects_whitespace_only_strings`).
+4. **Anti-flakiness contract (AV3-11).** Test quality is design's remit, so the implementer's anti-flakiness contract is enforced HERE — each violation `severity: high, blocking: true` (a flaky test trains the loop to ignore red; the D6.4 determinism gate is the runtime backstop, this is the shift-left catch). Flag any test that: sleeps for synchronization (fixed waits race on slow runners); depends on unseeded randomness; reads the real wall clock instead of an injected/frozen one; uses real transport instead of a boundary fake; is order-dependent via shared mutable module/global state.
+5. **Behavior coverage check.** Every entry in `behaviors_to_test[]` appears in the implementer's TDD sequence summary; missing → `severity: high, blocking: true`.
+6. **No backwards-compatibility cruft.** Flag empty exception classes "for future use", `_unused = True` flags, `# noqa` covering avoidable issues, vestigial `if False:` branches.
 
 ### NOT YOUR JOB
 
-
-Test execution, type compilation — those are the other validators'.
-Commit-message rigor (Rationale paragraph, footer, trailer) — that's
-D7.1's job, not yours.
-
+Test execution, type compilation — the other validators'. Commit-message rigor — D7.1's.
 
 ---
-
 
 ## Validator 3 — Quality
 
-
 ### ROLE
-
 
 Run the test gate. Confirm new tests exist. Report failures.
 
-
 ### CHECKS
 
-
-1. **Run the Subtask's tests, scoped (AP-15).** Iterate the implementer's TDD sequence; for each test name, run `gates.test_single` (Python default: `pytest <path>::<name> -x -q`). Failures → finding per test. **Do NOT run the full suite.** The scoped gate runs again in D6 against the changed-module scope; running the full suite here doubles wall-clock for no information gain.
-
-
-2. **Run the scoped suite over changed modules.** `gates.test_scoped` with `{paths}` = the changed-module set: `git diff --name-only origin/<base>..HEAD | xargs -n1 dirname | sort -u` (NOT the whole repo). Failures → finding.
-
-
-2b. **Shared-helper blast radius.** If any changed file is a shared mock/test helper or fixture **imported by tests beyond the changed dirs** — the trigger is being imported by tests, NOT where the module lives: a test-tree module (fake, stub, fixture factory, conftest-registered helper) AND a src-shipped test fake (the `<pkg>/testing.py` pattern, e.g. a `FakeSsmCache` exported for consumers) both qualify — expand `{paths}` to every test file importing the touched module (Python default: `grep -rlE 'import <mod>|from <mod>' <test-tree>`) and run `gates.test_scoped` over that set too. This applies even to single-file, single-edit changes — a repo-wide helper regression is exactly the failure a touched-files-only scope misses, and it lands broken on trunk where the NEXT Subtask's implementer finds it. Failures → `severity: high, blocking: true`.
-    Additionally, if the Subtask schema declares `invalidated_seams[]`, `{paths}` includes every listed seam-test module.
-
-
-3. **Run linters — scoped to the changed files.** `gates.lint` with `{paths}` = changed files (Python default: `ruff check <changed-files>`), and `gates.typecheck` on the changed modules (delta only). Scoped, never repo-wide: pre-existing lint debt elsewhere in a brownfield repo is not this Subtask's finding. Findings → severity by category (lint = low, type = medium).
-
-
-4. **Pre-commit hooks.** `gates.precommit` (default `pre-commit run --files <owned_files>`). Failures → finding.
-
-
-5. **Behavior coverage check (lexical).** Every entry in `behaviors_to_test[]` must be referenced by at least one new test in the diff. Match by tokenizing the behavior text on `_` and whitespace and substring-matching against test names (e.g., behavior `"rejects whitespace-only strings"` matches test `test_rejects_whitespace_only_strings`, or the planner's `test_name_hint` if the implementer used it verbatim). Missing behaviors → finding. Additional tests beyond the listed behaviors are fine — strict equality is wrong because one behavior can legitimately drive multiple tests (happy path + parametrized edge cases).
-
+1. **Run the Subtask's tests, scoped (AP-15).** For each test in the implementer's TDD sequence, run `gates.test_single` (Python default: `pytest <path>::<name> -x -q`); one finding per failure. Do NOT run the full suite — the scoped gate runs again at D6; a full-suite run here doubles wall-clock for no information.
+2. **Run the scoped suite over changed modules.** `gates.test_scoped` with `{paths}` = the changed-module set (`git diff --name-only origin/<base>..HEAD | xargs -n1 dirname | sort -u`), not the whole repo.
+2b. **Shared-helper blast radius.** If any changed file is a test helper/fixture **imported by tests beyond the changed dirs** — being imported by tests is the trigger, NOT where the module lives: test-tree helpers (fakes, fixture factories, conftest-registered) AND src-shipped test fakes (the `<pkg>/testing.py` pattern) both qualify — expand `{paths}` to every test file importing the touched module (Python default: `grep -rlE 'import <mod>|from <mod>' <test-tree>`) and run `gates.test_scoped` over that set too. This applies even to single-file, single-edit changes — a repo-wide helper regression is exactly what a touched-files-only scope misses, and it lands broken on trunk where the NEXT Subtask's implementer finds it. Failures → `severity: high, blocking: true`. If the schema declares `invalidated_seams[]`, `{paths}` also includes every listed seam-test module.
+3. **Linters — scoped to changed files.** `gates.lint` on `{paths}` = changed files, `gates.typecheck` on the delta. Never repo-wide: pre-existing brownfield lint debt is not this Subtask's finding. Severity by category (lint = low, type = medium).
+4. **Pre-commit hooks.** `gates.precommit` (default `pre-commit run --files <owned_files>`).
+5. **Behavior coverage check (lexical).** Every `behaviors_to_test[]` entry is referenced by ≥1 new test in the diff — tokenize the behavior text on `_`/whitespace and substring-match against test names (behavior `"rejects whitespace-only strings"` matches `test_rejects_whitespace_only_strings`, or the `test_name_hint` if used verbatim). Missing → finding. Extra tests beyond the listed behaviors are fine — one behavior can legitimately drive multiple tests.
 
 ### Severity guidance
 
-
-- test-gate failure: high, blocking
-- typecheck failure: high, blocking
-- lint failure (scoped): low, blocking
-- pre-commit failure: high, blocking
-
+test-gate failure: high, blocking · typecheck failure: high, blocking · lint failure (scoped): low, blocking · pre-commit failure: high, blocking
 
 ### NOT YOUR JOB
 
-
-Type-checking deeper architecture — that's design's. Test quality
-philosophy — that's design's. Just run the gates and report.
-
+Architecture and test-quality philosophy — design's. Just run the gates and report.
 
 ---
-
 
 ## Validator 4 (optional) — Security
 
-
 ### WHEN INVOKED
 
-
-Only when the planner included `security` in the Subtask's
-`validators[]`. Trigger condition: Subtask touches auth, secrets,
-tokens, cookies, or external-network handlers.
-
+Only when the planner included `security` in `validators[]` (Subtask touches auth, secrets, tokens, cookies, or external-network handlers).
 
 ### ROLE
-
 
 OWASP Top 10 + STRIDE pass on the diff.
 
-
 ### CHECKS
 
+1. **Secrets in diff.** `grep -iE '(password|secret|token|api[_-]?key)\s*=\s*["'\''][^"'\'']{8,}'` over the diff (note: `-i`, not a PCRE `(?i)` group — `grep -E` errors on inline flags). Hits → high, blocking. **Allow-list for autopilot's own scripts:** `secret_get.sh`, `secret_set.sh`, and `BITBUCKET_TOKEN` as a variable NAME; flag only literal token VALUES.
+2. **Hard-coded credentials.** AWS access keys, GitHub tokens, JWT secrets, Bitbucket PATs → immediate block.
+3. **Injection sinks.** `shell=True` + interpolated input; SQL string concatenation with user data; path construction from user input.
+4. **Auth bypass.** New code paths conditionally skipping authentication (`if user == "admin"` and kin).
+5. **Token surface.** Any new code reading `BITBUCKET_TOKEN` from env outside `secret_get.sh` and its callers — the token flows through the resolver chain (sidecar → keychain → env), never re-read at call sites.
+6. **Dependency drift.** New entries in dependency manifests → medium, non-blocking; note for review.
 
-1. **Secrets in diff.** `grep -iE '(password|secret|token|api[_-]?key)\s*=\s*["'\''][^"'\'']{8,}'` over the diff (note: `-i`, not a PCRE `(?i)` group — `grep -E` errors on inline flags). Hits → severity: high, blocking. **Special case for autopilot's own scripts:** the patterns `secret_get.sh`, `secret_set.sh`, and any reference to `BITBUCKET_TOKEN` as a variable name (not value) are allow-listed; flag only on literal token VALUES.
-2. **Hard-coded credentials.** Specifically: AWS access keys, GitHub tokens, JWT secrets, Bitbucket personal access tokens. If found, immediate block.
-3. **Injection sinks.** Subprocess calls with shell=True + interpolated input. SQL strings concatenated with user data. Os.path with user input.
-4. **Auth bypass.** New code paths that conditionally skip authentication checks. Comparison: `if user == "admin"` etc.
-5. **Token surface.** Any new code path that reads `BITBUCKET_TOKEN` from env outside of `secret_get.sh` and its callers. The token must flow through the resolver chain (sidecar → keychain → env), not be re-read at call sites.
-6. **Dependency drift.** New entries in the repo's dependency manifests (`pyproject.toml`, `requirements.txt`, `package.json`, `go.mod`, `Cargo.toml`, ...). Severity: medium, non-blocking. Note for review.
-
-
-If the environment provides a security-checklist skill (e.g. an OWASP reference), you may consult it; its absence changes nothing about the checks above.
-
+If the environment provides a security-checklist skill you may consult it; its absence changes nothing above.
 
 ---
 
-
 ## Validator 5 (optional) — SRE
-
 
 ### WHEN INVOKED
 
-
-Only when the planner included `sre` in the Subtask's `validators[]`.
-Trigger condition: Subtask touches operational hot paths (workspace,
-pipeline, orchestrator, anything that holds long-lived state).
-
+Only when the planner included `sre` in `validators[]` (operational hot paths: long-lived state, pipeline/orchestrator/deploy modules).
 
 ### ROLE
 
-
 Operational readiness pass.
-
 
 ### CHECKS
 
+1. **Health check / observability.** New service code without a health endpoint; long operations without log lines.
+2. **Timeouts.** New external calls without timeouts (`requests.get(url)` without `timeout=`; `curl` without `--max-time`).
+3. **Graceful degradation.** New dependencies that, if down, kill the whole flow — should be optional / cached / fallback'd.
+4. **Idempotency.** Long operations that aren't retry-safe, especially writes to external state stores.
+5. **Resource cleanup.** New file handles, sockets, processes need scope-bound cleanup (`with` / `defer` / RAII) or explicit `close()`.
+6. **Host-adapter / sidecar contract compliance.** Any new PR or build-status operation goes through the host adapter (`scripts/host.sh` and its backends), never a named host directly (Hard Contract 11, ADR 0013). Any new script calling Bitbucket REST uses the sidecar-aware resolver pattern (`references/sidecar-contract.md`). A direct `curl` with `Authorization: Bearer ${BITBUCKET_TOKEN}` outside `secret_get.sh`'s resolver flow → high, blocking.
 
-1. **Health check / observability.** New service code without health endpoint? Long operations without log lines?
-2. **Timeouts.** New external calls without timeouts. `requests.get(url)` without `timeout=` is a finding. `curl` without `--max-time` is a finding.
-3. **Graceful degradation.** New dependencies that, if down, kill the whole flow. Should be optional / cached / fallback'd.
-4. **Idempotency.** Long operations that aren't retry-safe. Especially anything writing to external state stores (cloud parameter/secret stores, infra-state backends, queues).
-5. **Resource cleanup.** New file handles, network sockets, processes — scope-bound cleanup (`with` / `defer` / RAII) or explicit `close()` required.
-6. **Host-adapter / sidecar contract compliance.** Any new PR or build-status operation MUST go through the host adapter (`scripts/host.sh` and its backends `bitbucket.sh` / `github.sh`), never a named host directly (Hard Contract 11, ADR 0013). Any new script that calls Bitbucket REST MUST use the sidecar-aware resolver pattern documented in `references/sidecar-contract.md`. Direct `curl` calls with `Authorization: Bearer ${BITBUCKET_TOKEN}` outside of `secret_get.sh`'s resolver flow → high, blocking.
-
-
-If the environment provides an observability/SRE checklist skill, you may consult it; its absence changes nothing about the checks above.
+If the environment provides an observability/SRE checklist skill you may consult it; its absence changes nothing above.
