@@ -2,9 +2,45 @@
 
 All notable changes to the Zero-Trust Verification suite are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/); the suite tag
-is the release marker, and individual plugins carry their own `plugin.json` version.
+is the release marker. Since v2.0.0-rc.1 the suite ships as ONE plugin
+(`zero-trust`, ADR 0025) whose version lives in its `plugin.json`; per-domain
+v1.x changelogs are preserved under `plugins/zero-trust/docs/<domain>/` (and
+`plugins/zero-trust/skills/autopilot/CHANGELOG.md`).
 
-## [Unreleased]
+## [2.0.0-rc.1] - 2026-07-12 (release candidate; tag at release merge)
+
+### Changed — six plugins consolidated into ONE `zero-trust` plugin (ADR 0025, Wave 1)
+
+**Breaking:** plugin names and install paths change; every command name is
+unchanged (`/spec`, `/autopilot`, `/audit`, `/verify`, `/remediate`,
+`/health-loop`, `/architecture`, `/diagnose-bug`, `/dead-code`,
+`/health-audit`, `/incomplete-logic`, `/marshal-pass`, `/marshal-staleness`,
+`/triage`). Migration: uninstall the six old plugins, refresh the catalog,
+install `zero-trust` (README §Install).
+
+- Structural only — no gate/validator semantic change, no prose rewrites; the
+  merge gates held: `SUITE_STRICT=1 scripts/suite_self_test.sh` green with
+  ZERO skips before and after.
+- **One canonical copy of every vendored artifact, inside the plugin:**
+  manifest schema 4→1 (`schema/verification-manifest/`), validator toolchain
+  4→1 (`scripts/validate_manifest.{sh,py}`; autopilot's distinct `--union`
+  checker keeps its own path), `claim_overlap.sh` 2→1
+  (`skills/autopilot/scripts/`), mutation adapter map + resolver 2→1
+  (`skills/cleanup-audit/`), spec-gen resume helpers 2→1 (`scripts/`),
+  outcome schema 3→1 (`schema/outcome/`). Root `schema/` and root
+  `scripts/validate_manifest.*` deleted; root dev tooling re-pointed.
+- **Escalation criterion (ADR 0002) extracted** to
+  `references/escalation-criterion.md` (5 byte-identical vendored blocks → 1
+  canonical file); the five prompt sites keep their markers and carry an
+  identical short pointer (autopilot lint L22 and triage TR-06 still pin
+  pointer byte-identity).
+- **Lint:** byte-identity vendoring rules V1/V3/V4/V5/V7/V8 deleted with the
+  copies they policed; V2/V6/V9–V13 kept with IDs unchanged (V6 now pins the
+  single-plugin marketplace; V9's vendored-script pin became a re-vendor
+  guard). 16 planted-drift red-tests for the deleted rules removed from
+  `suite_self_test.sh` (+3 V1-teeth checks from the codebase-health harness);
+  every surviving rule keeps its teeth tests.
+- Marketplace registers exactly one plugin: `zero-trust@2.0.0-rc.1`.
 
 ### Added — /health-loop attended wave drain (ADR 0024)
 
@@ -66,7 +102,7 @@ runbooks, manifests, and drains are unaffected.
   folded in, including PR-head build-status sampling and the dotless `-ssh`
   host strip. Plugin self-test 319 → 383 assertions, zero-skip,
   mutation-verified red-tests; suite lint V1–V12 green. See
-  `plugins/autopilot/CHANGELOG.md` §3.1.0.
+  `plugins/zero-trust/skills/autopilot/CHANGELOG.md` §3.1.0.
 
 ## [1.1.0] — 2026-07-07
 
