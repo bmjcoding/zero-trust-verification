@@ -27,9 +27,9 @@
 > maps, `environments` primitive), §5 (behaviors), §10 (completeness grammar `rule-<n>: <path>`),
 > §11 (validator exit 0/3/4/5 + degrade rows), §12 (the join — READ CAREFULLY BELOW), §13
 > (induced consumers). Reused artifacts confirmed present: scripts/validate_manifest.sh,
-> plugins/spec-gen/scripts/{profile_resolve.py,resume_projection.py}, plugins/autopilot/scripts/{host.sh,
+> plugins/zero-trust/scripts/{profile_resolve.py,resume_projection.py}, plugins/zero-trust/skills/autopilot/scripts/{host.sh,
 > secret_get.sh}, tests/fixtures/join/{manifest.yaml,journeys.json}.
-> Baseline: greenfield plugin dir plugins/triage/; NO greenfield infra.
+> Baseline: greenfield plugin dir plugins/zero-trust/; NO greenfield infra.
 
 ## 0. Position and posture (read first) — CORRECTED FRAMING
 
@@ -105,7 +105,7 @@ handoff). TR-08 grows self_test + extends lint (V7 telemetry contract, V5 tier-s
 ## A. Ingestion (vendor-neutral, ADR 0006 + ADR 0013)
 
 ### TR-01 — Telemetry adapter surface + bounded-window guard [ADR 0006, ADR 0013]
-`plugins/triage/scripts/telemetry.sh <subcommand>`, modeled on plugins/autopilot/scripts/host.sh
+`plugins/zero-trust/scripts/telemetry.sh <subcommand>`, modeled on plugins/zero-trust/skills/autopilot/scripts/host.sh
 (verified detect matrix at :60-74). Callers never name a vendor.
 Subcommands: `window --since <ts> --until <ts> [--service S] [--event E]` → normalized incident-
 window NDJSON (TR-02) on stdout; `probe` → reachability/auth (exit 0/non-zero+reason); `backend`
@@ -117,7 +117,7 @@ Backend detection (first match wins), mirroring host.sh but WITHOUT an origin he
      host.sh sniffs Bitbucket-vs-GitHub from the origin URL; there is NO origin-equivalent for a
      telemetry vendor, so absence is an ADR 0002 external-fact escalation, never a guessed default.
 Backends: `otel_file.sh` (default; OTLP/OTEL-JSON logs file — hermetic + community), `cloudwatch.sh`
-(Logs Insights), `dynatrace.sh` (Grail/DQL). Secrets via the existing plugins/autopilot/scripts/secret_get.sh
+(Logs Insights), `dynatrace.sh` (Grail/DQL). Secrets via the existing plugins/zero-trust/skills/autopilot/scripts/secret_get.sh
 chain — tokens never enter agent context.
 **Bounded-window guard (the cost invariant, made mechanical):** `window` REFUSES if `--since`/
 `--until` are absent, if the span exceeds a configured max (`triage.config.yaml`
@@ -214,7 +214,7 @@ CH-02. Where a proof would require the audit's v2 backref, the acceptance is dem
 
 ### TR-04 — Config-profile resume [ADR 0006]
 Resume the profile the way spec-gen does — reuse the VENDORED
-plugins/spec-gen/scripts/profile_resolve.py (`--mode resume --manifest`); the incident's manifest
+plugins/zero-trust/scripts/profile_resolve.py (`--mode resume --manifest`); the incident's manifest
 carries `observability.profile`, so no re-escalation. Per codebase-health CH-08: the profile
 *payload* (taxonomy/vocabulary/seams) is NOT vendored today; the deterministic layer reads the
 bare name and degrades on unknown → `default` + loud `[note]`. Profile decides WHICH vitals matter
@@ -251,7 +251,7 @@ prose note for spec-gen to allocate, not minted here.
 - `[drain]` incident-Spec prose quality (interrogation-ready?) — agent-scored.
 
 ### TR-06 — The triage agent (SKILL/prompt) [ADR 0006 agent-first]
-`plugins/triage/skills/triage/SKILL.md` + `commands/triage.md` running probe→window→loop-guard→
+`plugins/zero-trust/skills/triage/SKILL.md` + `commands/triage.md` running probe→window→loop-guard→
 correlate→profile→emit; applies judgment where the deterministic layer stops (incident vs noise;
 real class-drift vs benign rename). Vendors the ADR 0002 escalation-criterion block VERBATIM
 (V5 lint extends to this plugin), so external facts (source, auth) escalate rather than being
@@ -266,7 +266,7 @@ assumed. Agent-first per ADR 0006: this SKILL is the primary vitals consumer; no
 ## D. Loop closure + self-test
 
 ### TR-07 — Spec-gen resume handoff [CONTEXT.md Tier, MS §10]
-Wire the incident-Spec into spec-gen's EXISTING resume path (plugins/spec-gen/scripts/
+Wire the incident-Spec into spec-gen's EXISTING resume path (plugins/zero-trust/scripts/
 resume_projection.py, profile_resolve.py --mode resume). The incident-Spec is a spec-gen INPUT,
 not a new spec-gen mode: `/spec @<incident-id>.md` with its incomplete manifest is exactly the
 resumable-incomplete case (§10: incomplete manifest consumable only by a resumed spec-tier
@@ -280,14 +280,14 @@ a new source feeding the left edge).
   the Spec lands as a Claim (CONTEXT.md), reusing ADR 0013's surface, no new host code.
 
 ### TR-08 — self_test + vendoring lint [ADR 0001/0015]
-Grow `plugins/triage/scripts/self_test.sh` (uv-bootstrapped, ADR 0015 — `uv run --no-project`,
-no manual venv, matching plugins/autopilot/scripts/self_test.sh:257-265) to cover every `[det]` and
+Grow `plugins/zero-trust/scripts/self_test_triage.sh` (uv-bootstrapped, ADR 0015 — `uv run --no-project`,
+no manual venv, matching plugins/zero-trust/skills/autopilot/scripts/self_test.sh:257-265) to cover every `[det]` and
 `[det-cond]` above (the [det-cond] ones run against triage-owned fixtures with an explicit
 'not-suite-end-to-end' banner). Extend scripts/lint_consistency.sh:
   V5 (existing) — extend the escalation-block tier set from FOUR to FIVE (one-line change; the
      rule mechanism is unchanged). The block must be present + byte-identical in the triage SKILL.
   V7 (new) — the telemetry-adapter observable contract doc
-     (`plugins/triage/reference/telemetry-contract.md`) is the single source; any vendored
+     (`plugins/zero-trust/references/telemetry-contract.md`) is the single source; any vendored
      backend-contract copy is byte-identical (the host-contract precedent).
   V1 (existing) — extend the byte-identity walk to `incident-window.schema.json` if any standalone
      copy ships.

@@ -11,25 +11,26 @@
 set -uo pipefail
 
 # ── Location anchors. This harness lives at tests/codebase-health/ (the repo's
-# dev/test tree), two levels below the repo root; the plugin it exercises lives
-# at plugins/codebase-health/. Both anchors are derived EXPLICITLY — HARNESS_DIR
-# for the harness-local fixtures, REPO_ROOT for the shared repo-root artifacts —
-# so `$dirname/..` heuristics (which would resolve to tests/, not the repo root)
-# can never mis-derive the root and silently [skip] the CH-01..CH-10 wiring.
+# dev/test tree), two levels below the repo root; the codebase-health domain it
+# exercises lives inside the single plugin at plugins/zero-trust/ (ADR 0025).
+# Both anchors are derived EXPLICITLY — HARNESS_DIR for the harness-local
+# fixtures, REPO_ROOT for the shared repo-root artifacts — so `$dirname/..`
+# heuristics (which would resolve to tests/, not the repo root) can never
+# mis-derive the root and silently [skip] the CH-01..CH-10 wiring.
 HARNESS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$HARNESS_DIR/../.." && pwd)"
-PLUGIN="$REPO_ROOT/plugins/codebase-health"
+PLUGIN="$REPO_ROOT/plugins/zero-trust"
 SKILL_SCRIPTS="$PLUGIN/skills/cleanup-audit/scripts"
 FIXTURE_SRC="$HARNESS_DIR/test-fixtures/planted"
 
 # ── PR-Gate / manifest wiring (CH-01..CH-10). The Verification-Manifest
-# validator, its schema, and the §13.4 join fixture pair are repo-root
-# artifacts vendored per ADR 0001 — CH items CONSUME them. In this monorepo
-# they sit at the repo root ($REPO_ROOT); a standalone install would vendor
-# them (and set $VALIDATE_MANIFEST). Every manifest-reading section below
+# validator and its schema are the plugin's CANONICAL copies (ADR 0025 — one
+# copy, inside plugins/zero-trust); the §13.4 join fixture pair stays a
+# repo-root test artifact. CH items CONSUME the validator; a standalone
+# install sets $VALIDATE_MANIFEST. Every manifest-reading section below
 # [skip]s loudly when the validator is absent (blocked-on the spec-gen drain),
 # so this self-test stays green outside the monorepo — never a silent pass.
-VALIDATE_MANIFEST="${VALIDATE_MANIFEST:-$REPO_ROOT/scripts/validate_manifest.sh}"
+VALIDATE_MANIFEST="${VALIDATE_MANIFEST:-$PLUGIN/scripts/validate_manifest.sh}"
 export VALIDATE_MANIFEST
 JOIN_FIX="$REPO_ROOT/tests/fixtures/join"          # reference PASS pair (manifest.yaml + journeys.json v2)
 MANIFEST_FIX="$REPO_ROOT/tests/fixtures/manifest"  # shared validator fixture suite (no second schema copy)
@@ -1116,25 +1117,20 @@ hist_run
 assert_grep "$WORK/hist.out" 'MS-AMEND-1' "CH-09: incomplete manifest -> spec_hash check skipped (⟨MS-AMEND-1⟩)"
 
 echo "== 23. CH-10 consistency-lint host + uv migration (1.4.0 house rules) =="
-# Repo-level cross-plugin lint (MS §13.3 vendoring host): schema byte-identity +
-# the shared `## Behavior coverage` format. [skip]s outside the monorepo.
+# Repo-level cross-domain lint (MS §13.3 host, post-ADR-0025): the shared
+# `## Behavior coverage` format. [skip]s outside the monorepo. (The V1
+# schema-byte-identity rule and its planted-drift teeth test were DELETED with
+# the vendored copies — ADR 0025; sd_self_test SD-01 pins the single-copy
+# invariant instead.)
 LINT="$REPO_ROOT/scripts/lint_consistency.sh"
 if [ -x "$LINT" ]; then
   bash "$LINT" > "$WORK/lint.out" 2>&1; rc=$?
-  if [ "$rc" -eq 0 ]; then ok "CH-10: repo-level lint_consistency.sh passes (schema byte-identity + behavior-coverage format)"; else fail "CH-10: repo-level lint passes [rc=$rc]"; fi
-  assert_grep "$WORK/lint.out" '\[V1\].*schema'                   "CH-10: V1 covers the vendored manifest schema copy (ADR 0001)"
+  if [ "$rc" -eq 0 ]; then ok "CH-10: repo-level lint_consistency.sh passes (cross-domain contract rules)"; else fail "CH-10: repo-level lint passes [rc=$rc]"; fi
   assert_grep "$WORK/lint.out" '\[V2\].*behavior-coverage format' "CH-10: V2 covers the shared ## Behavior coverage format (CH-06)"
-  # the byte-identity rule has TEETH: a drifted vendored copy is caught.
-  DR="$WORK/lintroot"; mkdir -p "$DR/schema/verification-manifest" "$DR/plugins/x/schema/verification-manifest"
-  cp "$REPO_ROOT/schema/verification-manifest/v1.schema.json" "$DR/schema/verification-manifest/v1.schema.json"
-  { cat "$REPO_ROOT/schema/verification-manifest/v1.schema.json"; echo '  // drifted byte'; } > "$DR/plugins/x/schema/verification-manifest/v1.schema.json"
-  LINT_ROOT="$DR" bash "$LINT" > "$WORK/lint_drift.out" 2>&1; rc=$?
-  assert_grep "$WORK/lint_drift.out" 'LINT-FAIL \[V1\].*DRIFTED' "CH-10: lint catches a drifted vendored schema copy (byte-identity has teeth)"
-  if [ "$rc" -ne 0 ]; then ok "CH-10: lint exits non-zero on drift (a gate that would actually block)"; else fail "CH-10: lint must exit non-zero on drift [rc=$rc]"; fi
 else
-  echo "  [skip] repo-level scripts/lint_consistency.sh absent (standalone install) — CH-10 cross-plugin lint checks skipped"
+  echo "  [skip] repo-level scripts/lint_consistency.sh absent (standalone install) — CH-10 cross-domain lint checks skipped"
 fi
-# the canonical behavior-coverage format doc is the ONE source both plugins vendor.
+# the canonical behavior-coverage format doc is the ONE source both domains use.
 assert_grep "$REPO_ROOT/docs/specs/behavior-coverage-format.md" 'behavior-id.: .test-path.::.test-node' "CH-10: canonical ## Behavior coverage format pinned in one doc (CH-06 producer+consumer)"
 # uv migration (ADR 0015): the plugin's Python routes through pyrun/uv, not bare python3.
 assert_grep     "$SKILL_SCRIPTS/py_run.sh"         'uv run'    "CH-10 uv: py_run.sh defines the uv-first runner (ADR 0015)"
@@ -1145,8 +1141,8 @@ assert_not_grep "$SKILL_SCRIPTS/check_new_debt.sh" 'python3 -c' "CH-10 uv: no ba
 
 echo "== 24. MT-01 mutation adapter map — survivor→file:line resolver (ADR 0016) =="
 # Hermetic: canned tool outputs (NO mutation tool is ever run) → normalized
-# `<path>:<line>` survivor set. tests/fixtures/mutation/ is the ONE source; the
-# autopilot vendored copy of mutation_adapter.sh is byte-pinned by root lint V7.
+# `<path>:<line>` survivor set. tests/fixtures/mutation/ is the ONE source;
+# mutation_adapter.sh is the suite's single canonical resolver (ADR 0025).
 ADAPTER="$SKILL_SCRIPTS/mutation_adapter.sh"
 MUTFIX="$REPO_ROOT/tests/fixtures/mutation"
 if [ -x "$ADAPTER" ] && [ -d "$MUTFIX" ]; then
@@ -1265,7 +1261,7 @@ fi
 # ==============================================================================
 REM="$SKILL_SCRIPTS"
 REMFIX="$HARNESS_DIR/test-fixtures/remediation"
-AP="$REPO_ROOT/plugins/autopilot/scripts"
+AP="$REPO_ROOT/plugins/zero-trust/skills/autopilot/scripts"
 
 echo "== RL-00. loop file set present (non-vacuity gate: a deleted loop script is a RED, never a silent skip) =="
 # The whole loop ships as one unit. Assert every file exists so a later section
@@ -1326,7 +1322,7 @@ else
 fi
 
 echo "== RL-04. spec-gen findings-register door (/spec --from-findings; reserved-but-unbuilt) =="
-SG_SKILL="$REPO_ROOT/plugins/spec-gen/skills/spec/SKILL.md"
+SG_SKILL="$REPO_ROOT/plugins/zero-trust/skills/spec/SKILL.md"
 SG_TIER="$REPO_ROOT/docs/specs/spec-gen-tier-v1.md"
 if [ -f "$SG_SKILL" ]; then
   assert_grep "$SG_SKILL" 'from-findings.*Fresh|--from-findings' "RL-04: SKILL.md invocation table gains the /spec --from-findings row"
@@ -1335,7 +1331,7 @@ if [ -f "$SG_SKILL" ]; then
   # Input-class name matches the §2 name in spec-gen-tier-v1.md.
   if grep -qi 'Findings register' "$SG_SKILL" && grep -qi 'Findings register' "$SG_TIER"; then ok "RL-04: input-class name 'Findings register' matches spec-gen-tier-v1.md §2"; else fail "RL-04: input-class name must match §2 'Findings register'"; fi
   # No new spec-gen mode/script: the door is prompt-level; scripts carry no from-findings branch.
-  if grep -rElq 'from.?findings' "$REPO_ROOT/plugins/spec-gen/scripts" 2>/dev/null; then fail "RL-04: spec-gen scripts must NOT add a from-findings code path (reuse existing, ADR 0017 non-goal)"; else ok "RL-04: no new spec-gen mode/script — the door reuses the Fresh interrogation path"; fi
+  if grep -rElq 'from.?findings' "$REPO_ROOT/plugins/zero-trust/scripts" 2>/dev/null; then fail "RL-04: spec-gen scripts must NOT add a from-findings code path (reuse existing, ADR 0017 non-goal)"; else ok "RL-04: no new spec-gen mode/script — the door reuses the Fresh interrogation path"; fi
 else
   fail "RL-04: spec-gen SKILL.md not found"
 fi
@@ -1383,7 +1379,7 @@ if grep -rnE 'gh pr merge|git merge|pr merge|--merge' \
      "$REM/read_findings.sh" "$REM/finding_eligible.sh" "$REM/classify_fix.sh" "$REM/remediation_route.sh" \
      "$REM/build_register.sh" "$REM/remediation_stamp.sh" "$REM/remediation_depth.sh" "$REM/already_filed.sh" \
      "$REM/remediation_scope_guard.sh" "$REM/remediation_state.py" \
-     "$REPO_ROOT/plugins/codebase-health/commands/remediate.md" >/dev/null 2>&1; then
+     "$REPO_ROOT/plugins/zero-trust/commands/remediate.md" >/dev/null 2>&1; then
   fail "RL-06/RL-10: a merge invocation exists in the loop drain path (report-only posture violated — the loop NEVER merges, autopilot HC4)"
 else
   ok "RL-06/RL-10 Guard 3(a): NO merge invocation in the loop drain path (the loop never merges)"
@@ -1468,9 +1464,9 @@ assert_grep     "$WORK/rl_rot.out" "rot-suppressed tombstone. 'old_exporter'"   
 assert_not_grep "$WORK/rl_rot.out" "\[FINDING blocking\] memory-rot-dangling-ref: 'old_exporter'" "RL-10: CH-05 emits NO rot finding for the tombstoned removal"
 
 echo "== RL-11. orchestrator + no-new-plugin (V6 exactly-five holds) =="
-if [ -f "$REPO_ROOT/plugins/codebase-health/commands/remediate.md" ]; then
+if [ -f "$REPO_ROOT/plugins/zero-trust/commands/remediate.md" ]; then
   ok "RL-11: /remediate orchestrator homed in codebase-health/commands (not a new plugin)"
-  assert_grep "$REPO_ROOT/plugins/codebase-health/commands/remediate.md" "report-only|advisory-first|NEVER merges|no blocking" "RL-11: /remediate declares the report-only / no-merge / no-blocking posture"
+  assert_grep "$REPO_ROOT/plugins/zero-trust/commands/remediate.md" "report-only|advisory-first|NEVER merges|no blocking" "RL-11: /remediate declares the report-only / no-merge / no-blocking posture"
 else
   fail "RL-11: /remediate command absent (red-first)"
 fi

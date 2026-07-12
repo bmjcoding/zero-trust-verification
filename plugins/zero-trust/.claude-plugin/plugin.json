@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
+  "name": "zero-trust",
+  "version": "2.0.0-rc.1",
+  "description": "Zero-Trust Verification — the whole suite in one plugin (ADR 0025 consolidation of the former spec-gen, autopilot, codebase-health, marshal, org-memory, and triage plugins). Covers the ADLC left to right through one shared machine-readable Verification Manifest: /spec interrogates raw intent into a Spec + complete manifest (refuse-to-finalize, two-attacker adversarial round, human-only confirmed-CORE); /autopilot drains manifest-bearing Specs into PRs autonomously (disjoint-ownership planning, RED/GREEN TDD, multi-validator review, D6.5 anti-vacuous mutation gate, N=5 determinism, host-agnostic GitHub + Bitbucket DC); /audit + /verify run the closed-loop codebase-health tier (seven specialist agents, fingerprinted findings, debt ratchet, closing tests rerun 5x, /remediate and /health-loop wiring); /marshal-pass is the serial deterministic composed-state merge backstop (post-rebase build verification, zero agent judgment in the merge path); org-memory is the read-only refuse-by-default MCP index over repo-resident memory; /triage turns an emitted production incident into a resumable incident-Spec through one vendor-neutral telemetry adapter. Deterministic tools find evidence; agents judge; nothing counts until verified. One copy of every vendored artifact — the manifest schema, validator toolchain, claim-overlap and mutation-adapter primitives, and the ADR 0002 escalation criterion live exactly once in this plugin.",
+  "author": {
+    "name": "bailey"
+  },
+  "license": "MIT",
+  "keywords": [
+    "zero-trust",
+    "verification-manifest",
+    "spec",
+    "shift-left",
+    "interrogation",
+    "adversarial-review",
+    "autopilot",
+    "tdd",
+    "implementation-drain",
+    "pr-per-story",
+    "determinism-gate",
+    "mutation-testing",
+    "audit",
+    "dead-code",
+    "test-health",
+    "technical-debt",
+    "user-journeys",
+    "remediation",
+    "merge-backstop",
+    "composition-break",
+    "claim-overlap",
+    "org-memory",
+    "knowledge-index",
+    "mcp",
+    "triage",
+    "production-telemetry",
+    "otel",
+    "incident-spec",
+    "host-agnostic",
+    "github",
+    "bitbucket"
+  ]
+}

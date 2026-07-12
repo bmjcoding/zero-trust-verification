@@ -25,7 +25,7 @@ export LC_ALL
 
 HARNESS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$HARNESS_DIR/../.." && pwd)"
-CA="$REPO_ROOT/plugins/codebase-health/skills/cleanup-audit"
+CA="$REPO_ROOT/plugins/zero-trust/skills/cleanup-audit"
 S="$CA/scripts"
 FIX="$HARNESS_DIR/test-fixtures/health-loop"
 

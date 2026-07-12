@@ -29,12 +29,12 @@ export LC_ALL=C
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$HERE/.." && pwd)"
-PLUGIN="$REPO_ROOT/plugins/codebase-health"
+PLUGIN="$REPO_ROOT/plugins/zero-trust"
 SKILL_SCRIPTS="$PLUGIN/skills/cleanup-audit/scripts"
 JOIN_FIX="$REPO_ROOT/tests/fixtures/join"           # the ONE extended manifest+journeys.json v2 pair (SD-04)
 MANIFEST_FIX="$REPO_ROOT/tests/fixtures/manifest"   # shared validator fixtures (no second schema copy)
 
-VALIDATE_MANIFEST="${VALIDATE_MANIFEST:-$REPO_ROOT/scripts/validate_manifest.sh}"
+VALIDATE_MANIFEST="${VALIDATE_MANIFEST:-$PLUGIN/scripts/validate_manifest.sh}"
 export VALIDATE_MANIFEST
 have_validator() { [ -x "$VALIDATE_MANIFEST" ]; }
 
@@ -102,18 +102,20 @@ else
 fi
 
 # =============================================================================
-# SD-01 — the vendored locus field family is byte-identical across the canonical
-# + the three vendored copies (belt-and-suspenders over lint V1; SD-01 vendored-
-# contract acceptance). V1 is the authority; this asserts the re-sync landed.
+# SD-01 — the locus field family lives in the ONE canonical schema (ADR 0025
+# collapsed the three vendored copies into it; SD-01 vendored-contract
+# acceptance, post-consolidation shape: single copy, nothing to re-sync).
 # =============================================================================
-echo "== SD-01. vendored locus-field schema byte-identity (re-sync landed; V1 is the authority) =="
-CANON_SCHEMA="$REPO_ROOT/schema/verification-manifest/v1.schema.json"
-for vend in plugins/spec-gen plugins/org-memory plugins/triage; do
-  vf="$REPO_ROOT/$vend/schema/verification-manifest/v1.schema.json"
-  if [ -f "$vf" ]; then
-    if cmp -s "$CANON_SCHEMA" "$vf"; then ok "SD-01: vendored schema byte-identical: $vend"; else fail "SD-01: vendored schema DRIFTED: $vend (re-sync to canonical)"; fi
-  fi
-done
+echo "== SD-01. locus-field schema — single canonical copy (ADR 0025) =="
+CANON_SCHEMA="$PLUGIN/schema/verification-manifest/v1.schema.json"
+[ -f "$CANON_SCHEMA" ] && ok "SD-01: canonical manifest schema present (plugins/zero-trust/schema/verification-manifest)" \
+                       || fail "SD-01: canonical manifest schema missing (plugins/zero-trust/schema/verification-manifest)"
+sd01_copies=$(find "$REPO_ROOT" -path "$REPO_ROOT/.git" -prune -o -path "$REPO_ROOT/.claude" -prune -o -path '*/verification-manifest/v1.schema.json' -print 2>/dev/null | wc -l | tr -d ' ')
+[ "$sd01_copies" = "1" ] && ok "SD-01: exactly ONE verification-manifest schema in the tree (no vendored copy to drift)" \
+                         || fail "SD-01: expected exactly 1 verification-manifest schema, found $sd01_copies (a second copy reintroduces the drift class ADR 0025 retired)"
+# the canonical validator sits BESIDE the schema (its _HERE.parent/schema/... resolution)
+[ -f "$PLUGIN/scripts/validate_manifest.py" ] && ok "SD-01: canonical validator co-located with the schema (plugins/zero-trust/scripts + schema)" \
+                                              || fail "SD-01: canonical validate_manifest.py missing beside the schema (its ../schema resolution would break)"
 # the new locus family is actually present in the canonical schema
 assert_grep "$CANON_SCHEMA" '"controlLocus"'        "SD-01: canonical schema defines the controlLocus enum (ADR 0021 vocabulary)"
 assert_grep "$CANON_SCHEMA" '"none-declared"'       "SD-01: controlLocus enum carries none-declared (first-class honest answer)"
