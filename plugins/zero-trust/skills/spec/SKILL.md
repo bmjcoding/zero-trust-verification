@@ -6,7 +6,7 @@ description: >
   fails. Fresh, resume, amend, and from-findings modes.
 disable-model-invocation: true
 license: MIT
-argument-hint: "[--profile <name>] <intent...> | @draft.md | --from-findings @<register> | --resume @<spec>.manifest.yaml | --amend @<spec>.manifest.yaml <intent...>"
+argument-hint: "<intent...> | @draft.md — pipeline re-entry: --from-findings @<register> | --resume @<manifest> | --amend @<manifest> <intent...>"
 metadata:
   version: "0.1.0"
 ---
@@ -32,13 +32,17 @@ the manifest `interrogation.log`, never a tracker (Hard Contract 3).
 
 ## Invocation and modes
 
-| Invocation | Mode | Input class |
-|---|---|---|
-| `/spec [--profile <name>] <intent...>` | Fresh | Raw intent (paragraph, meeting notes, Jira) |
-| `/spec @draft.md` | Fresh | Draft Spec — interrogated, not trusted |
-| `/spec --from-findings @<register>` | Fresh | Findings register (remediation-loop entry, ADR 0017) — reuses the Fresh path; interrogated like a Draft Spec, not trusted |
-| `/spec --resume @<spec>.manifest.yaml` | Resume | `completeness: incomplete` from a prior (possibly crashed) session |
-| `/spec --amend @<spec>.manifest.yaml <intent...>` | Amend | Amendment against a merged Spec → `manifest_revision` N+1 |
+Five entry doors into ONE interrogation engine — modes, not features. The
+first two are the human surface; the last three are wired pipeline edges
+(remove one and the loop that enters through it breaks).
+
+| Invocation | Mode | Input class | Driven by |
+|---|---|---|---|
+| `/spec <intent...>` | Fresh | Raw intent (paragraph, meeting notes, Jira) | You — the daily default (`--profile <name>` accepted; config resolution below usually covers it) |
+| `/spec @draft.md` | Fresh | Draft Spec — interrogated, not trusted | You, when a doc already exists |
+| `/spec --from-findings @<register>` | Fresh | Findings register (remediation-loop entry, ADR 0017) — reuses the Fresh path; interrogated like a Draft Spec, not trusted | `/remediate` — machine door, rarely typed by hand |
+| `/spec --resume @<spec>.manifest.yaml` | Resume | `completeness: incomplete` from a prior (possibly crashed) session | Crash recovery (session-death-safe, HC5) and `/triage`'s incident-Spec re-entry |
+| `/spec --amend @<spec>.manifest.yaml <intent...>` | Amend | Amendment against a merged Spec → `manifest_revision` N+1 | You, revising a shipped Spec — ID-stable so autopilot's revision-drift gate (AV3-04) keys on it |
 
 **Profile (fresh sessions):** run `scripts/profile_resolve.py` (order:
 `--profile` flag → repo `spec-gen.config.yaml` → `default`). A fall-through to
