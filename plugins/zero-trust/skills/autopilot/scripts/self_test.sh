@@ -2298,11 +2298,14 @@ else
   pass L21 "L21 reds a dropped anti-flakiness rule"
 fi
 
-# L22 must red drift between the two vendored ADR-0002 escalation copies:
-# fresh copy, mutate a word inside the implementer's block, expect the lint to red.
+# L22 must red drift between the two vendored ADR-0002 escalation POINTER blocks
+# (since ADR 0025 the criterion text lives in the canonical
+# references/escalation-criterion.md; the prompts carry an identical pointer —
+# a reworded pointer in ONE prompt is the same silent-policy-fork drift):
+# fresh copy, mutate a word inside the implementer's pointer, expect the lint to red.
 planted22="$SANDBOX/planted-lint-22"
 cp -R "$ROOT" "$planted22"
-sed 's/reject-and-alert/REWORDED-DRIFT/' "$planted22/references/implementer-prompt.md" > "$planted22/references/imp22.tmp"
+sed 's#references/escalation-criterion.md#references/REWORDED-DRIFT.md#' "$planted22/references/implementer-prompt.md" > "$planted22/references/imp22.tmp"
 mv "$planted22/references/imp22.tmp" "$planted22/references/implementer-prompt.md"
 if bash "$planted22/scripts/lint_consistency.sh" >/dev/null 2>&1; then
   fail L22 "L22 did NOT red a drifted vendored escalation copy"
