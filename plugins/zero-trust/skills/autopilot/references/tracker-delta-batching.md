@@ -84,22 +84,12 @@ never be used for deltas that fit an existing kind.
 ## Flush point
 
 Flush occurs at D7.1a — after D7.0's rebase and D7.1's staging, BEFORE the
-D7.2 push and D7.3 PR creation. Per `references/lifecycle.md` D7.1a:
-
-1. Build a `Tracker deltas folded in:` block for the commit body listing each
-   pending entry's `delta_kind` + `diff_summary` (one line per entry).
-2. Apply every entry's `body:` field to the tracker file (mutations
-   accumulated in-order).
-3. Flush the queue: replace the section body with `_(empty)_` (the header
-   remains).
-4. Commit the tracker file on the **Runbook PR branch**
-   (`autopilot/<slug>/runbook`, AV3-08) as its OWN append commit — the fold does
-   NOT ride a Story branch and never stages `owned_files[]`, so a Story's code
-   and the tracker's bookkeeping never share a branch (one home, no
-   self-intersecting claim surfaces for AV3-09). The impl commit on the Story
-   branch and this bookkeeping commit on the runbook branch are separate PRs.
-5. The Runbook PR body surfaces the same folded entries as a
-   `## Tracker deltas folded in` H2.
+D7.2 push and D7.3 PR creation. The fold procedure itself (the commit-body
+`Tracker deltas folded in:` block, the in-order apply of each entry's `body:`,
+the `_(empty)_` queue reset, the OWN append commit on the Runbook PR branch
+(`autopilot/<slug>/runbook`, AV3-08), and the PR-body
+`## Tracker deltas folded in` H2) is defined once in
+`references/lifecycle.md` §D7.1a/§D7.3 — canonical there, not restated here.
 
 Under `branching.no_force_push: false` (default) this queue is unused — D7.1a
 is a no-op because the deltas were already committed directly to the Runbook PR
