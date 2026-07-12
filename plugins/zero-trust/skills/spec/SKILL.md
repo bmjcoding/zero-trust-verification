@@ -3,9 +3,8 @@ name: spec
 description: >
   Interrogate raw intent into a product-approvable Spec plus a complete
   Verification Manifest — refusing to finalize while any completeness rule
-  fails. Use when the user says "/spec", "write a spec for", "turn this
-  intent/ADR/Jira into a spec + manifest", "resume a spec session", or
-  "amend a merged spec".
+  fails. Fresh, resume, amend, and from-findings modes.
+disable-model-invocation: true
 license: MIT
 argument-hint: "[--profile <name>] <intent...> | @draft.md | --from-findings @<register> | --resume @<spec>.manifest.yaml | --amend @<spec>.manifest.yaml <intent...>"
 metadata:
@@ -128,7 +127,9 @@ Run `scripts/validate_manifest.sh`:
 
 **Confirmation gate (S6→S7):** exit 0 + GWT pass is the ONLY path to S7, and
 S7 stays closed while any human confirmation S5 owes is still missing — an
-unanswered escalation ships as a question, never as a default. Writing
+owed, unanswered confirmation stays an open escalation in the manifest (which
+therefore stays `completeness: incomplete`); it never converts to a defaulted
+answer. Writing
 `completeness: incomplete` and exiting is legal only on an explicit human
 `defer` at S5 (the same escalation surfaced 3 times unanswered counts as
 `defer`), never on your own initiative.
