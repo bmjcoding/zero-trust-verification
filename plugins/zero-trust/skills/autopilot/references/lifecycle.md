@@ -1,17 +1,12 @@
-# Autopilot lifecycles — GENERATE (G1..G8) and DRAIN (D1..D8), Resume, failure escalation, STATUS, tracker-PR availability, end-of-drain output
+# Autopilot lifecycles — GENERATE (G0..G8), DRAIN (D1..D8), Resume, failure escalation, STATUS, Runbook-PR availability, end-of-drain output
 
+**Loading-preamble reminder (survives auto-compaction).** Every step below honours the delegation contract in `SKILL.md` §"Loading preamble" and Hard Contract 10. Delegation is the positive default: before any tool call, name the subagent you are about to dispatch. Every override — `--yolo`, `--force`, `--jira`, `--consolidate=auto`, `--slug=`, `--merge`, `--overwrite`, `branching.single_branch_single_pr`, `branching.no_force_push`, and any future flag — is ORTHOGONAL to this contract; none licenses direct orchestrator edits to source files. Rich context (spec, ADR, runbook body) is *more* reason to delegate, not less. First-action gate: if the next action is not a dispatch and not inside the orchestrator-direct allow-list (tracker/runbook Read/Edit, short-output git, skill scripts), stop and re-read the preamble.
 
-**Loading-preamble reminder (survives auto-compaction).** Every step below — GENERATE and DRAIN alike — honours the delegation contract in `SKILL.md` §"Loading preamble" and Hard Contract §10. Delegation is the positive default. Before any tool call, name the subagent you are about to dispatch. `--yolo`, `--force`, `--jira`, `--consolidate=auto`, `--slug=`, `--merge`, `--overwrite`, `branching.single_branch_single_pr`, `branching.no_force_push`, and any future override are ORTHOGONAL to this contract — none of them licenses direct orchestrator edits to source files. Rich context (SPEC.md, ADR text, runbook body) is *more* reason to delegate, not less. First-action gate: if the next action is not a dispatch and does not fall inside the orchestrator-direct allow-list (tracker/runbook Read/Edit, short-output git, skill scripts under `${SKILL_DIR}/scripts/`), stop and re-read this preamble.
-
-
-# GENERATE lifecycle (G1..G8)
-
+# GENERATE lifecycle (G0..G8)
 
 ## Step G0 — Mode inference (ADR 0008 / AV3-01)
 
-
-Before G1, decide the GENERATE *shape* from the input's companion Verification Manifest. Locate `<spec-basename>.manifest.yaml` next to each input doc; if present, validate it with the **manifest validator** (the spec-tier's single-file `validate_manifest.sh`, vendored per ADR 0001; exit codes 0 complete · 3 incomplete · 4 schema-invalid · 5 unsupported) and capture the exit code. For multi-doc invocations also run autopilot's own `scripts/validate_manifest.sh --union` (AV3-03) first. Then run:
-
+Decide the GENERATE *shape* from the input's companion Verification Manifest. Locate `<spec-basename>.manifest.yaml` next to each input doc; if present, validate it with the manifest validator — the plugin's canonical single-file `scripts/validate_manifest.sh`, NOT autopilot's `--union`-only checker (exit codes 0 complete · 3 incomplete · 4 schema-invalid · 5 unsupported). For multi-doc invocations also run `scripts/validate_manifest.sh --union` (AV3-03) first. Then:
 
 ```bash
 bash ${SKILL_DIR}/scripts/detect_input_mode.sh \
@@ -20,258 +15,106 @@ bash ${SKILL_DIR}/scripts/detect_input_mode.sh \
 #    | REFUSE-MANIFEST-INVALID | REFUSE-MANIFEST-UNSUPPORTED
 ```
 
-
 | MODE | Meaning | G8 behavior |
 |---|---|---|
-| `STRAIGHT_THROUGH` | valid + complete manifest (validator exit 0) | run the drain immediately, no review pause, no flag — the manifest is the vetting (ADR 0008) |
-| `GENERATE_PAUSE` | bare markdown, or incomplete manifest (exit 3 — consumable by nothing but a resumed spec session, MS §11) | default review path — write artifacts, print summary, exit |
-| `GENERATE_YOLO` | the manifest-less `--yolo` override | skip review, arm the drain, and append a `## Force Audit` entry (AP-11) |
-| `REFUSE-MANIFEST-INVALID` | validator exit 4 (schema-invalid) | refuse; report the schema error; NEVER degrade to manifest-less (MS §11); `--yolo` cannot bypass |
-| `REFUSE-MANIFEST-UNSUPPORTED` | validator exit 5 (`schema_version` > supported) | refuse `[MANIFEST-UNSUPPORTED]` |
+| `STRAIGHT_THROUGH` | valid + complete manifest (exit 0) | drain immediately, no review pause, no flag — the manifest is the vetting (ADR 0008) |
+| `GENERATE_PAUSE` | bare markdown, or incomplete manifest (exit 3 — consumable only by a resumed spec session, MS §11) | default review path — write artifacts, print summary, exit |
+| `GENERATE_YOLO` | the manifest-less `--yolo` override | skip review, arm the drain, append a `## Force Audit` entry (AP-11) |
+| `REFUSE-MANIFEST-INVALID` | exit 4 (schema-invalid) | refuse; report the schema error; NEVER degrade to manifest-less (MS §11); `--yolo` cannot bypass |
+| `REFUSE-MANIFEST-UNSUPPORTED` | exit 5 (`schema_version` > supported) | refuse `[MANIFEST-UNSUPPORTED]` |
 
-
-`--drain`/`--resume` intents map straight to `DRAIN`/`RESUME` (unchanged). For multi-doc invocations, run the union validation (G4, AV3-03) before deciding `STRAIGHT_THROUGH`.
-
+`--drain`/`--resume` intents map straight to `DRAIN`/`RESUME`. Multi-doc `STRAIGHT_THROUGH` requires the union validation (G4) to pass.
 
 ## Step G1 — Pre-flight
 
+Read in parallel: each input doc; `git status --short`; `git rev-parse --abbrev-ref HEAD`; trunk via `git symbolic-ref refs/remotes/origin/HEAD`; `git log -100 --pretty=format:"%h %s" --since='30 days ago'` (recency context); `bash ${SKILL_DIR}/scripts/sidecar_detect.sh` (`MODE=sidecar|local`).
 
-Read in parallel:
-- Each input doc passed via `@<path>`
-- `git status --short` and `git rev-parse --abbrev-ref HEAD`
-- `git symbolic-ref refs/remotes/origin/HEAD | sed 's|refs/remotes/origin/||'` (trunk detection)
-- `git log -100 --pretty=format:"%h %s" --since='30 days ago'` (recency context)
-- `bash ${SKILL_DIR}/scripts/sidecar_detect.sh` (workspace runtime detection; outputs `MODE=sidecar|local` + sidecar URL if any)
+Refuse if the working tree is dirty, if not on trunk, or if any input doc is missing.
 
-
-Refuse if working tree is dirty. Refuse if not on trunk. Refuse if any of the input docs don't exist.
-
-
-Derive `<slug>` now (same derivation G7 uses — from the input doc names, `--slug=` override wins) — it is needed for the tracker path here and for branch naming throughout. Then run `bash ${SKILL_DIR}/scripts/detect_concurrent_drain.sh .autopilot/runbooks/<slug>.tracker.md` (the script takes the TRACKER PATH, not a bare slug) — exit 2 means another session holds a live lock: refuse with `STATUS: STOPPED — concurrent drain detected`. Exit 4 (unreadable lock state) is also a refuse — fail closed. Exit 64 (malformed invocation) is a refuse — fix the call, don't proceed unguarded. Exit 3 (stale lock) may be reclaimed. Operator overrides with `--force` (logged per AP-11).
-
+Derive `<slug>` now (same derivation G7 uses; `--slug=` wins) — the tracker path and every branch name need it. Then run `bash ${SKILL_DIR}/scripts/detect_concurrent_drain.sh .autopilot/runbooks/<slug>.tracker.md` (takes the TRACKER PATH, not a bare slug): exit 2 (live foreign lock) → refuse `STATUS: STOPPED — concurrent drain detected`; exit 4 (unreadable lock state) → refuse, fail closed; exit 64 (malformed invocation) → refuse, fix the call; exit 3 (stale lock) may be reclaimed. `--force` overrides, logged per AP-11.
 
 ## Step G1.5 — Repo-shape probe (AP-23)
 
+Run `bash ${SKILL_DIR}/scripts/repo_shape_probe.sh` after the G1 refuses clear. It emits `KEY=VALUE` on stdout, warnings on stderr, exit 0 even when individual probes return `unknown`; cleanup is via an EXIT/INT/TERM trap on `autopilot/probe-*-<PID>` temp branches:
 
-Run `bash ${SKILL_DIR}/scripts/repo_shape_probe.sh` after the G1 refuses have cleared. The probe emits `KEY=VALUE` lines on stdout:
+- `TRUNK=<branch>` (falls back to `main`)
+- `CI_PRESENT=true|false|unknown` — a build-status sample on recent trunk commits, or CI config presence at trunk tip
+- `CI_STATUS_REPORTING=true|false|unknown` — does the CI that runs post to the host build-status API? Sampled over recent trunk commits AND PR head shas (never just the tip: PR-only-reporting CI posts to PR heads that squash/rebase merges never bring onto trunk). `false` = CI config exists but the endpoint never populates — polling it would never resolve
+- `FORCE_PUSH_ALLOWED=true|false|unknown` — a `+`-refspec push of a temp branch, rejection message parsed via `match_rejection`
+- `JIRA_HOOK_ENFORCED=true|false|unknown` — a temp-branch push whose commit subject deliberately omits a JIRA key. Server-side pre-receive hooks are invisible to local heuristics; the only ground truth is what the server rejects — hence a real push
 
+The probe's facts auto-seed the runbook frontmatter and populate the `### Repo constraints (detected)` block (each fact annotated with the probe method that produced it). The auto-seed table — which fact flips which flag — is canonical in `references/runbook-template.md` §"Repo constraints (detected)". `unknown` never auto-flips (loop-safety invariant 2); each `unknown` surfaces in the G8 summary and the operator decides.
 
-- `TRUNK=<branch>` (falls back to `main` if `refs/remotes/origin/HEAD` is unset)
-- `CI_PRESENT=true|false|unknown` — a definite build-status sample on a recent trunk commit, or presence of `bitbucket-pipelines.yml`, `.github/workflows/*.y(a)ml`, `Jenkinsfile`, or `.gitlab-ci.yml` at trunk tip
-- `CI_STATUS_REPORTING=true|false|unknown` — does the CI that runs actually post to the host build-status API? Sampled over recent trunk commits AND recent PR head shas (never just the tip: PR-only-reporting CI posts statuses to PR heads that squash/rebase merges never bring onto trunk). `false` = CI config exists but the endpoint never populates on any sampled sha — the `ci.skip_wait: false` poll target would never resolve (a real pipeline can run without ever advertising to the host's build-status API)
-- `FORCE_PUSH_ALLOWED=true|false|unknown` — determined by pushing a temp branch `autopilot/probe-force-push-<PID>` with a `+` refspec and inspecting the rejection message via `match_rejection`
-- `JIRA_HOOK_ENFORCED=true|false|unknown` — determined by pushing a temp branch `autopilot/probe-jira-hook-<PID>` whose HEAD commit subject deliberately omits a JIRA key and inspecting the rejection message
-
-
-Warnings on stderr; exit 0 even when individual probes return `unknown`. Cleanup is via `trap` on EXIT/INT/TERM — orphan probe branches from killed runs can be cleaned up manually using the naming convention documented in the script header.
-
-
-### Auto-seed frontmatter
-
-
-The probe's facts flow into the seeded runbook frontmatter automatically:
-
-
-- `CI_PRESENT=false` → `ci.skip_wait: true`
-- `CI_PRESENT=true` **and** `CI_STATUS_REPORTING=false` → `ci.skip_wait: true` — CI runs but never posts to the host build-status API, so a `skip_wait: false` runbook would poll a void until `ci-stuck-pending` on every Subtask. Degrade the CI gate honestly at GENERATE-time: the local test gates remain the merge gate, and the `Repo constraints (detected)` block records why.
-- `FORCE_PUSH_ALLOWED=false` → `branching.no_force_push: true`
-- `JIRA_HOOK_ENFORCED=true` → `enforce_jira_key: true`
-
-
-`unknown` values do NOT auto-flip. Each surfaces as a warning in the G8 review summary and the operator decides at review time.
-
-
-### Auto-populate `### Repo constraints (detected)` block
-
-
-The probe facts also populate a `### Repo constraints (detected)` block at the top of the seeded runbook body so the operator can read them without re-running the probe. Every fact is annotated with the probe method that produced it (temp-branch push, file presence, etc.) so the operator can verify.
-
-
-### Design choice: JIRA-hook probe uses a real push
-
-
-Pre-receive hooks are server-side state. A local heuristic on `git config` / remote URL would miss the actual signal. The only ground truth is "what does the server reject" — hence the temp-branch push with a hook-violating commit subject.
-
-
-### `--dry-run` mode
-
-
-`repo_shape_probe.sh --dry-run` prints (on stderr — stdout stays KEY=VALUE-pure) every probe operation and the temp branch names that WOULD be created, performs no network or git-state operation of any kind (trunk detection uses only local refs; the cleanup trap is disarmed), and emits `unknown` for every live-probe signal. Useful for operators reviewing what the probe will touch before running it against a repo with sensitive pre-receive hooks.
-
-
-### `--jira-key <KEY>` flag
-
-
-On repos whose pre-receive hook rejects commits without a JIRA key, the force-push probe's own commits get rejected before the rewrite can be tested — the probe then reports `FORCE_PUSH_ALLOWED=unknown` (and concludes `JIRA_HOOK_ENFORCED=true` from that same rejection without a second push). Passing `--jira-key <KEY>` (any valid issue key the operator owns) prefixes probe commit subjects with `[<KEY>]` so the force-push probe can reach its actual test. G1.5 passes the runbook's `jira_key` automatically when one is present.
-
-
-### `--explain` and `--show-patterns` modes
-
-
-`repo_shape_probe.sh --explain` runs the real probe and additionally prints, on stderr, the reasoning behind each emitted value (which registry pattern matched, which temp branch was used). Stdout stays KEY=VALUE-pure.
-
-`repo_shape_probe.sh --show-patterns` prints the current contents of the `scripts/repo_shape_probe_patterns.sh` registry on stdout and exits 0. No network, no git state. Useful for operators reviewing which rejection patterns are recognized before running a real probe.
-
-Whenever a push rejection matches no registry pattern, the probe emits (always-on): `probe: unknown rejection pattern; please add to repo_shape_probe_patterns.sh: <raw message>` — every operator-visible `unknown` rejection is a candidate new pattern.
-
+Probe flags (usage detail in the script header): `--dry-run` previews every operation with zero network/git-state effect; `--explain` prints the reasoning per emitted value on stderr; `--show-patterns` prints the rejection-pattern registry. `--jira-key <KEY>` prefixes probe commit subjects so the force-push probe works on JIRA-hook-enforcing repos (without it the hook rejects the probe's own commits and `FORCE_PUSH_ALLOWED` degrades to `unknown`); G1.5 passes the runbook's `jira_key` automatically when present. A rejection matching no registry pattern always emits `probe: unknown rejection pattern; please add to repo_shape_probe_patterns.sh: <raw message>`.
 
 ## Step G2 — Tier-1 extraction
 
+Spawn ONE `general-purpose` agent with `references/extraction-prompt.md` inlined verbatim. Pass: the text of every input doc, the recent git log (already-shipped awareness), and the strict YAML schema.
 
-Spawn ONE `general-purpose` agent with the role prompt at `references/extraction-prompt.md` inlined verbatim. Pass:
-- The text of every input doc
-- The repo's recent git log (for "already shipped, doc not moved" detection)
-- The strict YAML schema the agent must emit
+Validate the output against the schema (required per item: `story_id`, `title`, `source_ref`, `kind`, `behaviors_or_outcomes`, `evidence`). Missing field → re-prompt ONCE with the validation error verbatim; second failure → halt `[GENERATE-FAILED: extraction-schema]`.
 
-
-Validate the YAML output against the schema. Required fields: `story_id`, `title`, `source_ref`, `kind`, `behaviors_or_outcomes`, `evidence`. Missing field on any item → re-prompt agent ONCE with the validation error verbatim. Second failure → halt with `[GENERATE-FAILED: extraction-schema]`.
-
-
-### Tier-1 → tier-2 field transformation
-
-
-G2 emits `behaviors_or_outcomes` (what "done" looks like, no implementation framing). G3 consumes that and emits `behaviors_to_test` (ordered, observable, drives TDD; first entry is the tracer bullet). One outcome can fan out into multiple test behaviors. See `references/role-prompts-rationale.md` §"Why two-tier extraction" for rationale.
-
+G2 emits `behaviors_or_outcomes` (what done looks like, no implementation framing); G3 consumes that and emits `behaviors_to_test` (ordered, observable, drives TDD; first entry is the tracer bullet). One outcome can fan out into several test behaviors.
 
 ## Step G3 — Tier-2 planning + audit
 
+For each Story, spawn a `general-purpose` agent with `references/planner-prompt.md` inlined verbatim. The planner verifies paths against the live repo, decomposes into Subtasks, emits the full tier-2 schema — including `test_name_hint:` (AP-9), `predicted_hours:` (AV3-07), `behavior_ids:` (AV3-02, mapping every active manifest Behavior; skipped for manifest-less drains) — and captures `audited_sha:` at spawn time so D3.0 can detect post-plan drift (AP-5).
 
-For each Story emitted in G2, spawn a `general-purpose` agent with the role prompt at `references/planner-prompt.md` inlined verbatim. The planner:
+Run all planners in parallel (one message, multiple tool calls). Validate each output; missing fields → re-prompt that planner ONCE; second failure → mark that Story `[GENERATE-FAILED: planner-schema]` and continue with the rest.
 
-
-1. Reads the Story's `evidence` block (file refs, ADR section refs)
-2. Runs `Read`, `Glob`, `Grep` to verify what already exists in the repo vs. what's missing
-3. Decomposes the Story into Subtasks (1–8 files each, <500 LOC delta each)
-4. Emits the full tier-2 schema per Subtask (includes `test_name_hint:` per behavior — AP-9, `predicted_hours:` — AV3-07, and `behavior_ids:` — AV3-02)
-5. Maps every active manifest Behavior to ≥1 Subtask via `behavior_ids:` (required for `kind: code | test-only`; `[]` for refactor/config/docs). Skipped for manifest-less drains.
-6. Captures `audited_sha:` at planner-spawn time so D3.0 can detect post-plan drift — AP-5
-
-
-Run all planners in parallel (one Agent message, multiple tool calls). Validate each output against the schema; missing required fields → re-prompt that planner ONCE. Second failure → mark that Story `[GENERATE-FAILED: planner-schema]` and continue with the rest.
-
-
-**Budget check (`budget.max_subtasks`).** After all planners return, count the union of emitted Subtasks. If it exceeds the runbook's `budget.max_subtasks` (default 20), refuse with `[GENERATE-FAILED: subtask-budget-exceeded]` citing the count — the operator either raises the budget or splits the input docs into separate drains. Do NOT silently truncate the plan.
-
+**Budget check.** If the union of emitted Subtasks exceeds `budget.max_subtasks` (default 20) → refuse `[GENERATE-FAILED: subtask-budget-exceeded]` citing the count; the operator raises the budget or splits the input. Never silently truncate.
 
 ## Step G3.5 — Plan review (schema-only projection — AP-3)
 
+For each planner output, spawn a `Plan` agent in REVIEW mode on a STRIPPED projection. The allow-list of projected fields is defined ONCE in `references/plan-reviewer-projection.md` §"Allowed fields" — build the projection from that list verbatim (a field outside it triggers NEVER-GO). The reviewer never sees the planner's `evidence`, `contract` prose, or reasoning, so it must judge the structure instead of absorbing the narrative.
 
-For each planner output, spawn a `Plan` agent in REVIEW mode. The reviewer receives a STRIPPED projection of the planner's output. The allow-list of projected fields is defined ONCE, in `references/plan-reviewer-projection.md` §"Allowed fields" — build the projection from that list verbatim (do not re-derive it from memory; a field outside the reviewer's allow-list triggers NEVER-GO).
-
-
-The reviewer never sees the planner's `evidence` quote, the `contract` semantic-guarantee prose, or the planner's reasoning. This keeps the review independent: the reviewer must form its own judgment from the schema's structural fields rather than agreeing with the planner's narrative.
-
-
-Reviewer findings → spawn the original planner ONCE with findings verbatim. Second NO-GO → mark Story `[GENERATE-FAILED: plan-review-ungated]` and continue.
-
+Reviewer findings → re-spawn the original planner ONCE with findings verbatim. Second NO-GO → `[GENERATE-FAILED: plan-review-ungated]` for that Story; continue.
 
 ## Step G3.6 — Subtask consolidation (AP-21, opt-in)
 
+Off by default; enabled by `pack_subtasks: true` or `--consolidate=auto`. After G3.5, walk the reviewed plan for consolidation candidates. Eligibility (ALL conditions): same `kind` (typically `docs`/`config`); same parent Story; every `estimated_size` is `S`; `owned_files[]` disjoint after merge; `depends_on[]` consistent (no cycle created); combined `behaviors_to_test[]` ≤ 6; no member has a distinct `jira_key` under `enforce_jira_key: true` (Jira Subtasks stay 1:1).
 
-Off by default. Operators opt in with `pack_subtasks: true` in runbook frontmatter or `--consolidate=auto` on the GENERATE invocation.
+A consolidated group becomes one Subtask: `id` = `<lowest-id>+` (e.g. `B2+`); union of `owned_files[]` / `behaviors_to_test[]` / `test_gates[]`; `estimated_size` = the group ceiling (`S+S` → `M`); a `Consolidated from:` note listing the merged IDs. Ineligible groups pass through unchanged; consolidations are logged to `## Generation Notes`.
 
+## Step G4 — Topological sort + gates
 
-When enabled, after G3.5 the orchestrator walks the reviewed plan for consolidation candidates. Eligibility (all conditions):
+**Hot files.** `bash ${SKILL_DIR}/scripts/hot_file_audit.sh --churn` surfaces the 20 most-churned files (30 days, origin-trunk). Two Subtasks owning the same hot file → force a DAG edge (lower-ID blocks higher-ID); surface in the review summary.
 
+**Dependency validation.** Validate every `depends_on[]` entry against the union of planner-emitted IDs — planners run in parallel, so cross-Story references are unverifiable at plan time; this check runs on EVERY generate path. Unknown ID → `[GENERATE-FAILED: dangling-dependency]`. Topo-sort; cycles → `[GENERATE-FAILED: dependency-cycle]`; same file in two non-dependent Subtasks → `[GENERATE-FAILED: ownership-overlap]`.
 
-- Same `kind` (typically `docs` or `config`)
-- Same parent Story
-- Each Subtask's `estimated_size` is `S` (the planner vocabulary is `S | M | L`)
-- `owned_files[]` do not overlap after merge
-- `depends_on[]` are consistent (no cycle created by the merge)
-- Combined `behaviors_to_test[]` count ≤ 6
-- No Subtask in the group is marked `enforce_jira_key: true` with a distinct `jira_key` (Jira Subtasks stay 1:1 with autopilot Subtasks)
+**Manifest union (MS §2 / AV3-03), multi-doc only.** `bash ${SKILL_DIR}/scripts/validate_manifest.sh --union <a.manifest.yaml> <b.manifest.yaml> ...`: a Journey/Behavior ID shared across manifests → `[GENERATE-FAILED: manifest-id-collision: <id>]` (interrogation-log `DL-###` IDs are per-manifest and not unioned); differing `observability.profile` or `environments` → `[GENERATE-FAILED: manifest-union-mismatch: <profile|environments>]`.
 
+**Sizing + mapping gate (ADR 0012 / AV3-07 + MS §13.6 / AV3-02).** Render the planner union to `plan.json`; run `bash ${SKILL_DIR}/scripts/validate_plan_mapping.sh <plan.json> [<manifest.yaml>]` (manifest arg only on manifest-backed drains):
 
-Consolidated groups become one Subtask with:
-- New `id` = `<lowest-id>+` (e.g., `B2+`)
-- Union of `owned_files[]`, `behaviors_to_test[]`, `test_gates[]`
-- `estimated_size` = the ceiling of the group's sizes (`S+S` → `M`)
-- `Consolidated from:` note listing the merged Subtask IDs
+- Sizing (always): `predicted_hours` within its `estimated_size` ceiling (S≤4, M≤16, L≤48) → `[GENERATE-FAILED: story-size-inconsistent: <subtask-id>]`; Story roll-up ≤48h → `[GENERATE-FAILED: story-oversized: <story-id>]`. Deterministic over a declared prediction — the Marshal owns actuals (ADR 0012). On `story-oversized`, re-spawn that Story's planner to split into sequential, independently mergeable Stories (each its own Story branch/PR).
+- Behavior mapping (manifest only): every `kind: code | test-only` Subtask maps ≥1 Behavior → `[GENERATE-FAILED: unmapped-subtask]`; every mapped ID active in the manifest → `[GENERATE-FAILED: unknown-behavior]`; every active Behavior owned by ≥1 Subtask → `[GENERATE-FAILED: unowned-behavior]` (refactor/config/docs exempt). On a mapping refusal, re-spawn the planner with the offending IDs. G7 records the behavior-IDs-per-Story ledger so the audit tier can distinguish not-yet-wired work from Memory Rot.
 
-
-Ineligible or single-Subtask groups pass through unchanged. Consolidation is logged to the runbook's `## Generation Notes` section with the input and output IDs.
-
-
-## Step G4 — Topological sort + hot-file detection
-
-
-Run `bash ${SKILL_DIR}/scripts/hot_file_audit.sh --churn` — surfaces the 20 most-churned files in the last 30 days from origin-trunk history. For any Subtask whose `owned_files[]` includes a hot file:
-
-
-- If another Subtask in this drain also owns that hot file → **force a DAG edge** between them (lower-ID blocks higher-ID). Surface in review summary.
-
-
-Validate every `depends_on[]` entry against the union of all planner-emitted Subtask IDs — planners run in parallel and cross-Story references are unverifiable at plan time, so this check runs on EVERY generate path (not only `--merge`). Unknown ID → `[GENERATE-FAILED: dangling-dependency]`.
-
-
-Topo-sort all Subtasks. Detect cycles → `[GENERATE-FAILED: dependency-cycle]`. Detect ownership overlap (same file in two non-dependent Subtasks) → `[GENERATE-FAILED: ownership-overlap]`.
-
-
-**Manifest union validation (MS §2 / AV3-03).** For a multi-doc invocation (`--generate @a.md @b.md`), one Spec ships one manifest but the union must be coherent. Run `bash ${SKILL_DIR}/scripts/validate_manifest.sh --union <a.manifest.yaml> <b.manifest.yaml> ...`:
-- a Journey/Behavior ID shared across the unioned manifests → `[GENERATE-FAILED: manifest-id-collision: <id>]` (interrogation-log `DL-###` IDs are per-manifest scope and are NOT unioned);
-- a differing `observability.profile` or `environments` set across the manifests → `[GENERATE-FAILED: manifest-union-mismatch: <profile|environments>]`.
-
-Single-doc drains skip this. `STRAIGHT_THROUGH` (G0) requires the union to pass for multi-doc input.
-
-
-**Plan-mapping + sizing gate (ADR 0012 / AV3-07 + MS §13.6 / AV3-02).** Render the union of planner output to `plan.json` and run `bash ${SKILL_DIR}/scripts/validate_plan_mapping.sh <plan.json> [<manifest.yaml>]` (pass the manifest for manifest-backed drains; omit it for manifest-less). It enforces, deterministically:
-- **Sizing (always):** every Subtask's `predicted_hours` is an integer within its `estimated_size` ceiling (S≤4, M≤16, L≤48) → `[GENERATE-FAILED: story-size-inconsistent: <subtask-id>]`; every Story's Subtasks sum to ≤48 predicted hours → `[GENERATE-FAILED: story-oversized: <story-id>]`.
-- **Behavior mapping (manifest only):** every `kind: code | test-only` Subtask maps ≥1 Behavior ID → `[GENERATE-FAILED: unmapped-subtask: <subtask-id>]`; every mapped ID is active in the manifest → `[GENERATE-FAILED: unknown-behavior: <behavior-id>]`; every active manifest Behavior is owned by ≥1 Subtask → `[GENERATE-FAILED: unowned-behavior: <behavior-id>]`. (`refactor`/`config`/`docs` Subtasks are mapping-exempt.)
-
-The sizing gate is deterministic-over-a-declared-prediction (the Marshal owns actuals, ADR 0012). On `story-oversized`, re-spawn the offending Story's planner to split it into sequential, independently mergeable Stories; each becomes its own Story branch/PR downstream (AV3-06). On a mapping refusal, re-spawn the planner with the offending ID(s). The runbook records the resulting behavior-IDs-per-Story ledger (G7) so the audit can distinguish intentionally-not-yet-wired work from Memory Rot.
-
-
-**Claim consultation (ADR 0009 / AV3-09).** Build the open-PR inventory via the host adapter — for every open PR (`host.sh pr-state`) capture its branch, state, business-day age, and declared file surface (`runbook_pr.sh file-surface` on its body). For each Subtask, run `bash ${SKILL_DIR}/scripts/claim_overlap.sh --self-namespace autopilot/<slug>/ --inventory <inv.tsv> <owned-files...>`. A `BINDING` (foreign draft) or `TERMINAL` (foreign ready) overlap writes a `blocked_by_pr: <host>/<pr#>` edge onto that Subtask (D2-evaluable); `ADVISORY` (stale >2 business days) is a note only; branches under this drain's own `autopilot/<slug>/*` namespace are `EXCLUDED` (closes the re-GENERATE self-deadlock). D2 gates on the edge; the drain NEVER terminal-pauses on first blockage — it waits and re-checks.
-
+**Claim consultation (ADR 0009 / AV3-09).** Build the open-PR inventory via the host adapter — for every open PR capture branch, state, business-day age, and declared file surface (`runbook_pr.sh file-surface` on its body). Per Subtask: `bash ${SKILL_DIR}/scripts/claim_overlap.sh --self-namespace autopilot/<slug>/ --inventory <inv.tsv> <owned-files...>`. `BINDING` (foreign draft) or `TERMINAL` (foreign ready) overlap → write a `blocked_by_pr: <host>/<pr#>` edge on the Subtask (D2-evaluable); `ADVISORY` (stale >2 business days) is a note; the drain's own `autopilot/<slug>/*` branches are `EXCLUDED` (closes the re-GENERATE self-deadlock). D2 gates on the edge; the drain NEVER terminal-pauses on first blockage — it waits and re-checks.
 
 ## Step G5 — Already-shipped detection
 
+Per Subtask, check `git log --oneline origin/<trunk> -- <owned_files[]>` (trunk-scoped — `--all` would sweep probe branches and foreign drains). A recent commit that already implements the Subtask's intent (commit message overlaps `acceptance_criteria`) → mark it `[x] Done` in the seeded tracker with the SHA cited. G5-marked Subtasks never touch the AP-2 counters (see §Failure escalation).
 
-For every Subtask, the planner already verified file existence. Now check git log: `git log --oneline origin/<trunk> -- <owned_files[]>` for each Subtask (scoped to trunk — `--all` would pick up probe branches and foreign drains). If a recent commit already implemented the Subtask's intent (heuristic: commit message overlaps with `acceptance_criteria`), mark it pre-emptively `[x] Done` in the seeded tracker with the commit SHA cited. This is the Queue A pattern from the original autopilot. (Counter exemption for G5-marked Subtasks: see §"Failure escalation (AP-2)" below.)
+## Step G6 — Optional Jira creation (`--jira <PROJ>` only)
 
+0. **Environment check, fail fast.** `--jira` is the ONE mode with a dependency beyond vanilla Claude Code (a Jira MCP tool surface). Probe for the tools first (e.g. ToolSearch); absent → refuse immediately `[GENERATE-FAILED: jira-tools-unavailable] — re-run without --jira, or connect a Jira MCP server`, before extraction/planning work is spent.
+1. Activate the environment's Jira tools (e.g. `mcp__dev-tools__activate_jira` where configured).
+2. Story → Jira Story (description from `behaviors_or_outcomes` + `source_ref`); Subtask → Jira Subtask under its parent (from `acceptance_criteria` + `interface_change`).
+3. Store `jira_key:` on every Story and Subtask in the runbook; set `enforce_jira_key: true` (AP-22) so every commit carries `[<JIRA-KEY>]`. Smart Commits transition Subtasks on PR merge.
 
-## Step G6 — Optional Jira creation (β mode, `--jira <PROJ>` only)
-
-
-If `--jira <PROJ>` was passed:
-
-
-0. **Environment check (fail fast).** `--jira` depends on an environment-specific Jira MCP tool surface — this is the ONE mode with a dependency beyond vanilla Claude Code (Hard Contract §2 covers agents; this is a declared external-tool exception). Probe for the Jira tools first (e.g. via ToolSearch); if absent, refuse immediately with `[GENERATE-FAILED: jira-tools-unavailable] — re-run without --jira, or connect a Jira MCP server` rather than halting mid-generate after extraction/planning work is done.
-1. Activate the environment's Jira tools (e.g. `mcp__dev-tools__activate_jira` where that server is configured)
-2. For each Story → create a Jira Story; populate description from `behaviors_or_outcomes` and `source_ref`
-3. For each Subtask → create a Jira Subtask under its parent Story; populate from `acceptance_criteria` and `interface_change`
-4. Store `jira_key:` on every Story and Subtask in the runbook
-5. Set `enforce_jira_key: true` in the tracker frontmatter (AP-22) so every commit prefixes `[<JIRA-KEY>]`. Smart Commits transition Subtasks on PR merge.
-
-
-Failures here (auth missing, project doesn't exist, etc.) → halt with clear error message; operator resolves and re-runs.
-
+Failures here (auth, missing project) → halt with a clear message; the operator resolves and re-runs.
 
 ## Step G7 — Write runbook + tracker
 
-
-Render `references/runbook-template.md` with all the data accumulated so far. Write to the canonical artifact paths:
-
+Render `references/runbook-template.md` with the accumulated data. Canonical artifact paths — the ONLY ones:
 
 - `.autopilot/runbooks/<slug>.md` — the runbook (operator-editable until the drain is armed; immutable during an active drain except the G1.5-owned `Repo constraints (detected)` block)
 - `.autopilot/runbooks/<slug>.tracker.md` — the seeded tracker
 
+Seed the tracker frontmatter per the CANONICAL schema — defined once in `references/runbook-template.md` §"Tracker file", never restated here — with its seed values (`STATUS: ACTIVE`, counters + `claim_waits` at 0, null `in_progress`/locks, `force_audit: []`). This GENERATE captures `drain_start_sha` and `audited_sha` (AP-5); `manifest_revision` is frozen from the Spec's manifest (AV3-04; omitted when manifest-less); `trunk_branch` from G1.5 `TRUNK=`; `ci.skip_wait` / `branching.no_force_push` / `enforce_jira_key` per the auto-seed table (`--jira` also sets `enforce_jira_key`); `branching.single_branch_single_pr` and `pack_subtasks` are operator-toggles only. Under `branching.no_force_push: true`, seed an empty `## Pending Tracker Deltas (batched)` section (`_(empty)_`).
 
-Seed the tracker frontmatter per the CANONICAL tracker schema — defined once in `references/runbook-template.md` §"Tracker file", never restated here — with the seed values shown there: `STATUS: ACTIVE`, both AP-2 counters and `claim_waits` (AV3-09) at 0, `in_progress: null`, `session_lock: null` / `session_lock_expires_at: null` (AP-4), `force_audit: []` (AP-11). `drain_start_sha` and `audited_sha` (AP-5: SHA at planner-spawn time) are captured by this GENERATE; `manifest_revision` is frozen from the Spec's manifest (AV3-04; omit if manifest-less); `trunk_branch` comes from G1.5 `TRUNK=`; and `ci.skip_wait` / `branching.no_force_push` / `enforce_jira_key` follow the G1.5 auto-seed rules (`--jira` also sets `enforce_jira_key`), with `branching.single_branch_single_pr` and `pack_subtasks` (AP-21) operator-toggles only.
+The runbook's first commit creates `autopilot/<slug>/setup` with shape verification (AP-7).
 
-
-Seed the tracker body with the standard sections plus, when `branching.no_force_push: true`, an empty `## Pending Tracker Deltas (batched)` section marked `_(empty)_`. Full body layout in `references/runbook-template.md`.
-
-
-`<slug>` is derived from the input docs (e.g., `0042-foo` for a single ADR; `tier4-tfl-parity` for an umbrella ADR family). Operator can override via `--slug=<name>`.
-
-
-The runbook's first commit creates a feature branch `autopilot/<slug>/setup` with shape verification (AP-7).
-
-
-**Open the Runbook PR at Pickup (AV3-08).** G7 immediately opens ONE long-lived Runbook PR on branch `autopilot/<slug>/runbook`, carrying the runbook + tracker — the single bookkeeping home under both `no_force_push` settings (the pre-v3 rolling tracker PR is retired). Its body carries the drain's **predicted file surface** as a grep-able block so foreign planners (and AV3-09 claim consultation) can consult one place:
-
+**Open the Runbook PR at Pickup (AV3-08).** G7 immediately opens ONE long-lived Runbook PR on `autopilot/<slug>/runbook` carrying the runbook + tracker — the single bookkeeping home under both `no_force_push` settings (the pre-v3 rolling tracker PR is retired). Its body carries the drain's predicted file surface as a grep-able block, so foreign planners and AV3-09 claim consultation consult one place:
 
 ```markdown
 ## Predicted file surface
@@ -281,81 +124,55 @@ The runbook's first commit creates a feature branch `autopilot/<slug>/setup` wit
 <!-- autopilot:file-surface:end -->
 ```
 
-
-`bash ${SKILL_DIR}/scripts/runbook_pr.sh file-surface <body-file>` extracts the block deterministically (marker contract). The Runbook PR is opened non-draft and is the FINAL entry in `MERGE-ORDER.md`; the operator (or the Marshal) merges it — autopilot NEVER merges its own PRs.
-
+`bash ${SKILL_DIR}/scripts/runbook_pr.sh file-surface <body-file>` extracts the block deterministically. The Runbook PR opens non-draft and is the FINAL entry in `MERGE-ORDER.md`; the operator (or the Marshal) merges it — autopilot NEVER merges its own PRs.
 
 ## Step G8 — Review or arm
 
+**Default (review path):** print a structured summary, then exit without arming any cron. Required content: slug; Story count; Subtask count by `kind` and `estimated_size`; already-shipped (G5) count; hot-file serializations; G1.5 probe facts + any `unknown` values needing operator review; consolidations (G3.6); estimated drain runtime; runbook + tracker paths; Runbook PR URL; the exact `/autopilot --drain @<runbook-path>` command; a one-line reminder to edit before draining.
 
-**Default (review path):** Print a structured summary then exit (no cron arming). Required content: drain slug; Stories count; Subtasks count broken down by `kind` and `estimated_size`; already-shipped (G5) count; hot-file serializations applied; G1.5 probe facts + any `unknown` values that need operator review; consolidations applied (G3.6); estimated drain runtime; paths of the runbook + tracker; Runbook PR URL (`autopilot/<slug>/runbook`, AV3-08); the exact `/autopilot --drain @<runbook-path>` command to start the drain; one-line reminder to edit before draining.
-
-
-**`--yolo` path:** Skip the review entirely; immediately invoke the DRAIN mode as if operator typed `/autopilot --drain @.autopilot/runbooks/<slug>.md`.
-
+**`--yolo` / `STRAIGHT_THROUGH`:** skip the review; immediately invoke DRAIN as if the operator typed `/autopilot --drain @.autopilot/runbooks/<slug>.md`.
 
 # DRAIN lifecycle (D1..D8)
 
-
-Each fire follows the 8-step lifecycle below. Per-fire scope is HARD: one Subtask end-to-end, then exit (writing the next cron and updating tracker before exiting).
-
+Per-fire scope is HARD: one Subtask end-to-end — or one `[BLOCKED]` reason — then exit, after writing the next cron and updating the tracker.
 
 ## Step D1 — Hydrate + WIP recovery
 
-
-Orchestrator-direct work in this step is limited to: reading the tracker, reading the runbook, running short single-line git commands, and running the skill's own scripts. Orchestrator MUST NOT Read any source file under the repo's code directories — that work belongs to subagents in D3/D4/D5. This caps per-fire parent context accumulation; the tracker is the source of truth across fires.
-
+Orchestrator-direct work in this step: reading the tracker/runbook, short single-line git commands, the skill's own scripts. Reading source files belongs to subagents in D3/D4/D5 — this caps per-fire parent-context growth; the tracker is the source of truth across fires.
 
 ### D1.0 — Session lock claim (AP-4)
 
+Run `bash ${SKILL_DIR}/scripts/detect_concurrent_drain.sh .autopilot/runbooks/<slug>.tracker.md` as the fast pre-check: exit 2 → foreign live lock, refuse the fire (`CronDelete`, exit silently — the other session's cron keeps firing); exit 4 → corrupt lock state, `STATUS: HUMAN_NEEDED — tracker-lock-unreadable` (fail closed); exit 64 → `STATUS: HUMAN_NEEDED — lock-check-usage-error` (external fault); exit 0 or 3 → the dispatch table below.
 
-Run `bash ${SKILL_DIR}/scripts/detect_concurrent_drain.sh .autopilot/runbooks/<slug>.tracker.md` as the fast pre-check: exit 2 → another session holds a live lock, refuse the fire (`CronDelete`, exit silently — the other session's cron keeps firing); exit 4 → corrupt lock state, refuse with `STATUS: HUMAN_NEEDED — tracker-lock-unreadable` (fail closed); exit 64 → the invocation itself is wrong (suspect path), refuse with `STATUS: HUMAN_NEEDED — lock-check-usage-error` (external fault); exit 0 or 3 → proceed to the dispatch table below.
-
-
-Read the tracker's frontmatter. Compute `now_iso = $(date -u +%Y-%m-%dT%H:%M:%SZ)`.
-
+Read the tracker frontmatter; compute `now_iso = $(date -u +%Y-%m-%dT%H:%M:%SZ)`.
 
 | Frontmatter state | Action |
 |---|---|
-| `session_lock: null` | Set `session_lock: ${CLAUDE_SESSION_ID}` and `session_lock_expires_at: <now + 30 min>`. Continue. |
+| `session_lock: null` | Set `session_lock: ${CLAUDE_SESSION_ID}`, `session_lock_expires_at: <now + 30 min>`. Continue. |
 | `session_lock: ${CLAUDE_SESSION_ID}` (our own) | Refresh `session_lock_expires_at: <now + 30 min>`. Continue. |
-| `session_lock: <other>` + `session_lock_expires_at > now` | Refuse: another session is draining. `CronDelete`, exit fire silently. The other session's adaptive cron will keep firing. |
-| `session_lock: <other>` + `session_lock_expires_at <= now` | Treat as crashed: claim the lock ourselves. Add a `## Drift Notes` entry: "session lock expired from <other>; reclaimed by <this>". |
+| `session_lock: <other>` + unexpired | Refuse: another session is draining. `CronDelete`, exit silently. |
+| `session_lock: <other>` + expired | Treat as crashed: claim the lock; add a `## Drift Notes` entry recording the reclaim. |
 
+Land the lock delta on the Runbook PR (`autopilot/<slug>/runbook`, AV3-08) before any other work: direct commit under `no_force_push: false`; `delta_kind: session_lock` queue append under `no_force_push: true`.
 
-Land the tracker delta on the **Runbook PR** (`autopilot/<slug>/runbook`, AV3-08) before doing any other work: under `branching.no_force_push: false` commit it directly to the runbook branch; under `branching.no_force_push: true` append it as `delta_kind: session_lock` to `## Pending Tracker Deltas (batched)` for the next D7.1a flush to the runbook branch.
-
-
-> **Known limitation (batched-delta mode).** Under `branching.no_force_push: true` the lock write stays in the local tracker file until the next D7.1a fold lands — a second session draining from a DIFFERENT clone cannot see it. AP-4's session lock is therefore checkout-local in that mode; the cross-clone guard is the branch-namespace check (`git ls-remote origin 'refs/heads/autopilot/<slug>/*'` showing branches you didn't create) plus operator discipline. Documented, not solved, in v2.4.0.
-
+> **Known limitation (batched-delta mode).** Under `no_force_push: true` the lock write stays in the local tracker until the next D7.1a fold, so a session draining from a DIFFERENT clone cannot see it: AP-4 is checkout-local in that mode. The cross-clone guard is the branch-namespace check (`git ls-remote origin 'refs/heads/autopilot/<slug>/*'` showing branches you didn't create) plus operator discipline. Documented, not solved.
 
 ### D1.0.4 — Pending-deltas migration + crash recovery (AP-23)
 
+Runs only under `branching.no_force_push: true`.
 
-Runs only when `branching.no_force_push: true`. Otherwise skipped.
+1. **Migration.** A pre-v2.3.0 tracker without a `## Pending Tracker Deltas (batched)` section gets the header injected (body `_(empty)_`) between `## Drift Notes` and the first Subtask. Idempotent.
+2. **Crash recovery.** A non-empty queue at fire start is NORMAL in batched mode (claims, heartbeats, and status deltas all wait for the next D7.1a fold). It is a crash signal ONLY with evidence the prior fire exited dirty: this fire reclaimed an expired foreign lock at D1.0, or D1.3's 90-minute detector fired. Only then append ONE `delta_kind: crash_recovery` entry with the recovered queue's SHA-fingerprint. Never remove prior entries — the D7.1a fold is the only legitimate flush point. (Appending on every non-empty queue would spam every healthy fire and grow the queue without bound.)
 
-
-1. **Migration.** If the tracker was created by an autopilot version prior to v2.3.0 and does not yet contain a `## Pending Tracker Deltas (batched)` section, inject the section header with body `_(empty)_` between `## Drift Notes` and the first Subtask. Idempotent.
-2. **Crash recovery.** A non-empty queue at fire start is NORMAL in batched mode (D2 claims, D4 heartbeats, and D7.4 status deltas all wait for the next D7.1a fold) — it is a crash signal only when accompanied by evidence the prior fire did not exit cleanly: this fire reclaimed an expired foreign lock at D1.0, or D1.3's 90-minute heartbeat crash detector fired. Only then append ONE `delta_kind: crash_recovery` entry with `body:` documenting the recovered queue's SHA-fingerprint. Do NOT remove prior entries — the D7.1a fold on the next successful Subtask PR is the only legitimate flush point. (Appending on every non-empty queue would spam a `crash_recovery` entry into every healthy fire and grow the queue without bound.)
-
-
-Full contract, `delta_kind:` catalog, and recovery semantics: `references/tracker-delta-batching.md`.
-
+Full contract + `delta_kind:` catalog: `references/tracker-delta-batching.md`.
 
 ### D1.0.5 — Drift-notes hydration (AP-20)
 
-
-Read every `## Drift Notes` entry in the tracker before any git or Bitbucket action. Drift notes are hard preconditions, not commentary. Examples: "trunk renamed mid-drain to `develop`" — subsequent D1.4 must use `develop`, not the frontmatter's original `trunk_branch`. "operator flipped `branching.single_branch_single_pr` after 2 Subtasks landed" — subsequent D7 must merge into the existing single branch, not open a new PR.
-
-
-This step stops fires re-deriving the same workarounds from scratch every 5 minutes.
-
+Read every `## Drift Notes` entry before any git or host action. Drift notes are hard preconditions, not commentary — e.g. "trunk renamed mid-drain to `develop`" means D1.4 uses `develop`, not the frontmatter's original `trunk_branch`. This stops fires re-deriving the same workaround every 5 minutes.
 
 ### D1.0.6 — Manifest-revision drift gate (MS §6 / AV3-04)
 
-
-Runs only on a manifest-backed drain (the tracker recorded a `manifest_revision` at GENERATE). Compare it against the Spec's current manifest:
-
+Manifest-backed drains only (the tracker recorded a `manifest_revision`):
 
 ```bash
 bash ${SKILL_DIR}/scripts/manifest_revision_gate.sh drift \
@@ -363,323 +180,166 @@ bash ${SKILL_DIR}/scripts/manifest_revision_gate.sh drift \
 # exit 0 OK / NO-MANIFEST · exit 3 DRIFT recorded=<a> current=<b>
 ```
 
-
-On **exit 3 (DRIFT)** the Spec was amended by a new revision under a live drain. This is an EXTERNAL fault (no counter increment). Handle it gracefully, not abruptly:
-- If a Subtask is mid-cycle, let it **complete its current RED→GREEN commit pair** (never leave a half-written cycle), then stop.
-- Write `STATUS: PAUSED` with `status_reason: manifest-revision-drift` in the tracker frontmatter.
-- It is **NOT `--force`-bypassable** — `--force` overrides refusals, not a spec that moved under you.
-- **Draft Story PRs stay draft** (never auto-readied or merged; they are listed in the end-of-drain dangling-draft disposition).
-- `CronDelete`, release the session lock (D8), exit.
-
-
-Recovery is NOT plain `--resume` (it would re-plan nothing against the new revision) — it is the `--generate --merge` **revision-regen** path (see Resume mode below and AV3-08's Runbook-PR supersession). On **exit 0** continue to D1.1.
-
+**Exit 3 (DRIFT)** — the Spec was amended under a live drain. External fault (no counter increment); handle gracefully: a mid-cycle Subtask completes its current RED→GREEN pair first (never leave a half-written cycle); write `STATUS: PAUSED`, `status_reason: manifest-revision-drift`; NOT `--force`-bypassable (`--force` overrides refusals, not a spec that moved under you); draft Story PRs stay draft (listed in the end-of-drain dangling-draft disposition); `CronDelete`, release the lock (D8), exit. Recovery is the `--generate --merge` revision-regen path (see Resume step 2a), never plain `--resume`. Exit 0 → D1.1.
 
 ### D1.1 — Branch shape check (AP-7)
 
-
-`git branch --show-current` MUST match either:
-- `autopilot/<slug>/setup`
-- `autopilot/<slug>/<story-id>` — the **Story branch** (PR-per-Story, AV3-06 / ADR 0007): one Story = one branch = one PR, and each Subtask of that Story is a commit series on it. (Pre-v3 per-Subtask branches `autopilot/<slug>/<subtask-id>` are retired.)
-- `autopilot/<slug>/runbook` — the **Runbook PR branch** (AV3-08): carries the runbook + tracker and is the single bookkeeping home (the pre-v3 rolling tracker branch `autopilot/<slug>/tracker` is retired).
-- The runbook's single feature branch (only under `branching.single_branch_single_pr: true`)
-
-
-Anything else → `STATUS: HUMAN_NEEDED — unexpected-branch-shape` citing the current branch. `CronDelete`, exit.
-
+`git branch --show-current` MUST be one of: `autopilot/<slug>/setup`; the Story branch `autopilot/<slug>/<story-id>` (PR-per-Story, AV3-06 — one Story = one branch = one PR; Subtasks are its commit series); the Runbook PR branch `autopilot/<slug>/runbook` (AV3-08); or the drain's single feature branch (only under `branching.single_branch_single_pr: true`). Anything else → `STATUS: HUMAN_NEEDED — unexpected-branch-shape` citing the branch; `CronDelete`, exit.
 
 ### D1.2 — Hydrate
 
+Read in parallel: the tracker; `git status --short`; `git fetch origin && git rev-list --count <drain-start-sha>..origin/<trunk>` (external churn); `git branch --show-current`. Update `last_heartbeat_at` (AP-6, first heartbeat of the fire).
 
-Read in parallel:
-- `.autopilot/runbooks/<slug>.tracker.md`
-- `git status --short`
-- `git fetch origin && git rev-list --count <drain-start-sha>..origin/<trunk>` (external churn count)
-- `git branch --show-current`
+**Foreign dirty-tree handling.** `git status` may show changes OUTSIDE the drain's surface that appeared after G1's clean-tree refusal (e.g. a session-level notes file another workflow keeps dirty). Handle once per fire, by rule:
 
-
-Update `last_heartbeat_at: <now>` (AP-6 first heartbeat of the fire).
-
-
-**Foreign dirty-tree handling.** `git status --short` may show unstaged/untracked changes to files OUTSIDE the drain's surface — session-level orphan edits (e.g. a memory/notes file another workflow keeps dirty) that G1's clean-tree refusal could not see because they appeared after invocation. Handle them once per fire, by rule, instead of re-deriving an ad-hoc workaround every 5 minutes:
-
-- Dirty paths touching the tracker, the runbook, or any in-flight Subtask's `owned_files[]` → `STATUS: HUMAN_NEEDED — dirty-drain-state` citing the paths, `CronDelete`, exit. (External fault: no counter increment — someone edited drain state out-of-band.)
-- Any other dirty TRACKED path: before the fire's first branch checkout/rebase, stash exactly those paths with a labeled stash — `git stash push -m "autopilot/<slug> foreign-dirty <iso8601>" -- <paths>` — and record a one-line `## Drift Notes` entry naming the stash label and paths. At D8, before exiting the fire, `git stash pop` the labeled stash; if the pop conflicts, LEAVE it stashed and extend the Drift Note with the stash ref (`stash@{n}`) — foreign work is preserved or restored, never dropped (invariant 7's delta-preservation discipline applied to operator files).
+- Dirty paths touching the tracker, the runbook, or any in-flight Subtask's `owned_files[]` → `STATUS: HUMAN_NEEDED — dirty-drain-state` citing the paths, `CronDelete`, exit. (External fault — someone edited drain state out-of-band.)
+- Any other dirty TRACKED path: before the fire's first checkout/rebase, stash exactly those paths with a label — `git stash push -m "autopilot/<slug> foreign-dirty <iso8601>" -- <paths>` — and drift-note the label + paths. At D8, pop the labeled stash; on pop conflict LEAVE it stashed and extend the Drift Note with the stash ref — foreign work is preserved or restored, never dropped (invariant 7's delta-preservation discipline applied to operator files).
 - Untracked files never block branch operations; leave them alone.
 
-
-**Runtime budget check.** If `now - drain_started_at > budget.max_runtime_minutes`, write `STATUS: HUMAN_NEEDED — runtime-budget-expired`, `CronDelete`, exit. (`drain_started_at` is seeded by the first fire.)
-
+**Runtime budget.** `now - drain_started_at > budget.max_runtime_minutes` → `STATUS: HUMAN_NEEDED — runtime-budget-expired`, `CronDelete`, exit. (`drain_started_at` is seeded by the first fire.)
 
 ### D1.3 — Heartbeat-driven crash detection
 
-
-If `in_progress.last_heartbeat_at > 90 min old` → treat as crashed; apply RESUME or ABANDON dispatch below.
-
+`in_progress.last_heartbeat_at` > 90 min old → treat as crashed; apply the RESUME/ABANDON rows below.
 
 ### D1.4 — WIP recovery dispatch
 
-
-**Rows are evaluated top-to-bottom; the FIRST matching row wins** (several conditions overlap by construction — e.g. a pushed Subtask has `subtask_id` set AND `awaiting_ci: true` AND a local branch ahead of base; external PR state must be checked before generic CI polling so a merged PR is never mistaken for a hung build).
-
+**Rows evaluate top-to-bottom; the FIRST match wins** (conditions overlap by construction — external PR state must be checked before generic CI polling so a merged PR is never mistaken for a hung build).
 
 | `in_progress` block in tracker | Action |
 |---|---|
-| `git symbolic-ref refs/remotes/origin/HEAD` differs from the trunk baked into the runbook | Trunk renamed mid-drain — write `STATUS: HUMAN_NEEDED — trunk-renamed` citing old vs new trunk, `CronDelete`, exit. (External fault: no counter increment.) |
-| Local Story branch `autopilot/<slug>/<story-id>` has commits (beyond `prev_pushed_sha`) whose author email is not `git config user.email` | Foreign push detected — write `STATUS: HUMAN_NEEDED — foreign-commits-on-branch` listing the offending SHAs, `CronDelete`, exit. (External fault: no counter increment.) |
+| `git symbolic-ref refs/remotes/origin/HEAD` differs from the runbook's trunk | Trunk renamed mid-drain — `STATUS: HUMAN_NEEDED — trunk-renamed` citing old vs new, `CronDelete`, exit. (External fault.) |
+| Story branch has commits beyond `prev_pushed_sha` whose author email ≠ `git config user.email` | Foreign push — `STATUS: HUMAN_NEEDED — foreign-commits-on-branch` listing the SHAs, `CronDelete`, exit. (External fault.) |
 | Empty / null | Normal — proceed to D2. |
-| `awaiting_ci: true`, `pr_number` set, and PR state (`pr-state --num <pr_number>`) = `MERGED` | PR was merged externally — mark Subtask `[x] Done` with PR URL + merge commit SHA, reset both counters to 0, clear `in_progress`, re-arm at `*/5`, exit fire. |
-| `awaiting_ci: true`, `pr_number` set, and PR state = `DECLINED` | PR was declined externally — write `[BLOCKED: pr-declined]` (ci) on Subtask citing the PR URL, increment `consecutive_ci_blocks`, clear `in_progress`, re-arm at `*/30`, exit fire. |
-| `awaiting_ci: true`, `pr_number` set, PR state = `OPEN`, and `ci.skip_wait: false` | CI-poll mode — run `bash ${SKILL_DIR}/scripts/ci_check.sh --sha <in_progress.pushed_sha> --pr <pr_number> --once`; act on result (D7.5). **Hard contract: after D7.5 completes, exit the fire regardless of outcome. Do NOT continue to D2 in the same fire.** |
-| `awaiting_ci: true`, `pr_number` set, PR state = `OPEN`, and `ci.skip_wait: true` | The PR is awaiting operator merge (no CI polling); re-arm at `*/30`, exit. |
-| `subtask_id` set (not awaiting CI), the Subtask's Story branch exists locally with commits ahead of `prev_pushed_sha` | RESUME — rebase the Story branch on base, re-run Step D6 test gate over `prev_pushed_sha..HEAD`; if green → push + open-or-update the Story PR (D7: draft `pr-open` if this is the Story's first Subtask, else the draft Story PR already exists); if red → spawn ONE `general-purpose` quality fix attempt; then push or `[BLOCKED: resume-failed]` (impl). |
-| `subtask_id` set, Story branch missing or empty | ABANDON — clear `in_progress`, write `[BLOCKED: orphan-resume]` (impl) on that Subtask, continue to D2 with the next Subtask. |
+| `awaiting_ci: true`, `pr_number` set, PR state (`pr-state --num`) = `MERGED` | Merged externally — mark Subtask `[x] Done` with PR URL + merge SHA, reset both counters, clear `in_progress`, re-arm `*/5`, exit. |
+| `awaiting_ci: true`, `pr_number` set, PR state = `DECLINED` | `[BLOCKED: pr-declined]` (ci) citing the PR URL, increment `consecutive_ci_blocks`, clear `in_progress`, re-arm `*/30`, exit. |
+| `awaiting_ci: true`, PR `OPEN`, `ci.skip_wait: false` | CI-poll mode — run D7.5. **Hard contract: after D7.5 completes, exit the fire regardless of outcome; never continue to D2 in the same fire.** |
+| `awaiting_ci: true`, PR `OPEN`, `ci.skip_wait: true` | Awaiting operator merge (no CI polling); re-arm `*/30`, exit. |
+| `subtask_id` set (not awaiting CI), Story branch exists with commits ahead of `prev_pushed_sha` | RESUME — rebase the Story branch, re-run the D6 gate over `prev_pushed_sha..HEAD`; green → push + open-or-update the Story PR (D7); red → ONE `general-purpose` fix attempt, then push or `[BLOCKED: resume-failed]` (impl). |
+| `subtask_id` set, Story branch missing or empty | ABANDON — clear `in_progress`, `[BLOCKED: orphan-resume]` (impl) on that Subtask, continue to D2. |
 
+Refuse the fire if `STATUS != ACTIVE`. On terminal statuses the cron is already deleted (Hard Contract 9); a stray fire no-ops WITHOUT re-arming. Recovery from `PAUSED` is exclusively `/autopilot --resume` — never hand-flip `STATUS` (a hand-flip to ACTIVE strands the drain with no cron and no resume path).
 
-Refuse the fire if `STATUS != ACTIVE`. On terminal statuses the cron has already been deleted (Hard Contract §9); if a fire runs anyway (manual invocation, stray cron), no-op WITHOUT re-arming. Recovery from `PAUSED` is exclusively via `/autopilot --resume` — do not hand-flip `STATUS` back to `ACTIVE` (Resume refuses a live-locked ACTIVE tracker and reclaims only a stale one — see Resume step 2's stale-ACTIVE reclaim; a hand-flip to ACTIVE strands the drain with no cron and no resume path).
-
-
-External churn > 100 commits since drain start → write `## Drift Notes` warning to tracker; don't auto-restart.
-
+External churn > 100 commits since drain start → `## Drift Notes` warning; don't auto-restart.
 
 ## Step D2 — Select next Subtask
 
+Topo-walk the DAG. Pick the lowest-ID Subtask where: status is `[ ]`; all `depends_on[]` are `[x] Done`; and it is not claim-blocked (AV3-09) — a `blocked_by_pr: <host>/<pr#>` edge (G4-written) is eligible only once that PR resolves. Poll `bash ${SKILL_DIR}/scripts/host.sh pr-state --num <pr#>` and gate on `bash ${SKILL_DIR}/scripts/claim_overlap.sh eligibility --pr-state <STATE>`:
 
-Topo-walk the DAG. Pick the lowest-ID Subtask where:
-- Status is `[ ]` (not `[x]`, not `[BLOCKED]`)
-- All `depends_on[]` Subtasks are `[x] Done`
-- **Not claim-blocked (ADR 0009 / AV3-09):** if the Subtask has a `blocked_by_pr: <host>/<pr#>` edge (set at G4 by claim consultation), it is eligible ONLY when that PR has resolved. Poll `bash ${SKILL_DIR}/scripts/host.sh pr-state --num <pr#>` (same cadence as D7.5) and gate on `bash ${SKILL_DIR}/scripts/claim_overlap.sh eligibility --pr-state <STATE>`:
+| `eligibility` exit | `<STATE>` | Action |
+|---|---|---|
+| 0 | `MERGED \| DECLINED \| NONE` | Claim resolved — select the Subtask. |
+| 2 | `OPEN \| DRAFT` | Still claimed — the WAIT path below. |
+| 64 | anything else — `UNKNOWN` (read succeeded, state unmappable) or empty (`pr-state` itself died) | **FAIL CLOSED (loop-safety invariant 3):** proceeding would fail OPEN on an unresolved claim. `STATUS: HUMAN_NEEDED — claim-eligibility-usage-error` citing the `<STATE>`, `CronDelete`, exit. External fault, no counter — identical handling to D7.5's `ci-check-usage-error` and D1.0's `lock-check-usage-error`. |
 
-  | `claim_overlap.sh eligibility` exit | `<STATE>` | Action |
-  |---|---|---|
-  | 0 | `MERGED \| DECLINED \| NONE` | The claim resolved — the Subtask is eligible; select it. |
-  | 2 | `OPEN \| DRAFT` | The claim is still open — treat as claim-blocked (the WAIT path below). |
-  | 64 | a `<STATE>` outside `OPEN\|DRAFT\|MERGED\|DECLINED\|NONE` — either `UNKNOWN` (`host.sh pr-state` read the PR but its state was null / unmappable to the vocabulary) or an empty string (`host.sh pr-state` itself died `exit 1` on an unreadable read, leaving `<STATE>` empty) | **FAIL CLOSED (loop-safety invariant 3).** `claim_overlap.sh` refused to guess eligibility from an unresolvable state, so the orchestrator must NOT proceed — proceeding would fail OPEN on an unresolved claim. Write `STATUS: HUMAN_NEEDED — claim-eligibility-usage-error` citing the offending `<STATE>` (empty when the read died), `CronDelete`, exit. **External fault: no `impl`/`ci` counter increment** — identical handling to D7.5's `exit 64 → ci-check-usage-error` and D1.0's `exit 64 → lock-check-usage-error`. |
-
-
-**Story affinity (AV3-06).** PR-per-Story caps the drain at **one open (draft) Story PR at a time**. If a Story already has an open draft PR — i.e. some of its Subtasks are `[x] Done` and at least one is still `[ ]`, and it is not blocked — restrict selection to that Story's remaining eligible Subtasks: finish (or block out) the open Story before opening another. Only when the open Story has no eligible Subtask left (all its `[ ]` Subtasks are dependency- or claim-blocked) may D2 start a Subtask in a different Story. This keeps the branch/PR count bounded and the Story PR reviewable as a coherent unit. When two Stories are both fully open (none started), the lowest-ID Subtask's Story wins and becomes the open Story.
-
+**Story affinity (AV3-06).** PR-per-Story caps the drain at one open draft Story PR at a time. While a Story has an open draft PR and eligible `[ ]` Subtasks, selection is restricted to that Story — finish (or block out) the open Story before opening another. Only when the open Story has no eligible Subtask left may D2 start a different Story. When two Stories are both unstarted, the lowest-ID Subtask's Story wins. This bounds the branch/PR count and keeps each Story PR reviewable as a unit.
 
 If no eligible Subtask:
-- All `[x]` → write `STATUS: DRAINED`, render `MERGE-ORDER.md`, `CronDelete`, exit fire successfully.
-- **All remaining open Subtasks are claim-blocked (ADR 0009 / AV3-09) → WAIT state, NOT terminal.** A drain re-queues at no one's cost: increment `claim_waits` on the tracker, re-arm the cron at `*/30`, and re-check next fire (the blocking PRs may merge/decline in the interim — the D2 eligibility poll picks that up). Escalate to `STATUS: HUMAN_NEEDED — claim-deadlock` (external fault, no impl/ci counter) ONLY after `claim_waits >= budget.max_claim_waits` (default 16) consecutive claim-blocked fires. NEVER terminal-pause on the first blockage.
-- All blocked (non-claim) or pending-deps → write `STATUS: HUMAN_NEEDED`, `CronDelete`, exit.
-- `consecutive_impl_blocks >= budget.max_impl_blocks` OR `consecutive_ci_blocks >= budget.max_ci_blocks` (runbook-configured; defaults 3 / 2) → write `STATUS: HUMAN_NEEDED` + `## Escalation` block citing which counter tripped and the contributing Subtasks, `CronDelete`, exit. AP-2.
 
-A successful (non-claim-blocked) Subtask selection resets `claim_waits` to 0.
+- All `[x]` → `STATUS: DRAINED`, render `MERGE-ORDER.md`, `CronDelete`, exit successfully.
+- **All remaining open Subtasks claim-blocked → WAIT, not terminal.** Increment `claim_waits`, re-arm `*/30`, re-check next fire. Escalate `STATUS: HUMAN_NEEDED — claim-deadlock` (external fault) only at `claim_waits >= budget.max_claim_waits` (default 16). NEVER terminal-pause on the first blockage — a drain re-queues at no one's cost.
+- All blocked (non-claim) or pending-deps → `STATUS: HUMAN_NEEDED`, `CronDelete`, exit.
+- `consecutive_impl_blocks >= budget.max_impl_blocks` OR `consecutive_ci_blocks >= budget.max_ci_blocks` → `STATUS: HUMAN_NEEDED` + `## Escalation` block citing the tripped counter and contributing Subtasks, `CronDelete`, exit. AP-2.
 
+A successful selection resets `claim_waits` to 0. Write the chosen Subtask's block to `in_progress` (`started_at`, `last_heartbeat_at`, `pr_number: null`).
 
-Otherwise: write the chosen Subtask's full block to `in_progress` in the tracker, with `started_at`, `last_heartbeat_at`, and a placeholder `pr_number: null`.
-
-
-**Tracker commit routing (AP-23).**
-
-
-- Under `branching.no_force_push: false`: commit the tracker delta directly to the Runbook PR branch (`autopilot/<slug>/runbook`, AV3-08).
-- Under `branching.no_force_push: true`: append the delta as `delta_kind: in_progress_claim` to `## Pending Tracker Deltas (batched)` with a `diff_summary` describing the claim. Do NOT commit directly — the D7.1a fold flushes the queue to the Runbook PR branch.
-
-
-Refresh heartbeat (AP-6).
-
+**Tracker commit routing (AP-23):** `no_force_push: false` → commit the delta directly to the Runbook PR branch; `true` → append `delta_kind: in_progress_claim` to the queue (the D7.1a fold flushes it). Refresh heartbeat (AP-6).
 
 ## Step D3 — Plan + Plan review (AP-5 + AP-3)
 
-
 ### D3.0 — Audited-SHA verification (AP-5)
 
-
-For each file in the Subtask's `owned_files[]` that is NOT marked `# NEW`:
-
+For each `owned_files[]` entry not marked `# NEW`:
 
 ```bash
 git cat-file -e ${audited_sha}:<file> 2>/dev/null || echo "MISSING"
 git diff --quiet ${audited_sha}..HEAD -- <file> || echo "DRIFTED"
 ```
 
-
-If any file is MISSING at `audited_sha` → `[BLOCKED: plan-stale-missing]` (impl). If any file DRIFTED between `audited_sha` and HEAD → `[BLOCKED: plan-stale-drifted]` (impl) with the drifted paths listed. No retry; this means HEAD moved under the plan and the Subtask needs human re-plan.
-
+MISSING → `[BLOCKED: plan-stale-missing]` (impl); DRIFTED → `[BLOCKED: plan-stale-drifted]` (impl) with paths. No retry — HEAD moved under the plan; a human re-plans. Catching this here is cheaper than letting the implementer burn cycles on a stale plan.
 
 ### D3.1 — Plan
 
-
-Spawn `Plan` agent (Claude Code native). Prompt: the Subtask's full schema block + the runbook's "Plan agent role" section.
-
+Spawn a `Plan` agent. Prompt: the Subtask's full schema block + the runbook's role-prompt section for the Plan agent (G7 writes it into the runbook body; see `references/runbook-template.md`).
 
 ### D3.2 — Plan review (schema-only projection)
 
+Spawn `Plan` again in REVIEW mode on the schema-only projection (per the `references/plan-reviewer-projection.md` allow-list) + "review for: feasibility, file-path verification, dependency gaps, ownership overlap with concurrent in-flight branches (`git branch --remote --list 'autopilot/<slug>/*'`), behaviors-to-test completeness." AP-3.
 
-Spawn `Plan` agent again in REVIEW mode. Prompt: the schema-only projection of the first plan's output (no `evidence`, no `contract` prose, no `test_name_hint`) + "review the plan above for: feasibility, file-path verification, dependency gaps, ownership overlap with concurrent in-flight branches (`git branch --remote --list 'autopilot/<slug>/*'`), behaviors-to-test completeness." AP-3.
+NO-GO → re-spawn the original `Plan` agent ONCE with findings. Still NO-GO → `[BLOCKED: plan-ungated]` (impl), increment `consecutive_impl_blocks`, re-arm `*/30`, exit. Refresh heartbeat (AP-6).
 
+## Step D4 — Implement (TDD vertical slice — AP-1)
 
-If reviewer NO-GO: re-spawn original `Plan` agent ONCE with reviewer findings. Still NO-GO → write `[BLOCKED: plan-ungated]` (impl) on the Subtask, increment `consecutive_impl_blocks`, re-arm cron at `*/30`, exit fire.
+Work lands on the Story branch `autopilot/<slug>/<story-id>` (PR-per-Story, AV3-06):
 
+- **First Subtask of the Story** → create the branch from the DAG-aware base: no in-flight cross-Story dependency → `origin/<trunk>`; dependency on a Done (merged) Story → `origin/<trunk>`; dependency on an in-flight Story → that Story's branch tip (a **stacked Story PR**; merge-commit strategy, D7.3a).
+- **Later Subtask of the same Story** → `git checkout autopilot/<slug>/<story-id>` and continue the commit series; never branch anew. (D6.2 audits only `prev_pushed_sha..HEAD`, so prior Subtasks' commits are not re-audited.)
+- Under `branching.single_branch_single_pr: true` → always the drain's single feature branch.
 
-Refresh heartbeat (AP-6).
+Spawn ONE `general-purpose` agent with `references/implementer-prompt.md` inlined verbatim, plus the runbook's `gates:` command table, `budget.max_cycles_per_subtask`, `regen_rituals:` when declared, and `enforce_jira_key` + the Subtask's `jira_key` when enforced (the prompt's inputs 5–7; its commit rules carry the full TDD cycle contract: per-behavior RED→GREEN commits, JIRA-key prefix under AP-22 rule 9, refactor-after-green, public-interface tests, 800-token report cap AP-16). Cycle count past the budget → `[BLOCKED: cycle-budget-exhausted]` (impl).
 
+The agent's `kind`-aware shape (D6.2 audits it from git log):
 
-## Step D4 — Implement (TDD vertical slice with per-cycle commits — AP-1)
-
-
-Work happens on the Subtask's **Story branch** `autopilot/<slug>/<story-id>` (PR-per-Story, AV3-06). Whether to create it or continue on it depends on where the Subtask sits in its Story:
-- **First Subtask of the Story** (the Story branch does not yet exist) → create it from the appropriate base per the DAG-aware branching rule:
-  - the Story has no cross-Story dependency on an in-flight Story → branch from `origin/<trunk>`
-  - the Story depends on another Story that is `[x] Done` (already merged to trunk) → branch from `origin/<trunk>`
-  - the Story depends on another Story that is in-flight (its Story PR still open) → branch from that Story's branch tip `autopilot/<slug>/<dep-story-id>` → produces a **stacked Story PR** (merge-commit strategy, D7.3a)
-- **A later Subtask of the same Story** (the Story branch already exists, carrying the prior Subtasks' commits) → `git checkout autopilot/<slug>/<story-id>` and continue the commit series on it; do NOT branch anew. D6.2 audits only `prev_pushed_sha..HEAD` so the accumulated prior commits are not re-audited.
-- Under `branching.single_branch_single_pr: true` → always branch from (or reset onto) the drain's single feature branch.
-
-
-`git checkout -b autopilot/<slug>/<story-id>` on the Story's first Subtask, `git checkout autopilot/<slug>/<story-id>` for a later one (or `git checkout <single-feature-branch>` under the single-branch mode).
-
-
-Spawn ONE `general-purpose` agent with the role prompt at `references/implementer-prompt.md` inlined verbatim, plus the runbook's `gates:` command table (the implementer runs tests through `gates.test_scoped`, never a hardcoded runner). The number of TDD cycles may not exceed `budget.max_cycles_per_subtask`; hitting the cap mid-Subtask → `[BLOCKED: cycle-budget-exhausted]` (impl). The prompt enforces:
-- TDD vertical slice: for each behavior in `behaviors_to_test[]`, RED → GREEN, in order
-- **Per-cycle local commits** (AP-1):
-  - After each RED: `git add <test files>` + `git commit -m "test: <id>.<n> RED — <behavior>"`
-  - After each GREEN: `git add <impl files>` + `git commit -m "feat: <id>.<n> GREEN — <behavior>"`
-  - Test files and impl files committed separately even if edited in the same cycle
-- **JIRA-key prefix (AP-22)** when `enforce_jira_key: true`: every commit subject is prefixed with `[<JIRA-KEY>]`, i.e. `test: <id>.<n> [<JIRA-KEY>] RED — <behavior>`. Applies to TDD-cycle commits, the D7.1 final commit, and every tracker bookkeeping commit.
-- Refactor only after all behaviors GREEN — committed as `refactor: <id> — <change>` (with JIRA-key prefix if enforced)
-- Public-interface tests only; never mock internal collaborators
-- Report per-behavior RED → GREEN sequence in the final summary (capped at 800 tokens — AP-16)
-
-
-The agent's `kind`-aware behavior:
-
-
-| `kind` | What the agent does |
+| `kind` | Shape |
 |---|---|
-| `code`, `test-only` | Full TDD vertical slice with per-cycle commits |
-| `refactor` | Run existing tests first to confirm GREEN baseline; refactor (single `refactor:` commit); re-run to confirm GREEN preserved |
-| `docs`, `config` | Skip TDD inner loop; single `docs:` or `chore:` commit; run any kind-specific gate |
+| `code`, `test-only` | Full TDD vertical slice, per-cycle commits |
+| `refactor` | Confirm GREEN baseline; refactor; single `refactor:` commit; confirm GREEN preserved |
+| `docs`, `config` | No TDD inner loop; single `docs:`/`chore:` commit; kind-specific gate if any |
 
-
-Refresh `last_heartbeat_at` in the tracker (AP-6). Under `branching.no_force_push: true`, append a `delta_kind: other` heartbeat delta to the queue rather than committing directly.
-
+Refresh heartbeat (AP-6); under `no_force_push: true` queue it as a `delta_kind: other` entry.
 
 ## Step D5 — Validate (parallel)
 
+Validators are NEVER skipped — not for single-edit Subtasks, not for "trivial" refactors: the touched-files view is exactly what misses a repo-wide regression (a shared test-helper edit breaking unowned test files reaches trunk on local gates alone); the quality validator's blast-radius check exists for precisely the smallest diffs.
 
-Validators are NEVER skipped — not for single-edit Subtasks, not for "trivial" refactors. The touched-files view is exactly what misses a repo-wide regression (a shared test-helper edit that breaks unowned test files reaches trunk on local gates alone); the quality validator's shared-helper blast-radius check exists for precisely the smallest diffs.
+Spawn THREE `general-purpose` agents in ONE message with role prompts from `references/validator-prompts.md`: **integration** (types compile, contracts honored, no import cycles, path verification), **design** (structural coherence, test quality through the public interface), **quality** (scoped test gates + contract tests). Read all three outputs in parallel.
 
+**Contradictory findings (AP-18).** Two validators returning findings at the SAME `location` with semantically opposing `suggested_fix` ("remove X" vs "expand X") → do NOT spawn a fix agent (they will thrash): `[BLOCKED: validator-contradiction]` (impl), both findings verbatim in the tracker, increment `consecutive_impl_blocks`, re-arm `*/30`, exit.
 
-Spawn THREE `general-purpose` agents in ONE message (parallel) with role prompts from `references/validator-prompts.md`:
+**Normal findings.** Spawn ONE `general-purpose` fix agent (findings verbatim + affected files + "fix only what's listed"); re-run validators in parallel. Caps: validator findings = 2 fix-passes; lint-only = 4; test-fail = 2. Past cap → typed `[BLOCKED: <kind>-unresolved]` (impl), increment, re-arm `*/30`, exit. Refresh heartbeat (AP-6).
 
-
-1. **Integration validator** — types compile, contracts honored, no import cycles, file-path verification.
-2. **Design validator** — structural coherence, no premature abstractions, layer rule respected. Tests verify behavior through public interface.
-3. **Quality validator** — runs the scoped test gates (`gates.test_single` / `gates.test_scoped`) and any contract tests added.
-
-
-Read all three outputs in parallel.
-
-
-### Contradictory validator escalation (AP-18)
-
-
-If two validators return findings on the SAME `location` (file:line) but their `suggested_fix` fields are semantically opposing (one says "remove X", another says "expand X"; one says "rename to Y", another says "rename to Z"), do NOT spawn a fix agent — the agents will thrash. Instead: write `[BLOCKED: validator-contradiction]` (impl), include both findings verbatim in the tracker entry, increment `consecutive_impl_blocks`, re-arm at `*/30`, exit.
-
-
-### Normal findings handling
-
-
-If any validator returns findings (non-contradictory):
-- Spawn ONE `general-purpose` agent in fix mode (prompt = findings list verbatim + affected files + "fix only what's listed").
-- Re-run validators (parallel).
-- Cap: validator findings = 2 fix-passes; lint-only = 4 fix-passes; test-fail = 2 fix-passes.
-
-
-Past cap → write typed `[BLOCKED: <kind>-unresolved]` (impl), increment `consecutive_impl_blocks`, re-arm at `*/30`, exit fire.
-
-
-Refresh heartbeat after validation pass (AP-6).
-
-
-## Step D6 — Test gate + AP-1 commit-shape audit
-
+## Step D6 — Test gate + commit-shape audit
 
 ### D6.1 — Test gates
 
+Run the runbook's `gates:` commands (schema + Python defaults: `references/runbook-template.md` §gates); all must pass: `gates.test_scoped` on the changed-module scope only (AP-15 — never the full suite); `gates.test_contract` on the scoped paths (only if `test_gates` includes `contract`); `gates.typecheck` and `gates.lint` on the delta only (pre-existing brownfield debt elsewhere must not block this Subtask); `gates.precommit` (NEVER `--no-verify`).
 
-Run the runbook's `gates:` commands (see `references/runbook-template.md` §gates — Python defaults shown in parentheses), must all pass:
-- `gates.test_scoped` against the **changed module scope only** (default `pytest -x -q {paths}`; AP-15: not full suite during rebase loops)
-- `gates.test_contract` on the scoped paths (default `pytest -m contract -x -q {paths}`; only if `test_gates` includes `contract`)
-- `gates.typecheck` on the changed modules (default `mypy {paths}`; delta only)
-- `gates.lint` on the changed files (default `ruff check {paths}`; scoped, not repo-wide — pre-existing lint debt elsewhere in a brownfield repo must not block this Subtask)
-- `gates.precommit` (default `pre-commit run --files {files}`; NEVER `--no-verify`)
+**Blast-radius expansions of `{paths}`.** Two declared cases widen the scope:
 
-
-**Scoped-test blast radius — shared helpers + invalidated seams.** `{paths}` for `gates.test_scoped` is normally the changed-module scope. Two declared expansions apply:
-
-- **Shared mock/test helpers:** when the Subtask touched a module imported by tests beyond the changed dirs — test-tree helpers (fakes, fixture factories, conftest-registered helpers) AND src-shipped test fakes (the `<pkg>/testing.py` pattern) alike; being imported by tests is the trigger, residence in the test tree is not — `{paths}` = ALL test files importing the touched module(s) — repo-wide import scan, not just the touched files. This holds even for a single-edit Subtask; a repo-wide helper regression escapes the touched-file net otherwise.
-- **Invalidated seams:** when the Subtask schema declares `invalidated_seams[]` (planner Rule 13), `{paths}` additionally includes every listed seam-test module — the tests whose monkeypatches bind to the import paths this Subtask changed.
-
+- **Shared test helpers:** the Subtask touched a module imported by tests beyond the changed dirs — being imported by tests is the trigger, regardless of whether the module lives in the test tree (fixture factories, conftest helpers) or in src (the `<pkg>/testing.py` fake pattern). `{paths}` = ALL test files importing the touched module(s), found by repo-wide import scan. Holds even for a single-edit Subtask — a repo-wide helper regression escapes the touched-file net otherwise.
+- **Invalidated seams:** the Subtask declares `invalidated_seams[]` (planner Rule 13) → `{paths}` additionally includes every listed seam-test module (the tests whose monkeypatches bind to import paths this Subtask changed).
 
 ### D6.2 — TDD audit via git log (AP-1)
 
-
-The implementer's report is no longer the source of truth for TDD compliance — git log is.
-
-
-**Audit range = `prev_pushed_sha..HEAD`, NOT `origin/<base>..HEAD` (AV3-06).** Under PR-per-Story the Story branch accumulates every prior Subtask's commit series, so `origin/<base>..HEAD` would sweep in commits belonging to already-audited Subtasks and false-flag `tdd-scope-leak`. The audit range is bounded to *this* Subtask's commits: `in_progress.prev_pushed_sha..HEAD` (the SHA the Story branch pointed at when the previous Subtask finished pushing; `origin/<trunk>..HEAD` for the Story's very first Subtask, where `prev_pushed_sha` is null). The range arithmetic **and** the shape checks below are extracted to `scripts/audit_commit_shape.sh` so they are deterministically self-tested (AV3-06.1–.6):
-
+Git log — not the implementer's report — is the source of truth for TDD compliance. **Audit range = `prev_pushed_sha..HEAD`, never `origin/<base>..HEAD`** (AV3-06): the Story branch accumulates prior Subtasks' commits, and the wider range would false-flag `tdd-scope-leak` on already-audited work. `prev_pushed_sha` = the Story branch tip when the previous Subtask finished pushing; `origin/<trunk>` for the Story's first Subtask. Range arithmetic and shape checks are extracted to a self-tested script:
 
 ```bash
 bash ${SKILL_DIR}/scripts/audit_commit_shape.sh \
   --id <subtask-id> --base <prev_pushed_sha-or-origin/<trunk>> \
   --kind <code|test-only|refactor|docs|config> [--jira-key <KEY>]
-# -> "OK" exit 0, or "[BLOCKED: <reason>] <detail>" exit 1 (D6.2 catalog below)
+# -> "OK" exit 0, or "[BLOCKED: <reason>] <detail>" exit 1
 ```
 
+Expected shape for `kind: code | test-only`: per behavior `<n>`, exactly one `test: <id>.<n> RED — ...` then one `feat: <id>.<n> GREEN — ...`; `[<JIRA-KEY>]` in every subject under `enforce_jira_key: true`; optional trailing `refactor: <id> — ...` commits; no `chore:`/`fix:`/`docs:` mixed in (scope leak). For `kind: refactor`: exactly one `refactor:` commit, zero `test:`/`feat:` → else `[BLOCKED: refactor-shape-wrong]`. For `kind: docs | config`: exactly one `docs:`/`chore:` commit.
 
-Expected shape for `kind: code | test-only` (the script enforces exactly this):
-- For each behavior `<n>` in `behaviors_to_test[]`, exactly one `test: <id>.<n> RED — ...` commit AND exactly one `feat: <id>.<n> GREEN — ...` commit, in that order.
-- Under `enforce_jira_key: true`, every commit subject must include `[<JIRA-KEY>]` in the required position.
-- Optional `refactor: <id> — ...` commits at the end.
-- No `chore:` / `fix:` / `docs:` mixed in (those signal scope leak).
+**Compressed-cycle exception (new-file relocation).** When the implementer's report declares `Compressed cycle: new-file-relocation` (legitimate only when every impl file is `# NEW` and the behaviors are relocated, already-tested behavior), the expected shape is ONE RED + ONE GREEN pair covering all behaviors. The design validator's behavior-coverage check remains fully in force — the exception compresses the COMMIT shape, never the coverage.
 
-**Compressed-cycle exception (new-file relocation).** When the implementer's report declares `Compressed cycle: new-file-relocation` (implementer-prompt.md §Compressed-cycle exception — legitimate only when every impl file is `# NEW` and the behaviors are relocated, already-tested behavior), the expected shape is ONE `test: <id>.1 RED` + ONE `feat: <id>.1 GREEN` pair covering all behaviors. The design validator's behavior-coverage check (every behavior in `behaviors_to_test[]` backed by a test) remains fully in force — the exception compresses the COMMIT shape, never the coverage.
-
-
-Failure modes:
-- Cycle count (RED/GREEN pairs) exceeds `budget.max_cycles_per_subtask` → `[BLOCKED: cycle-budget-exhausted]` (impl) — the git log is the enforcement point, not the implementer's self-report.
-- Missing RED for behavior N → `[BLOCKED: tdd-no-red]` (impl) citing N.
-- Missing GREEN for behavior N → `[BLOCKED: tdd-no-green]` (impl) citing N.
-- GREEN precedes RED for any N → `[BLOCKED: tdd-out-of-order]` (impl).
-- Extra commits with foreign types → `[BLOCKED: tdd-scope-leak]` (impl).
-- JIRA-key missing on any commit under `enforce_jira_key: true` → `[BLOCKED: jira-key-missing]` (impl) citing the offending commits.
-
-
-For `kind: refactor`: expect exactly one `refactor: <id> — ...` commit and zero `test:` / `feat:` commits. Violations → `[BLOCKED: refactor-shape-wrong]` (impl).
-
-
-For `kind: docs | config`: expect exactly one commit of the appropriate type (`docs:` or `chore:`).
-
-
-Failure dispatch matches Step D5 (typed BLOCKED, increment `consecutive_impl_blocks`).
-
+Failure catalog (all `(impl)`, dispatch as D5): cycle pairs > `budget.max_cycles_per_subtask` → `[BLOCKED: cycle-budget-exhausted]`; missing RED/GREEN for behavior N → `[BLOCKED: tdd-no-red]` / `[BLOCKED: tdd-no-green]` citing N; GREEN before RED → `[BLOCKED: tdd-out-of-order]`; foreign commit types → `[BLOCKED: tdd-scope-leak]`; missing JIRA key → `[BLOCKED: jira-key-missing]` citing the commits.
 
 ### D6.3 — Behavior-ID → test binding audit (MS §13.9 / AV3-05)
 
-
-Manifest-backed drains only (a Subtask with `behavior_ids[]`). Build the `## Behavior coverage` mapping (Behavior ID → the pytest-style test node IDs that cover it) and verify it against the git log — the implementer's self-report is not the source of truth:
-
+Manifest-backed drains only. Build the `## Behavior coverage` mapping (Behavior ID → covering test node IDs) and verify it against git log:
 
 ```bash
 bash ${SKILL_DIR}/scripts/audit_behavior_binding.sh --coverage <coverage-file> --base <prev_pushed_sha-or-origin/<trunk>>
 # OK exit 0 · [BLOCKED: unbound-behavior] <B-id> · [BLOCKED: unproven-binding] <B-id> <test>
 ```
 
-
-Every mapped Behavior must have ≥1 bound test node (`unbound-behavior` otherwise), and each bound test's function name must be NAMED in a `test: ... RED` commit in the Subtask's range (`unproven-binding` otherwise — a coverage claim with no RED evidence). Failure dispatch matches D5 (typed `[BLOCKED]` (impl)). The verified mapping feeds D7.3's PR-body section and D7.4's tracker mirror (consumed by the PR Gate per MS §13.11).
-
+Every mapped Behavior needs ≥1 bound test node (`unbound-behavior` otherwise), and each bound test's name must be NAMED in a `test: ... RED` commit in the range (`unproven-binding` — a coverage claim with no RED evidence). Dispatch as D5. The verified mapping feeds D7.3's PR-body section and D7.4's tracker mirror (consumed by the PR Gate, MS §13.11).
 
 ### D6.4 — Closing-test determinism gate, N=5 (AV3-12)
 
-
-Run the Subtask's OWN changed tests 5× (never the full suite — bounded to `gates.test_scoped` with `{paths}` = the Subtask's test files); one round is order-randomized via the new optional `gates.test_random`. The 5×-loop is runner-agnostic — it takes the resolved commands and compares exit codes + failure fingerprints:
-
+Run the Subtask's OWN changed tests 5× — bounded to `gates.test_scoped` with `{paths}` = the Subtask's test files, never the full suite — one round order-randomized via `gates.test_random`. Runner-agnostic: compares exit codes + failure fingerprints.
 
 ```bash
 bash ${SKILL_DIR}/scripts/determinism_gate.sh \
@@ -688,15 +348,11 @@ bash ${SKILL_DIR}/scripts/determinism_gate.sh \
 # DETERMINISTIC (5 rounds) exit 0 · [BLOCKED: flaky-test] <detail> exit 1
 ```
 
-
-When the repo has no randomization mechanism (`gates.test_random` unset), the order-randomized round is SKIPPED with a loud `[note]` on stderr — NEVER silently (a silent skip would claim order-independence it never checked; honor the `[det]`/`[drain]` split honestly). Any inconsistency across the 5 rounds → `[BLOCKED: flaky-test]` (impl-block counter); dispatch matches D5. This is the runtime backstop for the AV3-11 anti-flakiness contract.
-
+No `gates.test_random` → the randomized round is SKIPPED with a loud stderr `[note]`, never silently (a silent skip would claim order-independence it never checked). Any inconsistency across the 5 rounds → `[BLOCKED: flaky-test]` (impl); dispatch as D5. This is the runtime backstop for the AV3-11 anti-flakiness contract.
 
 ### D6.5 — Anti-vacuous (mutation) gate (ADR 0016)
 
-
-D6.4 catches a test that passes for the wrong reason (nondeterminism); D6.5 catches a test that passes for NO reason (vacuity). After D6.1–D6.4, D6.5 runs the repo's mutation tool over THIS Subtask's changed product FILES, then filters the survivors to the changed LINES of `prev_pushed_sha..HEAD` (the D6.2 range). A survived mutant on a changed line is deterministic proof a test executes that line and constrains nothing. OPTIONAL: runs only when `gates.test_mutation` is set and the language has an adapter (`references/mutation-adapters.md` — the pointer to the MT-01 map, whose ONE copy lives in `skills/cleanup-audit/references/cross-language-tooling.md` since ADR 0025).
-
+D6.4 catches a test that passes for the wrong reason (nondeterminism); D6.5 catches a test that passes for NO reason (vacuity). After D6.1–D6.4, run the repo's mutation tool over THIS Subtask's changed product files, filter survivors to the changed LINES of `prev_pushed_sha..HEAD`: a survived mutant on a changed line is deterministic proof a test executes that line and constrains nothing. OPTIONAL: runs only when `gates.test_mutation` is set and the language has an adapter (`references/mutation-adapters.md` — the pointer to the MT-01 map, whose ONE copy lives in `skills/cleanup-audit/references/cross-language-tooling.md` since ADR 0025).
 
 ```bash
 bash ${SKILL_DIR}/scripts/mutation_gate.sh \
@@ -708,24 +364,17 @@ bash ${SKILL_DIR}/scripts/mutation_gate.sh \
 # skip/partial [note] exit 0 · clean-index refuse / usage exit 64
 ```
 
+**Isolation is a NEW named mechanism, not free reuse (loop-safety invariant 1).** A mutation tool rewrites source on disk, so D6.5 NEVER runs on the live Story checkout: `mutation_gate.sh` runs inside an EXPLICIT `git worktree add <throwaway> HEAD`, torn down by an EXIT/INT/TERM trap, gated behind a clean-index precheck. The live checkout is never mutated — even on injected mid-run failure.
 
-**Isolation is a NEW named mechanism, not free reuse (loop-safety invariant 1).** A mutation tool rewrites source on disk, so D6.5 NEVER runs on the live Story checkout. `mutation_gate.sh` runs the resolved command inside an EXPLICIT `git worktree add <throwaway> HEAD`, torn down by an EXIT/INT/TERM trap (`git worktree remove --force`), gated behind a clean-index precheck (refuses a tree with uncommitted TRACKED changes). The live checkout is never mutated — even on injected mid-run failure (the trap fires on error and on TERM alike).
+**Dispatch identical to D6.4's flaky-test:** `[BLOCKED: vacuous-test]` → impl counter, re-arm `*/30`, escalate at the cap. **Self-remediation closure:** the fix MUST be a strengthened assertion re-verified by D6.5 on the SAME changed lines — never deleting the product code at the mutation point (trips D6.2 `tdd-scope-leak`), never editing `gates.test_mutation` to dodge the gate (outside `owned_files[]`).
 
-
-**Dispatch identical to D6.4's flaky-test.** `[BLOCKED: vacuous-test]` → impl-block counter, `consecutive_impl_blocks`, re-arm `*/30`, escalate at `max_impl_blocks=3`. **Self-remediation closure:** the fix MUST be a strengthened assertion re-verified by D6.5 on the SAME changed lines — NOT deleting the product code at the mutation point (that trips D6.2 `tdd-scope-leak`) and NOT editing `gates.test_mutation` to dodge the gate (outside the implementer's `owned_files[]`).
-
-
-**Budget + degrade, honestly (MT-07/MT-08).** Exceeding `--max-mutants` or `--max-seconds` → `[note] mutation-budget-exhausted — partial (N of M)`, exit 0, NEVER a false `[BLOCKED]` (inconclusive ≠ survivor — the D6.4 skipped-randomization honesty). No tool for the language, `gates.test_mutation` omitted, or an unsupported tool → SKIP with a loud stderr `[note] no mutation tool for <lang> — D6.5 anti-vacuous gate skipped (optional)`, exit 0. A file-granular survivor (a tool with no line resolver, e.g. go-mutesting/mutmut without `mutmut show`) cannot be pinned to a changed line, so it is comment-only, never a block (the line filter is post-hoc for file-granular tools). D6.5 adds no new autonomous mutating path beyond the trap-isolated throwaway worktree.
-
+**Budget + degrade, honestly (MT-07/MT-08).** Exceeding `--max-mutants`/`--max-seconds` → `[note] mutation-budget-exhausted — partial (N of M)`, exit 0, NEVER a false `[BLOCKED]` (inconclusive ≠ survivor — the D6.4 skipped-round honesty). No tool for the language / `gates.test_mutation` omitted / unsupported tool → SKIP with a loud stderr `[note]`, exit 0. A file-granular survivor (a tool with no line resolver) cannot be pinned to a changed line → comment-only, never a block. D6.5 adds no new autonomous mutating path beyond the trap-isolated throwaway worktree.
 
 ## Step D7 — Pre-push rebase + commit + PR
 
+**D7.0 — Pre-push rebase.** `git fetch origin && git rebase origin/<base>`, `<base>` = the Story's D4 branching base. The unit rebased is the Story branch (AV3-06) — the replay carries every prior Subtask's commits on it. Conflicts → the protocol in `references/conflict-resolution.md`. Budget: 3 hunks across 2 files max.
 
-**Step D7.0 — Pre-push rebase.** `git fetch origin && git rebase origin/<base>`, where `<base>` is the Story's branching base from D4 (`origin/<trunk>`, or the dependency Story's branch tip for a stacked Story). The unit being rebased is the **Story branch** (AV3-06) — the replay carries every prior Subtask's commit series that already lives on it, not just the current Subtask's. If clean, continue. If conflicts, follow the protocol at `references/conflict-resolution.md` (inlined Pocock-style). Budget: 3 hunks across 2 files max.
-
-
-**On budget trip — attribute before escalating (ADR 0009 / AV3-10).** When the budget trips, do NOT reflexively `[BLOCKED: rebase-too-large]`. First run the attribution predicate over the rebase's conflicting-hunk files and this Subtask's recorded claim-overlap files (AV3-09):
-
+**On budget trip — attribute before escalating (ADR 0009 / AV3-10).** Do not reflexively `[BLOCKED: rebase-too-large]`; first run the attribution predicate over the conflicting-hunk files and this Subtask's recorded claim-overlap files:
 
 ```bash
 bash ${SKILL_DIR}/scripts/claim_loss_attribution.sh \
@@ -734,53 +383,34 @@ bash ${SKILL_DIR}/scripts/claim_loss_attribution.sh \
 # REPLAN (exit 0) · NOT-ATTRIBUTED (exit 1) · REPLAN-BUDGET-EXHAUSTED (exit 2)
 ```
 
+- **REPLAN** — a foreign claim we were told about merged first and rewrote these files: route to D3 re-plan against the new trunk (not the impl-block path); increment the Subtask's re-plan count, record `replanned-after-claim-loss`. Bounded: 2 re-plans per Subtask.
+- **NOT-ATTRIBUTED / REPLAN-BUDGET-EXHAUSTED** — genuine planning conflict (or bound spent): `[BLOCKED: rebase-too-large]` (impl), no retry.
 
-- **REPLAN (exit 0)** — a foreign claim (a PR we were told overlapped) merged first and rewrote these files. Route to **D3 re-plan against the new trunk** instead of the impl-block path; increment the Subtask's re-plan count and record `replanned-after-claim-loss` on the tracker. Bounded: 2 re-plans per Subtask.
-- **NOT-ATTRIBUTED (exit 1)** or **REPLAN-BUDGET-EXHAUSTED (exit 2)** — genuine planning conflict (or the 2-re-plan bound is spent): `[BLOCKED: rebase-too-large]` (impl), no retry (needs human).
+During conflict resolution run `gates.test_scoped` on changed paths only — never the full suite (AP-15).
 
+**D7.1 — Stage owned_files[].** The per-cycle commits from D4 ARE the PR's commits; stage only `owned_files[]` if the refactor pass left unstaged changes, else skip. Never `git add -A`. When a final commit IS needed (`kind: docs | config | refactor`): stage only `owned_files[]`; Conventional Commits `<type>: <id> — <title>`; `[<JIRA-KEY>]` prefix under `enforce_jira_key: true` (AP-22); body = `acceptance_criteria` checklist + a 2–3-sentence `Rationale:` paragraph (AP-8) + `Refs:` footer (JIRA key, source_ref); trailer `Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>`; HEREDOC for formatting.
 
-During conflict resolution, run `gates.test_scoped` against changed paths only — never the full suite (AP-15).
+**D7.1a — Tracker-delta fold to the Runbook PR (AP-23 / AV3-08).** Only under `branching.no_force_push: true`. If `## Pending Tracker Deltas (batched)` is `_(empty)_`, skip. Otherwise flush to the Runbook PR branch (`autopilot/<slug>/runbook`) — kept OFF the Story branch so the tracker never self-intersects a Story's claim surface (AV3-09):
 
+1. Build a `Tracker deltas folded in:` commit-body block listing each entry's `delta_kind` + `diff_summary`.
+2. Apply every entry's `body:` to the tracker file on the runbook branch, in order.
+3. Reset the queue section body to `_(empty)_` (header remains).
+4. Commit the tracker on `autopilot/<slug>/runbook` as its OWN append commit — the fold never rides a Story branch and never stages `owned_files[]`, so Story code and bookkeeping never share a branch and the Story PR carries only code.
 
-**Step D7.1 — Stage owned_files[].** The per-cycle commits from D4 ARE the PR's commits. Stage only `owned_files[]` if any unstaged changes remain from refactor pass; otherwise skip. Never `git add -A`.
+Under `no_force_push: false` the deltas were committed directly at claim time (D2/D7.4); this fold is skipped.
 
+**D7.2 — Push.** `git push -u origin <branch>`. Transient failure → 1 retry. Auth failure → `[BLOCKED: bitbucket-token-missing]` (impl), no retry.
 
-When a final commit IS needed (e.g., for `kind: docs | config | refactor`), follow these rules:
+**D7.3 — Story PR (draft-open / update / ready-flip).** One Story = one branch = one PR, opened draft, kept draft until the whole Story is Done (AV3-06):
 
-
-- Stage only `owned_files[]`.
-- Conventional Commits: `<type>: <id> — <title>` (e.g., `refactor: B1 — decouple validator from registry`).
-- Under `enforce_jira_key: true` (AP-22), prefix with `[<JIRA-KEY>]`: `feat: B1 [PROJ-1235] — F.1a discriminator audit`.
-- Body: `acceptance_criteria` checklist + `Rationale:` paragraph (AP-8) explaining the chosen approach in 2-3 sentences + `Refs:` footer with JIRA-KEY (if any) and source_ref.
-- Trailer: `Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>`.
-- HEREDOC for formatting.
-
-
-**Step D7.1a — Tracker-delta fold to the Runbook PR (AP-23 / AV3-08).** Runs only under `branching.no_force_push: true`. Read the tracker's `## Pending Tracker Deltas (batched)` section. If it is `_(empty)_`, skip. Otherwise flush the queue to the **Runbook PR branch** (`autopilot/<slug>/runbook`) — the single bookkeeping home, kept OFF the Story branch so the tracker never self-intersects a Story's claim surface (AV3-09):
-
-
-1. Build a `Tracker deltas folded in:` block for the commit body listing each pending entry's `delta_kind` + `diff_summary` (one line per entry).
-2. Apply every entry's `body:` field to the tracker file on the runbook branch (mutations accumulated in-order).
-3. Flush the queue: replace the section body with `_(empty)_` (the header remains).
-4. Commit the tracker file on `autopilot/<slug>/runbook` with the folded-in block as the commit body — its OWN append commit (no force-push, so it holds under both `no_force_push` settings): the fold never rides a Story branch and never stages `owned_files[]`, so a Story's code and the tracker's bookkeeping never share a branch (one home, no self-intersecting claim surfaces for AV3-09) and the Story PR carries only code. The impl commit on the Story branch and this bookkeeping commit on the runbook branch are now separate PRs.
-
-
-Under `branching.no_force_push: false` the delta was already committed directly to the runbook branch at claim time (D2), so this batched fold is skipped.
-
-
-**Step D7.2 — Push.** `git push -u origin <branch>`. Transient failure → 1 retry. Auth failure → `[BLOCKED: bitbucket-token-missing]` (impl), no retry.
-
-
-**Step D7.3 — Story PR (draft-open / update / ready-flip).** PR-per-Story: one Story = one branch = one PR, opened as a **draft** and kept draft until the whole Story is Done (AV3-06). The three cases:
-
-1. **This Subtask is the Story's FIRST pushed Subtask** (no Story PR yet) → open the draft Story PR:
+1. **The Story's FIRST pushed Subtask** (no Story PR yet) → open the draft Story PR:
    ```bash
    bash ${SKILL_DIR}/scripts/host.sh pr-open --draft \
      --title "<story-title>" --src autopilot/<slug>/<story-id> --dest <base-branch> --body-file <body-file>
    ```
-   `host.sh` dispatches to the detected backend (Hard Contract 11 — never call a backend directly). Dest = the rebase base from D7.0. Body file = Summary + Test plan + per-Subtask TDD sequence + Checklist + (manifest-backed drains) the **`## Behavior coverage`** section. On a DC server that predates draft PRs the backend applies the `[DRAFT]`-title-prefix fallback transparently (`AUTOPILOT_BITBUCKET_DRAFT_MODE`, HD03/HD05/HD07).
+   `host.sh` dispatches to the detected backend (Hard Contract 11 — never call a backend directly). Dest = the D7.0 rebase base. Body = Summary + Test plan + per-Subtask TDD sequence + Checklist + (manifest-backed) the `## Behavior coverage` section. On a DC server predating draft PRs the backend applies the `[DRAFT]`-title-prefix fallback transparently (`AUTOPILOT_BITBUCKET_DRAFT_MODE`).
 
-   **`## Behavior coverage` (MS §13.9 / AV3-05).** The Story PR body carries the D6.3-verified Behavior-ID → test-node-ID mapping in a grep-able, marker-delimited block so the PR Gate (MS §13.11) can parse it:
+   **`## Behavior coverage` (MS §13.9 / AV3-05)** — the D6.3-verified Behavior-ID → test-node mapping, grep-able and marker-delimited so the PR Gate (MS §13.11) can parse it:
 
    ```markdown
    ## Behavior coverage
@@ -788,188 +418,103 @@ Under `branching.no_force_push: false` the delta was already committed directly 
    - B-pricing-001: tests/test_pricing.py::test_rejects_expired_lock
    - B-pricing-002: tests/test_pricing.py::test_a, tests/test_pricing.py::test_b
    ```
-2. **A later Subtask of a Story whose draft PR already exists** → the push in D7.2 already updated the PR; append a `host.sh pr-comment` "Subtask `<id>` landed" note. Do NOT open a second PR.
-3. **This Subtask completes the Story** (after it goes `[x] Done`, ALL of the Story's Subtasks are `[x] Done` — checked by set membership, never by position) → flip the draft to ready-for-review: `bash ${SKILL_DIR}/scripts/host.sh pr-ready --num <story-pr-number>`. A Story PR that still has any `[ ]` or `[BLOCKED]` Subtask stays draft. (The ready-flip is also reached from the D7.5 green path and the D1.4 external-merge path — wherever the Subtask that closes the Story transitions to Done.)
+2. **A later Subtask of a Story with an open draft PR** → the D7.2 push already updated it; append a `host.sh pr-comment` "Subtask `<id>` landed" note. Never open a second PR.
+3. **The Subtask that completes the Story** (ALL of its Subtasks `[x] Done` — checked by set membership, never position) → flip draft to ready: `bash ${SKILL_DIR}/scripts/host.sh pr-ready --num <story-pr-number>`. A Story PR with any `[ ]` or `[BLOCKED]` Subtask stays draft. (The ready-flip is also reached from the D7.5 green path and the D1.4 external-merge path — wherever the closing Subtask goes Done.)
 
+Under `no_force_push: true` with a non-empty D7.1a fold, the PR body also carries a `## Tracker deltas folded in` H2 (each entry's `delta_kind` + `diff_summary`) for reviewer visibility. Under `branching.single_branch_single_pr: true`, D7.3 opens ONE PR on the drain's first successful Subtask; later Subtasks push to the same branch and update it via `host.sh pr-comment`.
 
-Under `branching.no_force_push: true` with a non-empty D7.1a fold, the PR body ALSO includes a `## Tracker deltas folded in` H2 listing each entry's `delta_kind` + `diff_summary` for reviewer visibility.
-
-
-Under `branching.single_branch_single_pr: true`, the coarser collapse still applies: D7.3 opens ONE PR on the first successful Subtask of the whole drain; subsequent Subtasks push to the same branch and update the existing PR via `host.sh pr-comment`.
-
-
-**Step D7.4 — Tracker update.** Set `in_progress.pr_number = <num>` (the Story PR — the same number for every Subtask of the Story), `in_progress.awaiting_ci = true`, `in_progress.pushed_at = <iso8601>`, `in_progress.pushed_sha = <HEAD sha just pushed>` (consumed by D7.5's `ci_check.sh --sha`), `in_progress.ci_check_count = 0`, `last_heartbeat_at = <now>`. Also record the Story's `last_pushed_sha = pushed_sha` on the Story's tracker entry: the NEXT Subtask of this Story reads it as its `prev_pushed_sha` (the D6.2 audit base — AV3-06). The Story's first Subtask has no predecessor, so its audit base is `origin/<trunk>`. On a manifest-backed drain, **mirror the `## Behavior coverage` mapping to the tracker** (AV3-05) alongside the Subtask entry, so the binding survives across fires and is auditable without the PR.
-
-
-- Under `branching.no_force_push: false`: commit the status delta directly to the Runbook PR branch (`autopilot/<slug>/runbook`, AV3-08).
-- Under `branching.no_force_push: true`: append `delta_kind: status_change` to the queue. The next Subtask's D7.1a fold lands it on the runbook branch. Between now and then, D2 will surface the pending entry on hydrate.
-
+**D7.4 — Tracker update.** Set `in_progress.pr_number` (the Story PR — same number for every Subtask of the Story), `awaiting_ci: true`, `pushed_at`, `pushed_sha` (consumed by D7.5's `--sha`), `ci_check_count: 0`, `last_heartbeat_at`. Record the Story's `last_pushed_sha = pushed_sha` on its tracker entry — the NEXT Subtask of this Story reads it as `prev_pushed_sha` (the D6.2 audit base; the Story's first Subtask audits from `origin/<trunk>`). On a manifest-backed drain, mirror the `## Behavior coverage` mapping to the tracker (AV3-05) so the binding survives across fires and is auditable without the PR. Routing: direct commit to the Runbook PR branch under `no_force_push: false` — subject carries the `[<JIRA-KEY>]` prefix under `enforce_jira_key: true` (AP-22; the server hook rejects bare subjects); `delta_kind: status_change` queue append under `true` (the fold commit's JIRA handling: `tracker-delta-batching.md` §Interaction with `enforce_jira_key`).
 
 ### D7.3a — Stacked PR merge strategy (AP-10)
 
-
-(Renamed from a second "D7.5" in v2.4.0 — the step id collided with the CI poll below.) AP-10 is re-scoped to **Story PRs** (AV3-06): when the Story PR being created stacks on another in-flight Story's branch (a cross-Story dependency, D4), the PR description MUST request a **merge commit (not squash)**. Bitbucket's PR merge UI defaults to squash; squash on a stacked PR collapses the dependency chain and breaks subsequent rebases. `host.sh pr-merge` defaults to the merge-commit intent and uses `pr-merge-strategies` discovery to fall back to the closest enabled strategy on repos that don't offer it (the Bitbucket DC backend maps to `no-ff`/`squash`/…; the GitHub backend to `--merge`/`--squash`/`--rebase`).
-
+When the Story PR stacks on another in-flight Story's branch (cross-Story dependency, D4), the PR description MUST request a **merge commit, not squash** — squash on a stacked PR collapses the dependency chain and breaks subsequent rebases (Bitbucket's merge UI defaults to squash). `host.sh pr-merge` defaults to the merge-commit intent and uses `pr-merge-strategies` discovery to fall back to the closest enabled strategy.
 
 ## Step D7.5 — CI poll (cross-fire)
 
+Runs only on a fire that started with `awaiting_ci: true` (D1 dispatch); short-circuited under `ci.skip_wait: true` (D1's WIP dispatch already handled merged/open/declined without `ci_check.sh`).
 
-This step runs only on a fire that started with `awaiting_ci: true` (D1 dispatch). Under `ci.skip_wait: true` this step is short-circuited — D1's WIP dispatch already handled the merged/open/declined cases without running `ci_check.sh`.
-
-
-Run `bash ${SKILL_DIR}/scripts/ci_check.sh --sha <in_progress.pushed_sha> --pr <pr_number> --once`. `--once` takes ONE observation and exits immediately (the drain design is cross-fire; the blocking poll mode is for interactive operator use only). The script emits `LAST_STATE=<actual last observed build state>` on stderr before every exit; cite it in tracker entries.
-
+Run `bash ${SKILL_DIR}/scripts/ci_check.sh --sha <in_progress.pushed_sha> --pr <pr_number> --once` — ONE observation, exit immediately (the drain is cross-fire; the blocking poll mode is operator-only). The script emits `LAST_STATE=<last observed build state>` on stderr before every exit; cite it in tracker entries.
 
 | `ci_check.sh --once` result | Action |
 |---|---|
-| exit 0 (VERDICT=GREEN) | Mark Subtask `[x] Done` with the Story PR URL + commit SHA + `[<JIRA-KEY>]` if any. Reset both counters to 0 (AP-2: a Done resets impl AND ci). **If this makes ALL of the Story's Subtasks `[x] Done`, flip the Story PR ready** (`host.sh pr-ready --num <story-pr>`; D7.3 case 3). Clear `in_progress`. Re-arm cron at `*/5`. Exit fire. |
-| exit 1 (VERDICT=RED) | Write `[BLOCKED: ci-red]` (ci) on Subtask with the failing check name + log URL. Increment `consecutive_ci_blocks`. Clear `in_progress`. Re-arm cron at `*/30`. Exit fire. **No retry.** |
-| exit 5 (VERDICT=PENDING) + `ci_check_count < 6` | Build in progress or not yet reported. Increment `ci_check_count`. Update `last_heartbeat_at`. Re-arm cron at `*/10`. Exit fire. |
-| exit 5 (VERDICT=PENDING) + `ci_check_count >= 6` | Write `[BLOCKED: ci-stuck-pending]` (ci) citing `LAST_STATE=` (INPROGRESS = a build is hung; UNKNOWN = CI never reported for this SHA). Increment `consecutive_ci_blocks`. Clear `in_progress`. Re-arm cron at `*/30`. Exit fire. |
-| exit 4 (VERDICT=PR_DECLINED) | Write `[BLOCKED: pr-declined]` (ci) on Subtask citing PR URL. Increment `consecutive_ci_blocks`. Clear `in_progress`. Re-arm at `*/30`. Exit fire. |
-| exit 64 (usage error) | Write `STATUS: HUMAN_NEEDED — ci-check-usage-error` citing stderr, `CronDelete`, exit. (External fault: no counter increment.) |
+| exit 0 (GREEN) | Mark Subtask `[x] Done` with Story PR URL + SHA + `[<JIRA-KEY>]` if any. Reset both counters (AP-2). If this makes ALL of the Story's Subtasks Done, flip the Story PR ready (D7.3 case 3). Clear `in_progress`. Re-arm `*/5`. Exit. |
+| exit 1 (RED) | `[BLOCKED: ci-red]` (ci) with failing check name + log URL. Increment `consecutive_ci_blocks`. Clear `in_progress`. Re-arm `*/30`. Exit. No retry. |
+| exit 5 (PENDING), `ci_check_count < 6` | Increment `ci_check_count`, update heartbeat, re-arm `*/10`, exit. |
+| exit 5 (PENDING), `ci_check_count >= 6` | `[BLOCKED: ci-stuck-pending]` (ci) citing `LAST_STATE=` (INPROGRESS = hung build; UNKNOWN = CI never reported for this SHA). Increment `consecutive_ci_blocks`. Clear `in_progress`. Re-arm `*/30`. Exit. |
+| exit 4 (PR_DECLINED) | `[BLOCKED: pr-declined]` (ci) citing the PR URL. Increment `consecutive_ci_blocks`. Clear `in_progress`. Re-arm `*/30`. Exit. |
+| exit 64 (usage error) | `STATUS: HUMAN_NEEDED — ci-check-usage-error` citing stderr, `CronDelete`, exit. (External fault.) |
 
-
-(Exit codes 2 STUCK and 3 UNDETERMINED belong to the blocking mode and cannot occur under `--once`.)
-
+(Exits 2 STUCK and 3 UNDETERMINED belong to the blocking mode and cannot occur under `--once`.)
 
 ## Step D8 — Adaptive cron re-arm
 
+Always the last action of a fire. Cadence dispatch is defined once in `references/cadence-dispatch.md` and inlined into the runbook at GENERATE-time.
 
-Always the last action before exiting a fire. Cadence dispatch is defined once in `references/cadence-dispatch.md` and inlined into the runbook at GENERATE-time.
+**Session-lock release.** On terminal STATUS (`DRAINED | PAUSED | HUMAN_NEEDED | STOPPED`), clear `session_lock` and `session_lock_expires_at` so `--resume` can claim cleanly. Before exiting, pop the fire's labeled foreign-dirty stash if D1.2 created one (pop-conflict → leave stashed + extend the Drift Note).
 
+**Terminal-fire contract — session death while awaiting CI.** A fire exiting with `awaiting_ci: true` leaves `STATUS: ACTIVE` by design — the in-session cron continues the D7.5 poll next fire. If the SESSION dies between such fires, no code path in the dead session can flip the status: the tracker is stranded `ACTIVE` with a lock that self-expires within 30 minutes. That stranding is expected, not a defect — recovery is Resume step 2's stale-ACTIVE reclaim (`ACTIVE → PAUSED`, `status_reason: "session_ended_between_ci_polls"`, then the normal PAUSED path). Operators never hand-edit `STATUS` for this.
 
-### Session-lock release
-
-
-On terminal STATUS (`DRAINED | PAUSED | HUMAN_NEEDED | STOPPED`), clear `session_lock` and `session_lock_expires_at` so a `--resume` can claim cleanly.
-
-Before exiting the fire, `git stash pop` the fire's labeled foreign-dirty stash if D1.2 created one (pop-conflict → leave stashed + extend the Drift Note; see D1.2 §Foreign dirty-tree handling).
-
-
-### Terminal-fire contract — session death while awaiting CI
-
-
-A fire that exits with `in_progress.awaiting_ci: true` leaves `STATUS: ACTIVE` by design — the in-session cron continues the D7.5 poll on the next fire. If the SESSION dies between such fires (or mid-fire, between D7.5 and D8), no code path in the dead session can flip the status: the tracker is stranded `ACTIVE` with a session lock that self-expires within 30 minutes. That stranding is expected, not a defect — recovery is owned by Resume step 2's **stale-ACTIVE reclaim** (below), which flips `ACTIVE → PAUSED` with `status_reason: "session_ended_between_ci_polls"` and proceeds through the normal PAUSED path. Operators never hand-edit `STATUS` for this case.
-
-
-### PAUSED spec deduplication (AP-17)
-
-
-If the tracker is being written to `STATUS: PAUSED` and the previous fire ALSO wrote `STATUS: PAUSED` with the same `status_reason`, skip the tracker commit entirely (the Runbook PR or the batched queue doesn't need yet another no-op delta).
-
+**PAUSED spec deduplication (AP-17).** Writing `STATUS: PAUSED` when the previous fire also wrote PAUSED with the same `status_reason` → skip the tracker commit entirely (no no-op deltas).
 
 ---
-
 
 # Resume mode
 
+Triggered by `/autopilot --resume @<runbook>`. Steps in order:
 
-Triggered by `/autopilot --resume @<runbook>`. Recovers a paused drain without requiring the operator to re-paste a long resume prompt.
-
-
-Steps in order:
-
-
-1. **Validate inputs.** Confirm runbook exists at the given path; derive `<slug>` from the filename; confirm `.autopilot/runbooks/<slug>.tracker.md` exists. Refuse if either is missing.
-2. **Validate STATUS.** Read `STATUS:` from the tracker frontmatter.
-   - `PAUSED` → continue to the drift check below.
-   - `ACTIVE` → inspect the session lock AND a dead-session signal before deciding (**stale-ACTIVE reclaim**):
-     - `session_lock` held and unexpired → refuse with `Resume refused: drain already ACTIVE. Either a fire is in flight or the previous session is still draining.`
-     - `session_lock` null or expired → lock expiry alone is NOT proof of death. The lock is set/refreshed only at fire start (`now + 30 min`, D1.0), while mid-fire liveness is `last_heartbeat_at`; a normal D2→D8 implementation fire routinely outlives its 30-minute lock (`detect_concurrent_drain.sh`'s expiry-only staleness is designed for between-fire gaps, not for judging a fire in flight). Reclaim ONLY when a dead-session signal ALSO holds — either:
-       - `last_heartbeat_at` > 90 min old (the D1.3 crash standard), or
-       - `in_progress.awaiting_ci: true` — the Subtask is pushed and the drain is between CI polls, so no implementation work is in flight (the classic stranding: session died between D7.5 and D8 — see D8 §Terminal-fire contract).
-
-       Then flip `STATUS: ACTIVE → PAUSED` with `status_reason: "session_ended_between_ci_polls"` when `in_progress.awaiting_ci: true` (otherwise `status_reason: "session_ended_mid_fire"`), append a `## Drift Notes` entry recording the reclaim, and continue to the drift check below as the normal PAUSED path.
-     - `session_lock` null or expired but NEITHER dead-session signal holds (heartbeat fresh, not awaiting CI) → a live fire is likely mid-implementation past its 30-minute lock; reclaiming would race its tracker writes and working tree. Refuse with `Resume refused: drain ACTIVE with a recent heartbeat (<last_heartbeat_at>) — a fire may still be live. Retry after the heartbeat is 90+ min stale.`
-   - `DRAINED | HUMAN_NEEDED | STOPPED` → refuse with `Resume refused: drain is in terminal state <STATUS>. Use --generate to start a new drain.`
-2a. **Refuse manifest-revision drift (MS §6 / AV3-04).** `bash ${SKILL_DIR}/scripts/manifest_revision_gate.sh resume-check .autopilot/runbooks/<slug>.tracker.md` — on exit 2 (`status_reason: manifest-revision-drift`) plain resume is REFUSED: it would re-plan nothing against the new revision. Print the revision-regen pointer and stop. Recovery is `--generate --merge` **revision-regen mode**: it re-plans the open (`[ ]`) Subtasks against the new `manifest_revision`, **preserves `[x] Done` history** (a Hard Contract 8 carve-out — regen is neither overwrite nor plain merge; §6's ID-stability guarantees the surviving Behavior IDs re-plan without rework), supersedes the old Runbook PR (AV3-08), and closes the orphaned draft Story PRs it lists. On exit 0 continue.
-3. **Validate session lock.** If `session_lock` is set and not expired, refuse with `Resume refused: session lock held by <session>; expires <iso8601>.`
-4. **Flip STATUS.** Change `STATUS: PAUSED` → `STATUS: ACTIVE` and clear `status_reason` (delete the field if present).
-5. **Determine cadence from tracker state.** Inspect `in_progress`:
-   - `awaiting_ci: true` + `ci.skip_wait: false` → use `*/10`
-   - `awaiting_ci: true` + `ci.skip_wait: true` → use `*/30` (no CI polling; wait for operator merge)
-   - `consecutive_ci_blocks > 0` or `consecutive_impl_blocks > 0` and last entry is `[BLOCKED]` → use `*/30`
-   - else → use `*/5`
-6. **Re-arm cron.** `CronCreate(cron=<expr>, recurring=True, durable=False, prompt='/autopilot --drain @<runbook-path>')` — the prompt must carry the `/autopilot --drain` invocation, not a bare `@file` reference (a bare file mention gives the next fire no instruction to run the DRAIN lifecycle).
-7. **Print one-line summary.** `Resumed drain '<slug>' at cadence <expr>; <N> Subtasks remaining.` (Count `[ ]` Subtasks in the tracker.)
-
+1. **Validate inputs.** Runbook exists at the path; derive `<slug>`; `.autopilot/runbooks/<slug>.tracker.md` exists. Refuse if either is missing.
+2. **Validate STATUS.**
+   - `PAUSED` → continue to step 2a.
+   - `ACTIVE` → inspect the lock AND a dead-session signal (**stale-ACTIVE reclaim**):
+     - Lock held and unexpired → refuse: `Resume refused: drain already ACTIVE. Either a fire is in flight or the previous session is still draining.`
+     - Lock null or expired → expiry alone is NOT proof of death: the lock is refreshed only at fire start (now + 30 min, D1.0) while mid-fire liveness is `last_heartbeat_at`, and a normal implementation fire routinely outlives its 30-minute lock. Reclaim ONLY when a dead-session signal ALSO holds — `last_heartbeat_at` > 90 min old (the D1.3 crash standard), or `in_progress.awaiting_ci: true` (pushed, between CI polls, no implementation work in flight — the classic stranding, D8 §Terminal-fire contract). Then flip `ACTIVE → PAUSED` (`status_reason: "session_ended_between_ci_polls"` when awaiting CI, else `"session_ended_mid_fire"`), drift-note the reclaim, and continue as the normal PAUSED path.
+     - Lock null/expired but NEITHER signal holds (fresh heartbeat, not awaiting CI) → a live fire is likely mid-implementation past its lock; reclaiming would race its tracker writes and working tree. Refuse: `Resume refused: drain ACTIVE with a recent heartbeat (<last_heartbeat_at>) — a fire may still be live. Retry after the heartbeat is 90+ min stale.`
+   - `DRAINED | HUMAN_NEEDED | STOPPED` → refuse: `Resume refused: drain is in terminal state <STATUS>. Use --generate to start a new drain.`
+2a. **Refuse manifest-revision drift (MS §6 / AV3-04).** `bash ${SKILL_DIR}/scripts/manifest_revision_gate.sh resume-check .autopilot/runbooks/<slug>.tracker.md` — exit 2 (`status_reason: manifest-revision-drift`) → plain resume REFUSED (it would re-plan nothing against the new revision); print the revision-regen pointer and stop. Recovery is `--generate --merge` **revision-regen**: re-plans the open (`[ ]`) Subtasks against the new `manifest_revision`, preserves `[x] Done` history (a Hard Contract 8 carve-out — regen is neither overwrite nor plain merge; §6's ID-stability lets surviving Behavior IDs re-plan without rework), supersedes the old Runbook PR (AV3-08), and closes the orphaned draft Story PRs it lists. Exit 0 → continue.
+3. **Validate session lock.** Set and unexpired → refuse: `Resume refused: session lock held by <session>; expires <iso8601>.`
+4. **Flip STATUS.** `PAUSED → ACTIVE`; delete `status_reason`.
+5. **Cadence from tracker state:** `awaiting_ci: true` + `ci.skip_wait: false` → `*/10`; `awaiting_ci: true` + `skip_wait: true` → `*/30`; either counter > 0 with a `[BLOCKED]` last entry → `*/30`; else `*/5`.
+6. **Re-arm cron.** `CronCreate(cron=<expr>, recurring=True, durable=False, prompt='/autopilot --drain @<runbook-path>')` — the prompt must carry the `/autopilot --drain` invocation; a bare `@file` reference gives the next fire no instruction to run the DRAIN lifecycle.
+7. **Print one line.** `Resumed drain '<slug>' at cadence <expr>; <N> Subtasks remaining.`
 
 ---
 
-
 # Failure escalation (AP-2)
 
+The tracker carries `consecutive_impl_blocks` and `consecutive_ci_blocks`. Every `[BLOCKED]` is tagged `(impl)`, `(ci)`, or `(external)` and increments its counter (external never does). Both reset to 0 whenever a Subtask goes `[x] Done` during a fire. G5 already-shipped Subtasks never touch counters (marked Done before any drain started).
 
-Tracker tracks `consecutive_impl_blocks: N` and `consecutive_ci_blocks: N` at the top frontmatter. Increment the corresponding counter on every `[BLOCKED]` outcome based on the block's domain tag (every BLOCKED in this skill is tagged `(impl)`, `(ci)`, or `(external)`). Reset both to 0 whenever a Subtask transitions to `[x] Done` during a drain fire (the D7.5 all-green path).
+External faults (`foreign-commits-on-branch`, `trunk-renamed`, `runbook-pr-blocked`, `unexpected-branch-shape`, `dirty-drain-state`, `ci-check-usage-error`, `claim-eligibility-usage-error`) route straight to `HUMAN_NEEDED`, no counters.
 
-
-G5 already-shipped Subtasks do NOT affect either counter — they're marked Done at GENERATE-time before any drain has started.
-
-
-External faults (`foreign-commits-on-branch`, `trunk-renamed`, `runbook-pr-blocked`, `unexpected-branch-shape`, `dirty-drain-state`, `ci-check-usage-error`, `claim-eligibility-usage-error`) route straight to `HUMAN_NEEDED` and never touch counters.
-
-
-The caps are runbook-configured: `budget.max_impl_blocks` (default 3) and `budget.max_ci_blocks` (default 2 — CI flakes are usually environmental; retrying past 2 burns budget). At `consecutive_impl_blocks >= budget.max_impl_blocks` OR `consecutive_ci_blocks >= budget.max_ci_blocks`:
-
-
-1. Write `STATUS: HUMAN_NEEDED` at the top.
-2. List which counter tripped and the contributing blocked Subtask IDs + reasons in a `## Escalation` section.
-3. `CronDelete`.
-4. Exit fire.
-
+Caps are runbook-configured: `budget.max_impl_blocks` (default 3), `budget.max_ci_blocks` (default 2 — CI flakes are usually environmental; retrying past 2 burns budget). At either cap: write `STATUS: HUMAN_NEEDED`; list the tripped counter + contributing Subtask IDs and reasons in `## Escalation`; `CronDelete`; exit.
 
 # STATUS state machine
-
 
 | Status | Meaning | Cron |
 |---|---|---|
 | `ACTIVE` | Loop running normally | Armed, adaptive |
 | `DRAINED` | All Subtasks `[x] Done` | Deleted; success exit |
-| `PAUSED` | Operator-paused manually | Cron deleted (Resume re-arms) |
-| `HUMAN_NEEDED` | Auto-escalated (3 consecutive impl OR ci blocks) OR external fault | Deleted; failure exit |
-| `STOPPED` | Hard fault (dirty trunk, missing runbook, concurrent drain detected) | Deleted |
-
+| `PAUSED` | Operator-paused (or gate-paused, e.g. manifest drift) | Deleted (Resume re-arms) |
+| `HUMAN_NEEDED` | Counter cap OR external fault | Deleted; failure exit |
+| `STOPPED` | Hard fault (dirty trunk, missing runbook, concurrent drain) | Deleted |
 
 # Runbook-PR availability (AV3-08)
 
-
-Every fire lands its tracker bookkeeping on the **Runbook PR** (`autopilot/<slug>/runbook`) — the single bookkeeping home under BOTH `no_force_push` settings (the pre-v3 rolling tracker PR is retired). If that PR becomes unmergeable mid-drain, the loop has no place to land bookkeeping and must surface for human triage rather than silently diverging.
-
-
-At the top of D1 (after D1.0/D1.1, before D2), check the Runbook PR state via `bash ${SKILL_DIR}/scripts/host.sh pr-state --branch autopilot/<slug>/runbook`. The observable states are exactly what the adapter emits — `OPEN | MERGED | DECLINED | NONE` (mergeability is NOT observable through `pr-state` — a conflicted Runbook PR surfaces later as a failed push, not here):
-
+Every fire lands bookkeeping on the Runbook PR (`autopilot/<slug>/runbook`) — if that PR becomes unmergeable mid-drain the loop has nowhere to land state and must surface for triage rather than silently diverge. At the top of D1 (after D1.0/D1.1, before D2), check `bash ${SKILL_DIR}/scripts/host.sh pr-state --branch autopilot/<slug>/runbook`. Observable states are exactly what the adapter emits (mergeability is NOT observable via `pr-state`; a conflicted Runbook PR surfaces later as a failed push):
 
 | Runbook PR state | Action |
 |---|---|
 | `OPEN` | Normal — continue. |
-| `NONE` | No PR exists for the runbook branch (e.g. a prior fire pushed the branch but crashed before PR creation, or the PR was deleted). If the remote branch exists, open the Runbook PR (`host.sh pr-open`); if not, branch `autopilot/<slug>/runbook` from `origin/<trunk>`, push the runbook + tracker, and open it with the predicted file-surface block (G7). Add a `## Drift Notes` entry; continue. |
-| `DECLINED` | Write `STATUS: HUMAN_NEEDED — runbook-pr-blocked` citing the Runbook PR URL, `CronDelete`, exit. (External fault: no counter increment.) |
-| `MERGED` | The operator/Marshal merged the Runbook PR early — re-open the bookkeeping home by branching `autopilot/<slug>/runbook` from `origin/<trunk>` and pushing; continue. |
-
+| `NONE` | No PR for the branch (crashed before creation, or deleted). Remote branch exists → open the Runbook PR; else branch from `origin/<trunk>`, push runbook + tracker, open it with the file-surface block (G7). Drift-note; continue. |
+| `DECLINED` | `STATUS: HUMAN_NEEDED — runbook-pr-blocked` citing the URL, `CronDelete`, exit. (External fault.) |
+| `MERGED` | Merged early by the operator/Marshal — re-open the bookkeeping home by re-branching `autopilot/<slug>/runbook` from `origin/<trunk>` and pushing; continue. |
 
 # End-of-drain output
 
-
-When `STATUS: DRAINED` is written, the final fire produces `MERGE-ORDER.md` next to the tracker. It is a list of **Story PRs** (one per Story, AV3-06 — never per-Subtask). Required content:
-
-
-- DAG-topological list of Story PRs with dependency annotations (DAG root / depends on / stacked, with the merge-commit-not-squash flag highlighted for stacked Story PRs)
-- The **Runbook PR** (`autopilot/<slug>/runbook`) as the FINAL entry — the operator (or the Marshal, once built) merges it; autopilot NEVER merges its own PRs (Hard Contract 4 spirit). On `HUMAN_NEEDED`/`PAUSED` it is listed with a disposition alongside the dangling draft Story PRs.
-- Drain start SHA, current `origin/<trunk>` SHA + commit delta
-- Mid-drain rebase count
-- Hot-file serialization count
-- G3.6 consolidations applied (AP-21)
-- G1.5 probe facts + any `unknown` values that persisted through drain (AP-23)
-- Total D7.1a tracker-delta fold count (AP-23)
-- A one-line rebase recovery hint (`git fetch origin && git rebase origin/<trunk>`)
-
+On `STATUS: DRAINED`, the final fire renders `MERGE-ORDER.md` next to the tracker — a list of **Story PRs** (one per Story, AV3-06). Required content: DAG-topological Story-PR list with dependency annotations (root / depends-on / stacked, merge-commit-not-squash flagged for stacked); the Runbook PR as the FINAL entry (the operator or Marshal merges it — autopilot NEVER merges its own PRs); drain start SHA + current `origin/<trunk>` SHA + commit delta; mid-drain rebase count; hot-file serialization count; G3.6 consolidations; G1.5 probe facts + surviving `unknown`s; total D7.1a fold count; a one-line rebase recovery hint (`git fetch origin && git rebase origin/<trunk>`).
 
 ## Dangling draft Story PRs (every terminal STATUS — AV3-06)
 
-
-On ANY terminal STATUS (`DRAINED | PAUSED | HUMAN_NEEDED | STOPPED`), the end-of-drain output MUST enumerate every **dangling draft Story PR** — a Story PR still in `DRAFT` state because its Story did not fully drain — with a required operator disposition for each. Autopilot NEVER merges its own PRs (Hard Contract 4 spirit) and NEVER silently abandons a draft, so each dangling draft is listed as:
-
+On ANY terminal STATUS, the end-of-drain output MUST enumerate every dangling draft Story PR — still `DRAFT` because its Story did not fully drain — with a required operator disposition each (autopilot never merges and never silently abandons a draft). On a non-`DRAINED` terminal (`HUMAN_NEEDED`/`PAUSED`), the Runbook PR is listed alongside them with its own disposition (stays open as the bookkeeping home until the drain resumes or the operator closes it):
 
 ```
 DRAFT Story PR <host>/<pr#>  story=<story-id>  branch=autopilot/<slug>/<story-id>
@@ -979,5 +524,4 @@ DRAFT Story PR <host>/<pr#>  story=<story-id>  branch=autopilot/<slug>/<story-id
   disposition: <one of — resume (fixable block), decline+replan (stale), or hand-merge-partial (operator accepts the partial Story)>
 ```
 
-
-A `DRAINED` terminal state normally has zero dangling drafts (every Story flipped ready); a non-empty list under `DRAINED` is itself a defect to surface. Under `PAUSED — manifest-revision-drift` (AV3-04) the draft Story PRs stay draft by contract and are listed here for the revision-regen path to supersede.
+A `DRAINED` state normally has zero dangling drafts; a non-empty list under `DRAINED` is itself a defect to surface. Under `PAUSED — manifest-revision-drift` the drafts stay draft by contract, listed here for revision-regen to supersede.
