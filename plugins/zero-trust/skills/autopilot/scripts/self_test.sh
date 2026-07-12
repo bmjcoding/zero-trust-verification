@@ -2205,10 +2205,10 @@ out="$(coords "$DOTLESS_REPO")"
 val=$(sed -n 's/^BB_HOST=//p' <<<"$out")
 assert_eq W345-BB6 "dotless intranet host: -ssh suffix stripped" "bitbucket" "$val"
 
-echo "== consistency lint (L1-L23) =="
+echo "== consistency lint (L1-L24) =="
 
 if bash "$HERE/lint_consistency.sh" >/dev/null 2>&1; then
-  pass LINT "lint_consistency.sh passes (23 rules)"
+  pass LINT "lint_consistency.sh passes (24 rules)"
 else
   fail LINT "lint_consistency.sh reports violations (run it directly for detail)"
 fi
@@ -2323,6 +2323,38 @@ if bash "$planted23/scripts/lint_consistency.sh" >/dev/null 2>&1; then
   fail L23 "L23 did NOT red a dropped as-built docs validator rule"
 else
   pass L23 "L23 reds a dropped as-built docs validator rule"
+fi
+
+# L24 must red a prompt file that drops the production side of a lifecycle
+# dispatch claim — the exact Wave-3b class (D4 claimed a JIRA-key prefix under
+# AP-22 while implementer-prompt.md carried no JIRA content, fixed af86c4e):
+# fresh copy, scrub every enforce_jira_key line from the implementer prompt
+# (the claim in lifecycle.md survives), expect the copied lint to red.
+planted24="$SANDBOX/planted-lint-24"
+cp -R "$ROOT" "$planted24"
+grep -v 'enforce_jira_key' "$planted24/references/implementer-prompt.md" > "$planted24/references/imp24.tmp"
+mv "$planted24/references/imp24.tmp" "$planted24/references/implementer-prompt.md"
+grep -qF 'JIRA-key prefix under AP-22' "$planted24/references/lifecycle.md" \
+  || fail L24 "L24 fixture self-check: the lifecycle claim should survive the prompt-side scrub"
+if bash "$planted24/scripts/lint_consistency.sh" >/dev/null 2>&1; then
+  fail L24 "L24 did NOT red a JIRA-less implementer prompt under the AP-22 dispatch claim"
+else
+  pass L24 "L24 reds a prompt missing the production side of a dispatch claim"
+fi
+
+# L24 must also red when the CLAIM side is reworded away in lifecycle.md
+# without a map update — the map-maintenance pin that keeps the rule
+# non-vacuous (a silently reworded dispatch claim would otherwise un-anchor
+# the pin and the class could recur unlinted).
+planted24b="$SANDBOX/planted-lint-24b"
+cp -R "$ROOT" "$planted24b"
+sed 's/JIRA-key prefix under AP-22/JIRA-key prefix under a reworded id/' \
+  "$planted24b/references/lifecycle.md" > "$planted24b/references/dlc24b.tmp"
+mv "$planted24b/references/dlc24b.tmp" "$planted24b/references/lifecycle.md"
+if bash "$planted24b/scripts/lint_consistency.sh" >/dev/null 2>&1; then
+  fail L24 "L24 did NOT red a reworded dispatch claim that un-anchors the map"
+else
+  pass L24 "L24 reds a reworded dispatch claim (map row must move with the claim)"
 fi
 
 echo
