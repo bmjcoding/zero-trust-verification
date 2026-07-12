@@ -49,8 +49,9 @@ export LC_ALL
 SCRIPTS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # The file-surface block contract is owned by autopilot (AV3-08). Reuse its
 # extractor, never fork it. In the monorepo it sits at a fixed relative path;
-# a standalone install points RUNBOOK_PR_SH at its vendored copy.
-RUNBOOK_PR_SH="${RUNBOOK_PR_SH:-$SCRIPTS_DIR/../../../../autopilot/scripts/runbook_pr.sh}"
+# a standalone layout points RUNBOOK_PR_SH at its own copy (default: the
+# autopilot skill inside the same zero-trust plugin, ADR 0025).
+RUNBOOK_PR_SH="${RUNBOOK_PR_SH:-$SCRIPTS_DIR/../../autopilot/scripts/runbook_pr.sh}"
 
 usage() {
   echo "usage: wave_preauth_check.sh --tracker <tracker.md> --story <story-id> --branch <ref> --base <ref> --pr-body <file> [--repo <dir>] [--allow-prefix <path>]..." >&2
