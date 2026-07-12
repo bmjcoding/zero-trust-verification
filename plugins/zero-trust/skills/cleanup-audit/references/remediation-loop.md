@@ -18,7 +18,8 @@ HC4). There is **no blocking CI path** and **no auto-merge path**. Autonomous
 emit-to-drain and any blocking are **per-repo opt-ins after a soak**
 (`remediation.config.yaml`: `blocking: false`, `autonomous_emit_to_drain: false`
 by default). A wrong loop must cost wrong *reports*, never damaged code
-(loop-safety invariant 1).
+(the canonical loop-safety guarantee — `references/loop-safety.md`,
+invariant 1).
 
 ## The pipeline (each seam already exists)
 

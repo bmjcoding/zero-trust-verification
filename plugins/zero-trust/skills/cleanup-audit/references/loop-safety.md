@@ -1,9 +1,14 @@
 # Loop Safety Invariants
 
-An automated audit loop with flawed logic must be able to cost you **wrong
-reports**, never **damaged code**. Every command, agent, script, and hook in this
-plugin is bound by these invariants. When adding anything new, check it against
-this list first — a violation is a release blocker, not a style issue.
+An automated loop with flawed logic must be able to cost you **wrong
+reports**, never **damaged code**. This file is the CANONICAL statement of that
+shared blast-radius guarantee for every loop the plugin ships — the audit loop,
+`/remediate`, `/health-loop`, and autopilot's GENERATE/DRAIN/RESUME loop cite
+it rather than restate it. Loop-specific invariants live with their loop (the
+drain's: `skills/autopilot/references/loop-safety.md`). The numbered invariants
+below bind the audit loop: every command, agent, script, and hook in this
+plugin. When adding anything new, check it against this list first — a
+violation is a release blocker, not a style issue.
 
 ## The invariants
 

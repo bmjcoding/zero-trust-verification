@@ -131,7 +131,7 @@ merging or draining by other means. The presence pin is root lint V13.
   loop pauses or halts and never re-fixes.
 - **Loop-side faults** (missing waves, forward deps, desync, corrupt state,
   budget exhaustion): refuse loudly before acting; broken state degrades to
-  less action (invariant 4).
+  less action (loop-safety invariant 4, `references/loop-safety.md`).
 
 ## Non-goals (v1)
 
