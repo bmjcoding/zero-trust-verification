@@ -1510,7 +1510,7 @@ assert_eq "AV3-09.7" "unknown pr-state is usage error 64" "64" "$rc"
 # instead dies exit 1, leaving an empty state. EITHER shape MUST exit 64 at the
 # eligibility gate (a state outside the observable OPEN|DRAFT|MERGED|DECLINED|NONE
 # vocabulary), NOT 0 (fail-open onto an unresolved claim) and NOT 2 (silently
-# treated as blocked). The exit-64 contract is what drain-lifecycle.md D2 routes to
+# treated as blocked). The exit-64 contract is what lifecycle.md D2 routes to
 # HUMAN_NEEDED — claim-eligibility-usage-error (external fault, loop-safety invariant 3).
 out=$(bash "$CO" eligibility --pr-state UNKNOWN 2>&1); rc=$?
 assert_eq "AV3-09.8" "UNKNOWN pr-state fails closed as usage error 64 (not 0/eligible)" "64" "$rc"
@@ -2276,11 +2276,11 @@ else
   pass L19 "L19 reds a planted active 'rolling tracker PR' framing"
 fi
 
-# L20 must red a drain-lifecycle whose Behavior-coverage marker was dropped.
+# L20 must red a lifecycle.md whose Behavior-coverage marker was dropped.
 planted20="$SANDBOX/planted-lint-20"
 cp -R "$ROOT" "$planted20"
-grep -v 'autopilot:behavior-coverage' "$planted20/references/drain-lifecycle.md" > "$planted20/references/dlc.tmp"
-mv "$planted20/references/dlc.tmp" "$planted20/references/drain-lifecycle.md"
+grep -v 'autopilot:behavior-coverage' "$planted20/references/lifecycle.md" > "$planted20/references/dlc.tmp"
+mv "$planted20/references/dlc.tmp" "$planted20/references/lifecycle.md"
 if bash "$planted20/scripts/lint_consistency.sh" >/dev/null 2>&1; then
   fail L20 "L20 did NOT red a dropped Behavior-coverage marker"
 else

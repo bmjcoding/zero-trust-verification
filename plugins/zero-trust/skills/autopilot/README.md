@@ -115,8 +115,7 @@ Each of the items below maps to a finding in the adversarial review series (AP-1
 - `references/extraction-prompt.md` — code-extraction helper.
 - `references/cadence-dispatch.md` — in-session cadence rules.
 - `references/sidecar-contract.md` — sidecar v0 env vars, URL shape, error codes, resolver chain, and (v2.3.0) probe budget under sidecar mode.
-- `references/generate-lifecycle.md` — G1..G8 including G1.5 repo-shape probe and G3.6 Subtask consolidation (v2.3.0).
-- `references/drain-lifecycle.md` — D1..D8 including D1.0.4 batched-delta migration/recovery, D1.0.5 drift-notes hydration, D7.1a tracker-delta fold, and the D7.5 CI-poll dispatch table (v2.3.0).
+- `references/lifecycle.md` — G1..G8 including G1.5 repo-shape probe and G3.6 Subtask consolidation, and D1..D8 including D1.0.4 batched-delta migration/recovery, D1.0.5 drift-notes hydration, D7.1a tracker-delta fold, and the D7.5 CI-poll dispatch table (v2.3.0; one file since the 2.0 consolidation).
 - `references/tracker-delta-batching.md` — AP-23 in-tracker queue contract, `delta_kind:` catalog, flush semantics, recovery cases.
 
 ## Scripts
