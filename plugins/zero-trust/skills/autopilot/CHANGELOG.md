@@ -4,6 +4,23 @@ All notable changes to the autopilot skill. Format follows Keep a Changelog; ver
 
 **Release gate (v2.4.0, GAPS M3/M6).** Every behavioral claim in a release entry MUST cite the `scripts/self_test.sh` assertion id (Txx) or `scripts/lint_consistency.sh` rule id (Lxx) that proves it, or be tagged `[doc-only]`. Both scripts must pass before tagging. Any drain failure attributable to the skill must land a failing self-test assertion before (or with) its fix — a gap found once may not recur silently. (This gate exists because v2.1.0–v2.3.0 shipped multiple claimed-but-unimplemented behaviors; see docs/GAPS_SPEC.md §B.)
 
+## [Unreleased]
+
+### Added
+
+- **Dispatch-composition claim lint (lint L24).** Lifecycle dispatch sites
+  assert "the prompt carries/enforces X" about `planner-prompt.md`,
+  `implementer-prompt.md`, and `validator-prompts.md`; nothing tied those
+  claims to the prompt files' contents, which is how the Wave-3b definition
+  review (PR #45) found D4 claiming a "JIRA-key prefix under AP-22" contract
+  over an implementer prompt with no JIRA content (instance fixed af86c4e;
+  this closes the class). New rule **L24**: a pinned map of claim phrase →
+  prompt file → required production token, red when a claimed token is absent
+  from the named prompt AND when a claim is reworded away from `lifecycle.md`
+  without a map update (the pin stays non-vacuous). Proven by two planted-drift
+  self-test red-tests: a JIRA-scrubbed implementer prompt under the surviving
+  AP-22 claim, and a reworded lifecycle claim that un-anchors the map.
+
 ## [3.1.0] - 2026-07-10
 
 **audit-w345 e2e retro absorption.** Every fix/pattern from the two field retros

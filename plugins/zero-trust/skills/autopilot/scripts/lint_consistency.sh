@@ -374,9 +374,46 @@ grep -q 'As-built docs' "$ROOT/references/runbook-template.md" || { violation L2
 grep -q 'As-built docs are Story deliverables' "$ROOT/references/validator-prompts.md" || { violation L23 "integration validator missing the as-built docs rule (AV3-14)"; l23_bad=1; }
 (( l23_bad == 0 )) && ok L23
 
+# --- L24: dispatch-composition claims match prompt-file contents ---------------
+# Lifecycle dispatch sites assert "the prompt carries X" about the role-prompt
+# files (G3 -> planner-prompt.md, D4 -> implementer-prompt.md, D5 ->
+# validator-prompts.md), and nothing tied those claims to the files' contents:
+# the Wave-3b definition review (PR #45) caught D4 claiming a JIRA-key-prefix
+# contract over an implementer prompt with no JIRA content (fixed af86c4e).
+# Pinned map, '|'-delimited: claim phrase -> prompt file -> token proving the
+# production side. BOTH sides are pinned: the claim must stay in lifecycle.md
+# (a reworded/removed claim forces a map update, keeping the pin non-vacuous)
+# and the token must exist in the named prompt. All matches are fixed-string
+# (grep -F) so the map rows never need regex escaping.
+l24_bad=0
+l24_lc="$ROOT/references/lifecycle.md"
+l24_map='JIRA-key prefix under AP-22|implementer-prompt.md|enforce_jira_key
+per-behavior RED→GREEN commits|implementer-prompt.md|GREEN — <behavior summary>
+refactor-after-green|implementer-prompt.md|After ALL behaviors are GREEN
+public-interface tests|implementer-prompt.md|Public-interface tests only
+800-token report cap AP-16|implementer-prompt.md|800 tokens
+test_name_hint:|planner-prompt.md|test_name_hint
+audited_sha:|planner-prompt.md|audited_sha:
+types compile|validator-prompts.md|types compile
+no import cycles|validator-prompts.md|no import cycles
+structural coherence|validator-prompts.md|Structural coherence
+scoped test gates|validator-prompts.md|gates.test_scoped'
+while IFS='|' read -r l24_claim l24_pfile l24_token; do
+  [[ -z "$l24_claim" ]] && continue
+  if ! grep -qF -- "$l24_claim" "$l24_lc"; then
+    violation L24 "lifecycle.md no longer carries the dispatch claim '$l24_claim' — reword/remove the L24 map row with it"
+    l24_bad=1
+  fi
+  if ! grep -qF -- "$l24_token" "$ROOT/references/$l24_pfile"; then
+    violation L24 "lifecycle.md claims '$l24_claim' but $l24_pfile lacks its production side ('$l24_token')"
+    l24_bad=1
+  fi
+done <<<"$l24_map"
+(( l24_bad == 0 )) && ok L24
+
 if (( FAIL == 1 )); then
   echo "lint_consistency: FAIL" >&2
   exit 1
 fi
-echo "lint_consistency: PASS (23 rules)"
+echo "lint_consistency: PASS (24 rules)"
 exit 0
