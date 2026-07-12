@@ -37,4 +37,4 @@ Closing sequence: failing test → watch fail → fix → watch pass **five cons
 Original repro gone; regression test passes (or seam-absence documented); all `[DEBUG-]` logs removed; throwaways deleted; the correct hypothesis recorded in the commit message. Then ask: **what would have prevented this?** If the answer is architectural, hand off to architecture review *after* the fix — you know more now.
 
 ## Why this matters for an audit
-A report that lists `asyncio.run()`-from-running-loop or an unimplemented classification path as a one-liner is a *hypothesis*, not a confirmed bug. Run it through Phase 1–2 to prove it's real and reachable before grading it HIGH, and through Phase 5 to ship it with a test that goes red without the fix.
+An audit finding listed as a one-liner is a *hypothesis*, not a confirmed bug. Run it through Phase 1–2 to prove it's real and reachable before grading it HIGH, and through Phase 5 to ship it with a test that goes red without the fix.
