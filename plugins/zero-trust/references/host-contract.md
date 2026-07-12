@@ -3,7 +3,7 @@
 The Marshal is host-agnostic by contract (ADR 0013): it issues **every** PR and
 build operation as `host.sh <subcommand>` and never branches on the host. It
 drives exactly one adapter entrypoint — `$MARSHAL_HOST`, which defaults to the
-sibling `plugins/autopilot/scripts/host.sh` — and works unchanged on GitHub, Bitbucket
+sibling `skills/autopilot/scripts/host.sh` (same plugin) — and works unchanged on GitHub, Bitbucket
 Data Center, or the hermetic mock (`scripts/mock_host.py`).
 
 ## Subcommands the Marshal calls
@@ -73,7 +73,7 @@ set `$AUTOPILOT_TRUNK` only when the merge trunk is not the default branch.
 
 `pr-list-ready` is **implemented on main** across `host.sh` + `github.sh` +
 `bitbucket.sh`, matching this contract in its observable output and covered by a
-real-backend contract matrix in `plugins/autopilot/scripts/self_test.sh` (gh argv shim
+real-backend contract matrix in `skills/autopilot/scripts/self_test.sh` (gh argv shim
 for GitHub, the loopback DC mock server for Bitbucket) plus an end-to-end
 `marshal.sh`-through-`github.sh` run in this plugin's `scripts/self_test.sh`
 (section `MG`). The hermetic mock (`scripts/mock_host.py`) remains the canonical

@@ -42,8 +42,8 @@ as a DRAFT PR **proposal** for human review.
 Select with `$TRIAGE_TELEMETRY_BACKEND` (`OTEL_FILE | CLOUDWATCH | DYNATRACE`) or
 `triage.config.yaml telemetry.backend`. If neither is set the tier REFUSES — a
 telemetry vendor is an external fact (ADR 0002), never guessed. See
-`reference/telemetry-contract.md` (the single-source observable contract, lint V9)
-and `reference/backends.md`.
+`references/telemetry-contract.md` (the single-source observable contract, lint V9)
+and `references/backends.md`.
 
 ## Install & standalone
 
@@ -57,7 +57,7 @@ with the deps (ADR 0015).
 ## Self-test
 
 ```
-bash plugins/triage/scripts/self_test.sh
+bash plugins/zero-trust/scripts/self_test_triage.sh
 ```
 
 Hermetic on the OTLP-JSON default backend (the default IS the test backend). Every

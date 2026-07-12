@@ -7,7 +7,7 @@ argument-hint: "[--host <path-to-host.sh>] [--pin <pr-number>]"
 
 Run a single pass of the Merge Marshal serial backstop loop (ADR 0010). This is
 the same thing the cron entry runs on cadence (see
-`reference/marshal-loop.md`); use it to drive a pass by hand or to observe one.
+`references/marshal-loop.md`); use it to drive a pass by hand or to observe one.
 
 **This command is WIRING, not a checker (ADR 0011).** It forms no opinion about
 code quality. Every decision it takes is a timestamp, a sha, a build state, or a

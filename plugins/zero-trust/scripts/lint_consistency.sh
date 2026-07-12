@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# lint_consistency.sh — cross-file contract lint for the spec-gen plugin (SG-6).
+# lint_consistency.sh — cross-file contract lint for the spec-gen domain of the
+# zero-trust plugin (SG-6; single plugin since ADR 0025).
 #
 # The /spec orchestrator is an LLM that loads SKILL.md + references/ as ground
 # truth; a contradiction between two files is a coin-flip at runtime. Each rule
@@ -9,8 +10,8 @@
 # Rules:
 #   L1  S-step ids ............ SKILL.md defines exactly S1..S7, no phantom steps
 #   L2  hard-contract refs .... all SEVEN §4 hard contracts named in SKILL.md
-#   L3  schema byte-identity .. vendored v1.schema.json == repo root (SG-3, ADR 0001)
-#   L4  validator byte-identity vendored validate_manifest.{sh,py} == repo root (SG-3)
+#   L3  canonical schema ...... the ONE v1.schema.json present in the plugin (SG-3, ADR 0025)
+#   L4  canonical validator ... the ONE validate_manifest.{sh,py} present (SG-3, ADR 0025)
 #   L5  ADR grammar pin ....... ADR 0002 canonical `rule-<n>: <path>` + two-class
 #                               echo; ADR 0001 `amended-by: 0011` (SG-7)
 #   L6  escalation checklist .. both S4 prompts REQUIRE dissent + escalation_check
@@ -59,19 +60,19 @@ grep -qiE 'vanilla agents only' "$SKILL" || { violation L2 "SKILL.md omits HC6 v
 grep -qiE 'ID allocation.*monotonic|never reuses? IDs' "$SKILL" || { violation L2 "SKILL.md omits HC7 monotonic ID allocation (reuse refusal)"; l2_bad=1; }
 (( l2_bad == 0 )) && ok L2
 
-# --- L3: schema byte-identity (SG-3, ADR 0001 vendoring lint) ----------------------
-if cmp -s "$PLUGIN/schema/verification-manifest/v1.schema.json" "$REPO/schema/verification-manifest/v1.schema.json"; then
+# --- L3: canonical schema present (SG-3; ADR 0025 — one copy, nothing to drift) ----
+if [ -f "$PLUGIN/schema/verification-manifest/v1.schema.json" ]; then
   ok L3
 else
-  violation L3 "vendored v1.schema.json differs from repo root (must be byte-identical)"
+  violation L3 "canonical v1.schema.json missing from the plugin (schema/verification-manifest/)"
 fi
 
-# --- L4: validator byte-identity (shell + python) ---------------------------------
+# --- L4: canonical validator present (shell + python; ADR 0025 single copy) --------
 l4_bad=0
-cmp -s "$PLUGIN/scripts/validate_manifest.sh" "$REPO/scripts/validate_manifest.sh" \
-  || { violation L4 "vendored validate_manifest.sh differs from repo root"; l4_bad=1; }
-cmp -s "$PLUGIN/scripts/validate_manifest.py" "$REPO/scripts/validate_manifest.py" \
-  || { violation L4 "vendored validate_manifest.py differs from repo root"; l4_bad=1; }
+[ -f "$PLUGIN/scripts/validate_manifest.sh" ] \
+  || { violation L4 "canonical validate_manifest.sh missing from the plugin"; l4_bad=1; }
+[ -f "$PLUGIN/scripts/validate_manifest.py" ] \
+  || { violation L4 "canonical validate_manifest.py missing from the plugin"; l4_bad=1; }
 (( l4_bad == 0 )) && ok L4
 
 # --- L5: ADR grammar pin (SG-7) ---------------------------------------------------

@@ -8,7 +8,7 @@
 # residuals and are NOT asserted here. [det-cond] assertions run against TRIAGE-OWNED
 # fixtures with an explicit 'not end-to-end suite proof' banner.
 #
-# Ground rules (mirroring plugins/org-memory/scripts/self_test.sh):
+# Ground rules (mirroring plugins/zero-trust/scripts/self_test_org_memory.sh):
 #   - Hermetic: the OTLP-JSON `default` backend IS the test backend; fixtures live in
 #     the plugin + a mktemp sandbox; no network, no host API, no credentials.
 #   - Non-vacuous (the Marshal-P0 lesson): the CloudWatch/Dynatrace backends are
@@ -18,7 +18,7 @@
 #   - Python needing ruamel/jsonschema runs through `uv run`; stdlib logic (ingest,
 #     JSON) runs on bare python3.
 #
-# Usage: bash plugins/triage/scripts/self_test.sh
+# Usage: bash plugins/zero-trust/scripts/self_test_triage.sh
 # Exit 0 = all assertions pass; non-zero = at least one failure.
 # Portability: bash 3.2 (macOS default) + BSD userland safe.
 
@@ -40,7 +40,7 @@ WIN_SCHEMA="$PLUGIN/schema/triage/incident-window.schema.json"
 CORR_SCHEMA="$PLUGIN/schema/triage/correlation.schema.json"
 MOCK_HOST="$PLUGIN/fixtures/host/mock_host.sh"
 JOIN_MANIFEST="$ROOT/tests/fixtures/join/manifest.yaml"
-CANON_SKILL="$ROOT/plugins/spec-gen/skills/spec/SKILL.md"
+CANON_SKILL="$ROOT/plugins/zero-trust/skills/spec/SKILL.md"
 TRI_SKILL="$PLUGIN/skills/triage/SKILL.md"
 LINT="$ROOT/scripts/lint_consistency.sh"
 
@@ -366,23 +366,23 @@ assert_rc_nonzero TR-07 "handoff REFUSES to open a PR without --key (dedupe safe
 assert_contains   TR-07 "no-key refusal names the ledger dedupe reason" "cannot dedupe" "$nokey"
 
 # =============================================================================
-# TR-08 — lint teeth: the NEW V9 rule catches a planted telemetry-contract drift.
-# (V5 escalation / V6 marketplace / V1 schema teeth live in scripts/suite_self_test.sh.)
+# TR-08 — lint teeth: the V9 rule catches a planted telemetry-contract drift.
+# (The V6 marketplace teeth live in scripts/suite_self_test.sh.)
 # =============================================================================
 echo "== TR-08 lint V9 teeth (telemetry-contract byte-identity) =="
 
 if [ -f "$LINT" ] && grep -q 'V9' "$LINT"; then
   DR="$SANDBOX/v9drift"
-  mkdir -p "$DR/plugins/triage/reference"
-  cp "$PLUGIN/reference/telemetry-contract.md" "$DR/plugins/triage/reference/"
+  mkdir -p "$DR/plugins/zero-trust/references"
+  cp "$PLUGIN/references/telemetry-contract.md" "$DR/plugins/zero-trust/references/"
   # drift the vendored backend-contract copy's block -> V9 must fire.
-  sed 's/Never a whole-fleet scan./Never a whole-fleet scan. DRIFTED./' "$PLUGIN/reference/backends.md" > "$DR/plugins/triage/reference/backends.md"
+  sed 's/Never a whole-fleet scan./Never a whole-fleet scan. DRIFTED./' "$PLUGIN/references/backends.md" > "$DR/plugins/zero-trust/references/backends.md"
   v9out="$(LINT_ROOT="$DR" bash "$LINT" 2>&1)"; v9rc=$?
   assert_rc_nonzero TR-08 "planted telemetry-contract drift -> lint fails" "$v9rc"
   assert_contains   TR-08 "the failure is on rule V9" "LINT-FAIL [V9]" "$v9out"
   # false-positive guard: byte-identical copies stay green under V9.
-  DR2="$SANDBOX/v9ok"; mkdir -p "$DR2/plugins/triage/reference"
-  cp "$PLUGIN/reference/telemetry-contract.md" "$PLUGIN/reference/backends.md" "$DR2/plugins/triage/reference/"
+  DR2="$SANDBOX/v9ok"; mkdir -p "$DR2/plugins/zero-trust/references"
+  cp "$PLUGIN/references/telemetry-contract.md" "$PLUGIN/references/backends.md" "$DR2/plugins/zero-trust/references/"
   v9ok="$(LINT_ROOT="$DR2" bash "$LINT" 2>&1)"
   assert_not_contains TR-08 "V9 does not false-fire on byte-identical copies" "LINT-FAIL [V9]" "$v9ok"
 else

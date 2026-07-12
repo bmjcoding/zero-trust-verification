@@ -46,7 +46,7 @@
 #                          no output, exit 0. Order unspecified (the Marshal sorts).
 #                          Trunk: --base > $AUTOPILOT_TRUNK > repo default-branch.
 #                          (The Merge Marshal's queue primitive — see
-#                           plugins/marshal/reference/host-contract.md.)
+#                           plugins/zero-trust/references/host-contract.md.)
 #
 # Draft PRs (AV3-06 / AV3-15). AUTOPILOT_BITBUCKET_DRAFT_MODE selects the
 # mechanism:
@@ -805,7 +805,7 @@ resolve_trunk() {  # <explicit-base-or-empty> -> echoes the trunk branch name
 
 # pr-list-ready: enumerate the merge queue as the marshal-consumable 5-column TSV
 #   <ready_ts>\t<pr_num>\t<src_branch>\t<head_sha>\t<approval>
-# See the header block and plugins/marshal/reference/host-contract.md.
+# See the header block and plugins/zero-trust/references/host-contract.md.
 cmd_pr_list_ready() {
   require_jq
   local base=""

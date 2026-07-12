@@ -25,7 +25,7 @@ export LC_ALL=C
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SUITE_ROOT="$(cd "$HERE/../../.." && pwd)"
 CAPTURE="$HERE/outcome_capture.sh"
-EMIT="$SUITE_ROOT/plugins/codebase-health/skills/cleanup-audit/scripts/outcome_emit.sh"
+EMIT="$SUITE_ROOT/plugins/zero-trust/skills/cleanup-audit/scripts/outcome_emit.sh"
 REPORT_SH="$SUITE_ROOT/scripts/outcome_report.sh"
 HOST_DEFAULT="${MARSHAL_HOST:-$HERE/../../autopilot/scripts/host.sh}"
 

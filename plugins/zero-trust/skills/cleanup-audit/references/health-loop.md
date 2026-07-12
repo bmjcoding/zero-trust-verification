@@ -112,12 +112,12 @@ no-op that says so.
 
 ## Cross-plugin dependencies
 
-The loop is codebase-health wiring over an installed **autopilot** (drain,
-`host.sh`, `detect_concurrent_drain.sh` — resolved at the autopilot plugin's
-install path; in this monorepo `plugins/autopilot/scripts/`, overridable the
-`RUNBOOK_PR_SH` way for standalone installs) and an installed **marshal**
+The loop is codebase-health wiring over the same plugin's **autopilot** domain
+(drain, `host.sh`, `detect_concurrent_drain.sh` — resolved at
+`skills/autopilot/scripts/` inside the zero-trust plugin, overridable the
+`RUNBOOK_PR_SH` way) and its **marshal** domain
 (`/marshal-pass` merge execution). Absent either, the loop refuses at the step
-that needs them and says which plugin is missing — it never degrades to
+that needs them and says which component is missing — it never degrades to
 merging or draining by other means. The presence pin is root lint V13.
 
 ## Failure routing (who owns what)

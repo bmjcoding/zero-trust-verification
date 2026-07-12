@@ -7,9 +7,9 @@ no detector, no severity judgment, no second implementation of anything a tier
 owns. It **holds no quality opinion** — every judgment is a deterministic script
 call or the vendored ADR-0002 rule applied verbatim.
 
-Home: `plugins/codebase-health/skills/cleanup-audit/scripts/` (sibling of
-`pr_gate.sh`). NOT a new plugin (ADR 0017): the loop is one of codebase-health's
-skills, and the marketplace still registers exactly five plugins.
+Home: `plugins/zero-trust/skills/cleanup-audit/scripts/` (sibling of
+`pr_gate.sh`). NOT a new plugin (ADR 0017, boundary collapsed by ADR 0025): the
+loop is part of the cleanup-audit skill inside the single zero-trust plugin.
 
 ## Shipping posture: report-only / advisory-first
 

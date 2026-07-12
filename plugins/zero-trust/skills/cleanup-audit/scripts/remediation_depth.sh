@@ -43,7 +43,7 @@ resolve_claim_overlap() {
   local sib="$RL_DIR/claim_overlap.sh"
   [ -f "$sib" ] && { echo "$sib"; return 0; }
   local root; root="$(cd "$RL_DIR/../../../../.." 2>/dev/null && pwd)"
-  local canon="$root/plugins/autopilot/scripts/claim_overlap.sh"
+  local canon="$root/plugins/zero-trust/skills/autopilot/scripts/claim_overlap.sh"
   [ -f "$canon" ] && { echo "$canon"; return 0; }
   local found; found="$(find "$root" -path "$root/.git" -prune -o -name claim_overlap.sh -print 2>/dev/null | head -1)"
   [ -n "$found" ] && { echo "$found"; return 0; }

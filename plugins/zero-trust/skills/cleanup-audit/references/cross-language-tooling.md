@@ -42,8 +42,8 @@ copied into `audit/` when present; absent → the loud
 Ingestion above answers *did someone run it*. The two GATE points (autopilot D6.5
 drain-side, the PR-Gate sibling diff-side) additionally need, per tool, the
 changed-FILES invocation AND the survivor→`file:line` resolver. That is this map —
-the ONE source, vendored byte-identical to autopilot and pinned by root lint V7
-(MT-09/MT-10):
+the ONE copy in the suite (ADR 0025 deleted the autopilot vendored copy; the
+drain-side doc points here — MT-09/MT-10 sole source):
 
 <!-- vendored:mutation-adapter-map:begin -->
 | tool | lang | changed-FILES invocation | survivor→`file:line` resolver | tool scoping |
@@ -60,12 +60,14 @@ POST-HOC in the join (MT-05). A tool that yields no line (go-mutesting) degrades
 every survivor to `<path>:-` (file granularity) and caps at comment-only on the
 PR side (MT-05/MT-06).
 
-The executable form of this map is `mutation_adapter.sh` (`normalize <tool>` reads
-raw tool output on stdin → the normalized `<path>:<line>` survivor set; `invocation
-<tool> <files…>`), vendored byte-identical beside every consumer — autopilot D6.5
-(produces) and the codebase-health PR-Gate sibling (consumes) — and pinned, with
-this block and the `[BLOCKED: vacuous-test]` producer / `mutant-on-core-path`
-consumer tokens, by root lint V7 so producer and consumer cannot drift (MT-09).
+The executable form of this map is the canonical `mutation_adapter.sh` beside
+this file (`normalize <tool>` reads raw tool output on stdin → the normalized
+`<path>:<line>` survivor set; `invocation <tool> <files…>`) — the ONE resolver
+both consumers call: autopilot D6.5 (produces, via
+`skills/autopilot/scripts/mutation_gate.sh`) and the codebase-health PR-Gate
+sibling (consumes). Single copy since ADR 0025; the `[BLOCKED: vacuous-test]`
+producer / `mutant-on-core-path` consumer tokens live in those two scripts
+(MT-09).
 <!-- vendored:mutation-adapter-map:end -->
 
 Notes:

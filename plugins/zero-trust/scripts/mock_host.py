@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """mock_host.py — a hermetic MOCK host backend for the Merge Marshal self-test.
 
-It stands in for plugins/autopilot/scripts/host.sh: it answers the SAME subcommand
+It stands in for plugins/zero-trust/skills/autopilot/scripts/host.sh: it answers the SAME subcommand
 contract the Marshal drives, so marshal.sh needs no test-only branches. There is
 no network, no host API, no credentials — every answer is derived deterministically
 from (a) a JSON state file seeding the PR set, and (b) a local *bare* git repo

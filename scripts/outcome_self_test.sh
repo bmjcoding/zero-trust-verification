@@ -24,10 +24,10 @@ BASELINE_SH="$HERE/outcome_baseline.sh"
 EXTERNAL_SH="$HERE/outcome_external.sh"
 ANNOTATE_SH="$HERE/outcome_annotate.sh"
 REPORT_SH="$HERE/outcome_report.sh"
-CAPTURE_SH="$ROOT/plugins/marshal/scripts/outcome_capture.sh"
-EMIT_SH="$ROOT/plugins/codebase-health/skills/cleanup-audit/scripts/outcome_emit.sh"
-DIGEST_SH="$ROOT/plugins/marshal/scripts/outcome_digest.sh"
-MOCK="$ROOT/plugins/marshal/scripts/mock_host.sh"
+CAPTURE_SH="$ROOT/plugins/zero-trust/scripts/outcome_capture.sh"
+EMIT_SH="$ROOT/plugins/zero-trust/skills/cleanup-audit/scripts/outcome_emit.sh"
+DIGEST_SH="$ROOT/plugins/zero-trust/scripts/outcome_digest.sh"
+MOCK="$ROOT/plugins/zero-trust/scripts/mock_host.sh"
 
 py() { if command -v uv >/dev/null 2>&1 && [ -f "$ROOT/pyproject.toml" ]; then uv run --no-project python "$@"; else python3 "$@"; fi; }
 jget() { py - "$@"; }  # convenience: run inline python reading argv

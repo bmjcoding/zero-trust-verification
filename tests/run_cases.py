@@ -17,7 +17,8 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent
-sys.path.insert(0, str(ROOT / "scripts"))
+# the canonical validator lives inside the single plugin (ADR 0025)
+sys.path.insert(0, str(ROOT / "plugins" / "zero-trust" / "scripts"))
 
 import validate_manifest as V  # noqa: E402
 from ruamel.yaml import YAML  # noqa: E402

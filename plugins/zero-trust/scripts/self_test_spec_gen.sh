@@ -8,10 +8,10 @@
 #      profile resolution, emission shape, and the S4 output-schema field (81+
 #      assertions; every SG-2/3/4/5 acceptance).
 #   2. lint_consistency.sh — the 8 cross-file contract rules (expect PASS).
-#   3. planted violation — tamper a sandbox copy of the vendored schema and assert
-#      the byte-identity lint (L3) reports it (expect FAIL).
+#   3. planted violation — remove the canonical schema from a sandbox copy and
+#      assert the canonical-presence lint (L3) reports it (expect FAIL).
 #
-# Usage: bash scripts/self_test.sh    Exit 0 = all green.
+# Usage: bash plugins/zero-trust/scripts/self_test_spec_gen.sh    Exit 0 = all green.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -47,8 +47,9 @@ plant_and_expect_red() {  # label  tamper_fn (called with the sandbox plugin roo
   echo "ok   - lint reports planted violation: $label"
 }
 
-# 3a — L3 byte-identity: tamper the vendored schema so it diverges from repo root.
-tamper_schema() { printf '\n' >> "$1/schema/verification-manifest/v1.schema.json"; }
+# 3a — L3 canonical presence: delete the plugin's ONE schema copy (ADR 0025 —
+# with a single canonical, the failure mode is a MISSING file, not a drifted one).
+tamper_schema() { rm -f "$1/schema/verification-manifest/v1.schema.json"; }
 # 3b — L2 hard-contract deletion: strip the HC6 statement from SKILL.md (the P1
 # class of bug — a silent contract deletion in the orchestrator's ground truth).
 tamper_hc6() {
@@ -56,7 +57,7 @@ tamper_hc6() {
   mv "$1/skills/spec/SKILL.tmp" "$1/skills/spec/SKILL.md"
 }
 
-plant_and_expect_red "L3 tampered vendored schema" tamper_schema
+plant_and_expect_red "L3 canonical schema removed" tamper_schema
 plant_and_expect_red "L2 deleted HC6 (vanilla-agents) from SKILL.md" tamper_hc6
 
 echo
