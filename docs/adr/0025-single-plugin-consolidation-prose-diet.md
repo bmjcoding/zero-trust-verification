@@ -1,6 +1,6 @@
 # ADR 0025 — Consolidate six plugins into one; put the prose on a diet
 
-- **Status:** Proposed
+- **Status:** Accepted (operator approved 2026-07-11)
 - **Date:** 2026-07-11
 - **Supersedes/amends:** narrows ADR 0011 (marshal as fourth plugin) and ADR 0020 (triage as fifth plugin) — the *capabilities* stand, the *plugin boundaries* do not.
 

@@ -2,9 +2,9 @@
 
 **A software-quality suite for the AI-assisted development lifecycle — where nothing counts until it's verified.**
 
-Six independently-installable Claude Code plugins that cover the ADLC left to right — *generate a spec → implement it → audit it → merge it* — plus a read-only org-memory index and a production-telemetry triage source, all integrated through a shared, machine-readable **Verification Manifest**. Every claim the system makes about your code is backed by deterministic evidence: a test that runs, a mutant that dies, a git-log entry, a build status. Agent judgment is used everywhere; agent judgment blocks a merge nowhere without that evidence.
+One Claude Code plugin — **`zero-trust`** — whose six domains cover the ADLC left to right — *generate a spec → implement it → audit it → merge it* — plus a read-only org-memory index and a production-telemetry triage source, all integrated through a shared, machine-readable **Verification Manifest** (six plugins consolidated into one by ADR 0025). Every claim the system makes about your code is backed by deterministic evidence: a test that runs, a mutant that dies, a git-log entry, a build status. Agent judgment is used everywhere; agent judgment blocks a merge nowhere without that evidence.
 
-> **Status:** `v1.2.0` — **feature-complete, field-hardened.** All six future-scope capabilities designed in v1.0.0 are shipped (mutation testing, remediation loop, production-telemetry triage, outcome measurement, org-wide memory, system-design coverage), and the first production e2e drain's field retros are absorbed (autopilot 3.1.0). Self-hosting on GitHub, provably green in one command with zero skips.
+> **Status:** `v2.0.0-rc.1` — **feature-complete, field-hardened, consolidated.** All six future-scope capabilities designed in v1.0.0 are shipped (mutation testing, remediation loop, production-telemetry triage, outcome measurement, org-wide memory, system-design coverage), the first production e2e drain's field retros are absorbed (autopilot 3.1.0), and the six plugins are now ONE plugin (ADR 0025 Wave 1 — see the migration note under Install). Self-hosting on GitHub, provably green in one command with zero skips.
 
 ---
 
@@ -14,18 +14,18 @@ Six independently-installable Claude Code plugins that cover the ADLC left to ri
 
 This suite answers that with a single discipline: **verify against the spec's declared ground truth, not the implementer's self-report** — and prove it with evidence a skeptic can reproduce. It raises the floor rather than the ceiling.
 
-## The six plugins
+## The six domains (one plugin)
 
-| Plugin | Role | One-liner |
+| Domain | Role | One-liner |
 |---|---|---|
-| **[spec-gen](./plugins/spec-gen)** | Shift-left | Interrogates raw intent into a Spec + a complete **Verification Manifest**, refusing to finalize while any completeness rule fails. Two adversarial attackers stress the design before you see it; the only path to a confirmed CORE money/auth requirement is a human answer. |
-| **[autopilot](./plugins/autopilot)** | Implement | Drains a manifest-bearing Spec into PRs autonomously — plan (disjoint ownership + test gates) → TDD RED/GREEN → parallel multi-validator review → one draft PR per Story. Anti-flakiness contract + N=5 determinism gate + a **D6.5 anti-vacuous mutation gate**. Host-agnostic (GitHub + Bitbucket DC). |
-| **[codebase-health](./plugins/codebase-health)** | Audit + PR Gate | Seven specialist agents audit dead code, redundancy, flaky/vacuous tests, observability, transactional integrity, security, and business-critical journeys — to *measured* coverage. Deterministic tools find evidence; agents judge; **nothing counts until `/verify` reruns the closing test 5×**. Hosts the mutation PR-gate sibling, the `/remediate` loop, the outcome-emit step, and system-design coverage. |
-| **[marshal](./plugins/marshal)** | Merge | A serial, deterministic composed-state merge backstop. Verifies the build on the **post-rebase** head — the check that catches the Composition Breaks two clean merges hide. Zero agent judgment in the merge path. Carries the report-only outcome-capture + digest modes. |
-| **[org-memory](./plugins/org-memory)** | Recall | A read-only, **refuse-by-default** index over the memory every repo already commits — glossaries, ADRs, manifests, decision logs. Derived-view-only (never a second store of truth), respects repo visibility (ACL at query time), and exposes a query CLI + MCP surface so an agent never has to be told twice what the org already decided. |
-| **[triage](./plugins/triage)** | Prod → Spec | A read-only, **bounded-window** source that turns an emitted production incident into a resumable *incident-Spec* feeding spec-gen's resume path — never a patch, never an auto-merge. Vendor-neutral telemetry (default OTEL/OTLP-JSON; CloudWatch/Dynatrace behind one adapter). Correlates a runtime event to the manifest journey/behavior it belongs to. |
+| **[spec-gen](./plugins/zero-trust/skills/spec)** | Shift-left | Interrogates raw intent into a Spec + a complete **Verification Manifest**, refusing to finalize while any completeness rule fails. Two adversarial attackers stress the design before you see it; the only path to a confirmed CORE money/auth requirement is a human answer. |
+| **[autopilot](./plugins/zero-trust/skills/autopilot)** | Implement | Drains a manifest-bearing Spec into PRs autonomously — plan (disjoint ownership + test gates) → TDD RED/GREEN → parallel multi-validator review → one draft PR per Story. Anti-flakiness contract + N=5 determinism gate + a **D6.5 anti-vacuous mutation gate**. Host-agnostic (GitHub + Bitbucket DC). |
+| **[codebase-health](./plugins/zero-trust/skills/cleanup-audit)** | Audit + PR Gate | Seven specialist agents audit dead code, redundancy, flaky/vacuous tests, observability, transactional integrity, security, and business-critical journeys — to *measured* coverage. Deterministic tools find evidence; agents judge; **nothing counts until `/verify` reruns the closing test 5×**. Hosts the mutation PR-gate sibling, the `/remediate` loop, the outcome-emit step, and system-design coverage. |
+| **[marshal](./plugins/zero-trust/docs/marshal)** | Merge | A serial, deterministic composed-state merge backstop. Verifies the build on the **post-rebase** head — the check that catches the Composition Breaks two clean merges hide. Zero agent judgment in the merge path. Carries the report-only outcome-capture + digest modes. |
+| **[org-memory](./plugins/zero-trust/docs/org-memory)** | Recall | A read-only, **refuse-by-default** index over the memory every repo already commits — glossaries, ADRs, manifests, decision logs. Derived-view-only (never a second store of truth), respects repo visibility (ACL at query time), and exposes a query CLI + MCP surface so an agent never has to be told twice what the org already decided. |
+| **[triage](./plugins/zero-trust/skills/triage)** | Prod → Spec | A read-only, **bounded-window** source that turns an emitted production incident into a resumable *incident-Spec* feeding spec-gen's resume path — never a patch, never an auto-merge. Vendor-neutral telemetry (default OTEL/OTLP-JSON; CloudWatch/Dynatrace behind one adapter). Correlates a runtime event to the manifest journey/behavior it belongs to. |
 
-Each installs and runs standalone. Together they are the whole lifecycle, from a raw idea to a merged, verified change — and back again when production tells you something.
+All six install together as the one `zero-trust` plugin (ADR 0025). Together they are the whole lifecycle, from a raw idea to a merged, verified change — and back again when production tells you something.
 
 ## Five capabilities woven through, not bolted on
 
@@ -62,32 +62,39 @@ Because the manifest links *design-time intent* to *runtime behavior* (event nam
 
 ## Install
 
-Requires [Claude Code](https://claude.com/claude-code). Add the marketplace, then install whichever plugins you want:
+Requires [Claude Code](https://claude.com/claude-code). Add the marketplace, then install the one plugin:
 
 ```
 /plugin marketplace add bmjcoding/zero-trust-verification
-/plugin install codebase-health@zero-trust-verification   # lowest-trust, read-only — the easiest place to start
-/plugin install org-memory@zero-trust-verification         # read-only, refuse-by-default — also zero-risk to adopt
-/plugin install spec-gen@zero-trust-verification
-/plugin install autopilot@zero-trust-verification
-/plugin install marshal@zero-trust-verification
-/plugin install triage@zero-trust-verification
+/plugin install zero-trust@zero-trust-verification
 ```
 
-**Updating:** `/plugin marketplace update zero-trust-verification` refreshes the catalog, then `/plugin update <name>` (or bare `/plugin update` for all) updates the installed plugins — the marketplace refresh alone does not. Auto-update is off by default for third-party marketplaces; enable it per-marketplace under `/plugin` → Marketplaces. Installs track `main` unless you pinned a tag (`/plugin marketplace add bmjcoding/zero-trust-verification@v1.2.0`).
+**Migrating from v1.x (the six-plugin suite):** v2.0.0 consolidates
+`spec-gen`, `autopilot`, `codebase-health`, `marshal`, `org-memory`, and
+`triage` into the single `zero-trust` plugin (ADR 0025 — breaking: plugin
+names/install paths change; every command name is unchanged). Uninstall the six
+old plugins, refresh the catalog, then install the one:
+
+```
+/plugin uninstall spec-gen autopilot codebase-health marshal org-memory triage
+/plugin marketplace update zero-trust-verification
+/plugin install zero-trust@zero-trust-verification
+```
+
+**Updating:** `/plugin marketplace update zero-trust-verification` refreshes the catalog, then `/plugin update zero-trust` updates the installed plugin — the marketplace refresh alone does not. Auto-update is off by default for third-party marketplaces; enable it per-marketplace under `/plugin` → Marketplaces. Installs track `main` unless you pinned a tag (`/plugin marketplace add bmjcoding/zero-trust-verification@v2.0.0-rc.1`).
 
 Adopt tier by tier: the audit and org-memory are read-only, so a team can run them without granting an autonomous drain anything. Add spec-gen when you want better specs, autopilot when you want the drain, marshal when you want deterministic merge safety, triage when you want production incidents to become specs.
 
 ## Prove it in one command
 
-The whole suite — every plugin's self-test, the manifest validator, and the cross-plugin vendoring lints — runs from the repo root:
+The whole suite — every domain's self-test, the manifest validator, and the cross-domain contract lints — runs from the repo root:
 
 ```bash
-scripts/suite_self_test.sh          # all six plugins + validator + lints + red-tests
+scripts/suite_self_test.sh          # all six domains + validator + lints + red-tests
 SUITE_STRICT=1 scripts/suite_self_test.sh   # require a zero-skip proof (needs all optional dev tools)
 ```
 
-Green means: every plugin's self-test passes, the manifest validator round-trips, all twelve cross-plugin vendoring lints (V1–V12) hold, and every one of those lints has *teeth* — a planted-drift red-test proves it catches the drift it guards against. The Python substrate uses [uv](https://docs.astral.sh/uv/) (self-bootstrapping from `uv.lock`); shell tooling targets Bash 3.2 for portability. See [ADR 0015](./docs/adr/0015-substrate-shell-python-uv-not-rust.md).
+Green means: every domain's self-test passes, the manifest validator round-trips, the surviving cross-domain contract lints (V2, V6, V9–V13 — the byte-identity vendoring rules V1/V3/V4/V5/V7/V8 retired with the vendored copies, ADR 0025) hold, and every one of those lints has *teeth* — a planted-violation red-test proves it catches the drift it guards against. The Python substrate uses [uv](https://docs.astral.sh/uv/) (self-bootstrapping from `uv.lock`); shell tooling targets Bash 3.2 for portability. See [ADR 0015](./docs/adr/0015-substrate-shell-python-uv-not-rust.md).
 
 ## How it was built (and why that matters)
 
@@ -95,22 +102,27 @@ This suite was built *by itself*, spec-first. Every capability was implemented a
 
 The design record lives in the open:
 
-- **[CONTEXT.md](./CONTEXT.md)** — the glossary (the ubiquitous language every plugin shares).
-- **[docs/adr/](./docs/adr/)** — 23 architecture decision records, with the dissent from each adversarial round preserved in *Considered Options*.
-- **[docs/specs/](./docs/specs/)** — the Verification Manifest schema and every plugin's build register.
+- **[CONTEXT.md](./CONTEXT.md)** — the glossary (the ubiquitous language every domain shares).
+- **[docs/adr/](./docs/adr/)** — 25 architecture decision records, with the dissent from each adversarial round preserved in *Considered Options*.
+- **[docs/specs/](./docs/specs/)** — the Verification Manifest schema and every capability's build register.
 - **[CHANGELOG.md](./CHANGELOG.md)** — what shipped in each release.
 
 ## Repository layout
 
 ```
-├── plugins/spec-gen/          # Spec Generation tier
-├── plugins/autopilot/         # Autopilot implementation drain (+ D6.5 mutation gate)
-├── plugins/codebase-health/   # Audit + PR Gate (+ /remediate, outcome-emit, system-design coverage)
-├── plugins/marshal/           # Merge Marshal (+ outcome-capture / digest)
-├── plugins/org-memory/        # Read-only org-wide memory index + MCP query surface
-├── plugins/triage/            # Production-telemetry triage → incident-Spec source
-├── schema/                    # Verification Manifest v1 + outcome store JSON Schemas (canonical)
-├── scripts/                   # manifest validator + suite_self_test.sh + root lints + outcome/SD scripts
+├── plugins/zero-trust/        # THE plugin (ADR 0025) — everything installable lives here
+│   ├── commands/              #   /spec /audit /verify /remediate /health-loop /marshal-pass /triage …
+│   ├── agents/                #   the seven audit specialist agents
+│   ├── skills/spec/           #   Spec Generation tier (S1–S7 interrogation)
+│   ├── skills/autopilot/      #   Autopilot drain (SKILL + references + scripts, incl. D6.5 mutation gate)
+│   ├── skills/cleanup-audit/  #   Audit + PR Gate (+ /remediate, outcome-emit, system-design coverage)
+│   ├── skills/triage/         #   Production-telemetry triage → incident-Spec source
+│   ├── scripts/               #   canonical manifest validator + marshal / org-memory / triage substrate
+│   ├── schema/                #   Verification Manifest v1 + outcome / org-memory / triage schemas (canonical)
+│   ├── references/            #   shared references (escalation criterion, host + telemetry contracts, …)
+│   ├── mcp/ + .mcp.json       #   org-memory read-only MCP query server
+│   └── docs/<domain>/         #   per-domain READMEs + changelogs
+├── scripts/                   # dev tooling: suite_self_test.sh + root lint + outcome/SD harnesses
 ├── tests/                     # manifest fixtures + codebase-health dev/test harness (tests/codebase-health/)
 ├── docs/adr/                  # architecture decision records
 ├── docs/specs/                # manifest spec + per-capability build registers
