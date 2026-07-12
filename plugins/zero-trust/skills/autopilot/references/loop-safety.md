@@ -1,11 +1,15 @@
 # Loop-safety invariants
 
-> Binding on every GENERATE/DRAIN/RESUME step. A loop that acts on flawed logic
-> is worse than no loop: it damages the codebase at machine speed. These
-> invariants bound the blast radius of any orchestrator or script defect so a
-> wrong loop costs wrong reports or a stalled drain — never damaged code, lost
-> history, or a stolen lock. Each invariant names its enforcement mechanism;
-> an invariant without an enforcement point is a wish, not an invariant.
+> Binding on every GENERATE/DRAIN/RESUME step. The shared blast-radius
+> guarantee — a wrong loop must cost wrong reports, never damaged code — is
+> stated once, canonically, in
+> `skills/cleanup-audit/references/loop-safety.md`; this file is its drain-loop
+> specialization. A loop that acts on flawed logic is worse than no loop: it
+> damages the codebase at machine speed. These invariants bound the blast
+> radius of any orchestrator or script defect so a wrong loop costs wrong
+> reports or a stalled drain — never damaged code, lost history, or a stolen
+> lock. Each invariant names its enforcement mechanism; an invariant without
+> an enforcement point is a wish, not an invariant.
 
 ## 1. Probes never mutate operator-visible state
 
