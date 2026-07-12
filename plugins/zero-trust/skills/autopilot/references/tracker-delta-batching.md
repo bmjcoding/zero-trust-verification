@@ -9,7 +9,7 @@
 > This file is the data-and-rationale document. The lifecycle integration
 > points (D1.0.4 injection + crash recovery, D1.0 hydrate, D2 in_progress
 > claim, D7.1a fold, D7.4 status-change queue) are defined in
-> `references/drain-lifecycle.md`, and THAT file is canonical wherever the two
+> `references/lifecycle.md`, and THAT file is canonical wherever the two
 > could be read to differ.
 
 ## Purpose
@@ -34,7 +34,7 @@ Section header, verbatim:
 ```
 
 Location: between `## Drift Notes` and the first Subtask section (as injected
-by D1.0.4; see `references/drain-lifecycle.md`).
+by D1.0.4; see `references/lifecycle.md`).
 
 Migration: D1.0.4 injects this header on the first drain against a v2.1 or
 v2.2 tracker that lacks it. The injection is a no-op edit against a tracker
@@ -84,22 +84,12 @@ never be used for deltas that fit an existing kind.
 ## Flush point
 
 Flush occurs at D7.1a — after D7.0's rebase and D7.1's staging, BEFORE the
-D7.2 push and D7.3 PR creation. Per `references/drain-lifecycle.md` D7.1a:
-
-1. Build a `Tracker deltas folded in:` block for the commit body listing each
-   pending entry's `delta_kind` + `diff_summary` (one line per entry).
-2. Apply every entry's `body:` field to the tracker file (mutations
-   accumulated in-order).
-3. Flush the queue: replace the section body with `_(empty)_` (the header
-   remains).
-4. Commit the tracker file on the **Runbook PR branch**
-   (`autopilot/<slug>/runbook`, AV3-08) as its OWN append commit — the fold does
-   NOT ride a Story branch and never stages `owned_files[]`, so a Story's code
-   and the tracker's bookkeeping never share a branch (one home, no
-   self-intersecting claim surfaces for AV3-09). The impl commit on the Story
-   branch and this bookkeeping commit on the runbook branch are separate PRs.
-5. The Runbook PR body surfaces the same folded entries as a
-   `## Tracker deltas folded in` H2.
+D7.2 push and D7.3 PR creation. The fold procedure itself (the commit-body
+`Tracker deltas folded in:` block, the in-order apply of each entry's `body:`,
+the `_(empty)_` queue reset, the OWN append commit on the Runbook PR branch
+(`autopilot/<slug>/runbook`, AV3-08), and the PR-body
+`## Tracker deltas folded in` H2) is defined once in
+`references/lifecycle.md` §D7.1a/§D7.3 — canonical there, not restated here.
 
 Under `branching.no_force_push: false` (default) this queue is unused — D7.1a
 is a no-op because the deltas were already committed directly to the Runbook PR
@@ -139,7 +129,7 @@ queue mechanics are unchanged; the fold appends to that single shared branch.
 
 - Fold commit rejected by branch permissions at D7.2 push: surface
   `LAST_STATE=queue_flush_blocked` in the tracker entry and escalate per the
-  drain-lifecycle failure table. Do not retry automatically.
+  lifecycle.md failure table. Do not retry automatically.
 - Queue body exceeds 64 KiB: emit `LAST_STATE=queue_oversize`; the next fire
   runs a `docs`-kind synthetic no-op Subtask (`AP-queue-drain-<n>`, owning
   only the tracker file) whose sole purpose is to fold and flush the queue.

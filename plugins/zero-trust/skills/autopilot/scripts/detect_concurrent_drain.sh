@@ -4,7 +4,7 @@
 # Detects whether another autopilot session holds a live lock on a tracker.
 # The dispatcher calls this at GENERATE Step G1 and at DRAIN Step D1, passing
 # the TRACKER PATH (v2.4.0: G1 previously documented passing a bare slug,
-# which always exited 0 — see docs/GAPS_SPEC.md A5a; callers derive the path
+# which always exited 0 — see CHANGELOG.md §2.4.0, gap A5a; callers derive the path
 # as .autopilot/runbooks/<slug>.tracker.md).
 #
 # Mechanism (v2.4.0, aligned with the canonical G7 tracker schema and the

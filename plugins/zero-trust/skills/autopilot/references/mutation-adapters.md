@@ -17,5 +17,5 @@ tool-scoping capability, and the executable resolver
 `skills/cleanup-audit/scripts/mutation_adapter.sh` that D6.5 calls.
 <!-- vendored:mutation-adapter-map:end -->
 
-See `references/drain-lifecycle.md` §D6.5 for how D6.5 consumes this map, and
+See `references/lifecycle.md` §D6.5 for how D6.5 consumes this map, and
 `docs/adr/0016-mutation-testing-first-class-gate.md` for the rationale.
