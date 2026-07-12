@@ -38,12 +38,12 @@ Flag modules where the interface is nearly as complex as the implementation:
 - "Manager/Helper/Util" modules that callers must orchestrate in a specific sequence (the ordering knowledge leaked out of the module = shallow interface).
 
 ### 5. Accept dependencies; return results
-- Modules that `new`/construct their own dependencies instead of accepting them → hard to test, hidden coupling. (Your audit's PERF-H2 — `TfeClient` constructed per component — is also this smell: the dependency should be accepted/shared, not created inline.)
+- Modules that `new`/construct their own dependencies instead of accepting them → hard to test, hidden coupling (a per-request-constructed client is also a perf smell — cross-link it).
 - Side-effecting functions where a value-returning one would do → harder to test, worse locality.
 
 ## Locality includes the machine reader
 
-The highest-volume maintainer of most codebases is now a coding agent, and "navigation cost" is not an abstraction for it — it is a metered bill. Messy code **burns AI-agent tokens**: a giant file forces partial reads, and partial reads cause **missed edits** (the agent changes three of the four call sites it never saw); a near-duplicate pair means the fix lands in one clone and the other diverges silently (a latent missed edit); commented-out blocks and misleading names feed the agent **hallucinated context** — it reasons from code that doesn't run or a name that lies about behavior. The compounding harm is **definition-of-done erosion**: an agent that cannot see the whole shape declares victory on the part it saw. Locality and leverage were always about concentrating what a maintainer must load into their head; the machine reader just made the cost measurable per edit.
+The highest-volume maintainer of most codebases is now a coding agent, and "navigation cost" is a metered bill for it: a giant file forces partial reads, and partial reads cause **missed edits** (the agent changes three of the four call sites it never saw); a near-duplicate pair means the fix lands in one clone and the other diverges silently; commented-out blocks and misleading names feed the agent **hallucinated context**. The compounding harm is **definition-of-done erosion**: an agent that cannot see the whole shape declares victory on the part it saw.
 
 ### Giant-file triage (`audit/giant_files.txt`, 400/800/1600 ladder)
 The ladder rungs (attention / warn / god-file, non-blank lines — threshold rationale in `cross-language-tooling.md`) are triage priority, never verdicts. Triage each entry:

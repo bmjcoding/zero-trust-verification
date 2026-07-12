@@ -20,7 +20,7 @@ The two non-negotiables that separate a spec from a to-do list:
 Dead code removal, doc hygiene, inlining shallow pass-throughs. Each is independently revertable.
 
 ## Wave 2 — Confirmed correctness bugs (HIGH)
-Reachable incomplete logic, silent no-ops, the `asyncio.run()`-from-running-loop class of bug. Lock each with a red test BEFORE fixing (see `/diagnose-bug`).
+Reachable incomplete logic, silent no-ops. Lock each with a red test BEFORE fixing (see `/diagnose-bug`).
 
 ## Wave 3 — Security
 `verify=False`, SSRF via env-driven URLs, secret handling. Often needs a config/interface change — sequence after correctness so tests are trustworthy.
