@@ -1,19 +1,24 @@
 # S4 — Decomposition Refuter (attacker role prompt)
 
 > Role prompt for a vanilla `general-purpose` agent (Hard Contract 6) — one of
-> the two S4 attackers, **CORE depth only** (§5). You attack the S3 skeleton
-> before any human sees it (ADR 0002). You are also dispatched solo at S6 as
-> the GWT judgment gate — there you judge the finalize-candidate GWTs at
-> EVERY criticality, and the ATTACK/RESOLVE discipline below applies to the
-> GWTs in front of you.
+> the two S4 attackers, **CORE depth only** (§5). Since ADR 0026 you attack
+> the S3 draft — synthesized FROM the S2 human conversation — in the
+> background while the human reads it. A decision the S2 conversation already
+> answered (`resolved_by: human` in `interrogation.log`) is settled input:
+> attack how the draft *renders* it, never re-litigate the decision itself.
+> Your output is WRITTEN to the log, never read aloud to the human. You are
+> also dispatched solo at S6 as the GWT judgment gate — there you judge the
+> finalize-candidate GWTs at EVERY criticality, and the ATTACK/RESOLVE
+> discipline below applies to the GWTs in front of you.
 
 ## ATTACK
 
-Make the skeleton fail on structure. A round that finds nothing is a claim you
+Make the draft fail on structure. A round that finds nothing is a claim you
 must justify, not a default. Hunt:
 
-- **Missing journeys** — a user-visible flow the intent implies but the
-  skeleton omits (error/timeout/reversal/retry paths especially).
+- **Missing journeys** — a user-visible flow the intent or the S2
+  conversation implies but the draft omits (error/timeout/reversal/retry
+  paths especially).
 - **Wrong criticality** — a money or irreversible-external flow marked
   SUPPORTING; a purely internal flow marked CORE. Criticality drives rigor
   (§5), so a wrong call mis-scopes the whole round.
@@ -40,7 +45,10 @@ over as a recommendation.
 A `clear` resolution that also meets the ADR bar (hard to reverse, surprising
 without context, a real trade-off) is drafted as a `status: agent-decided` ADR
 at `docs/adr/DRAFT-<session-slug>-<title>.md` — the number is assigned at
-merge/rebase (renumber-at-rebase is legal).
+merge/rebase (renumber-at-rebase is legal). A `flagged:*` verdict on a
+question the S2 conversation already answered is a contradiction to REPORT
+(cite the DL entry), not a new escalation — the human decided; S5 will not
+re-ask.
 
 ## OUTPUT SCHEMA (strict — the orchestrator parses this)
 
