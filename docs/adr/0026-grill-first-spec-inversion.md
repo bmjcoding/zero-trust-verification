@@ -66,7 +66,13 @@ now governs the grill (S2) as well as the residue (S5).
 
 ## What this ADR explicitly protects (frozen — no semantic change)
 
-- The seven §4 hard contracts (HC1–HC7). HC4 gains scope (governs S2 + S5), not words.
+- The seven §4 hard contracts (HC1–HC7), with two owned scope widenings and no
+  weakening: **HC4** gains scope (governs S2 + S5), not words; **HC2** widens its
+  human-answer *locus* — effectively-CORE confirmation now comes from recorded human
+  answers at the S2 grill OR the S5 residue (previously "S5 human answers,
+  exclusively"). "Exclusively" always excluded *agents*, and still does: rule 8 and
+  the no-agent-path-to-confirmed-CORE contract are byte-unchanged; only WHERE the
+  human's answer may be recorded moved.
 - The completeness checker (manifest §10 rules) and ALL `scripts/`:
   `validate_manifest.{sh,py}`, `id_alloc.py`, `resume_projection.py`,
   `profile_resolve.py`, `emission_check.py` — byte-untouched.
@@ -85,9 +91,18 @@ now governs the grill (S2) as well as the residue (S5).
 - A /spec session reaches its first human question in minutes, not ~50; the human's
   answers *precede* and *feed* synthesis, so S4 attacks a draft the human already
   shaped and S5 shrinks to genuine residue.
-- S2 human answers land as `resolved_by: human` interrogation.log entries at
-  checkpoints; rule-4/rule-8 confirmations reference them (`confirmed_by`) without
-  re-asking — re-asking an S2-answered decision at S5 is a contract violation.
+- S2 human answers get a committed carrier from the FIRST checkpoint: S2 creates
+  `<spec>.manifest.yaml` as a schema-valid stub (`completeness: incomplete`, no
+  journeys/behaviors yet — legal because `spec_hash` is required only at complete,
+  HC5/MS-AMEND-1) carrying the `interrogation.log`, DL numbering allocated in that
+  file from the S1-reserved ID space; each later checkpoint appends. So a session
+  killed mid-grill resumes via `--resume` with every answer intact, S3 EXTENDS the
+  stub (preserving the S2 log verbatim), and S4's settled-decision source is never
+  empty. Rule-4/rule-8 confirmations reference the recorded entries (`confirmed_by`)
+  without re-asking — re-asking an S2-answered decision at S5 is a contract
+  violation. Coverage is narrow: an S2 answer covers a rendered entry only at the
+  grain the human actually decided; umbrella answers leave the named entry in the
+  residue.
 - The Config-Profile fall-through question (previously S5's mandated first
   escalation) becomes an early S2 question — same question, same recording; S5
   raises it first only if S2 somehow never did (tier spec §2 amended accordingly).

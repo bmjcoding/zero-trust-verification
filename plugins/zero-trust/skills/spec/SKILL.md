@@ -45,7 +45,7 @@ the S2 grill; only the conversation seed differs.
 | `/spec <intent...>` | Fresh | Raw intent (paragraph, meeting notes, Jira) | You — the daily default (`--profile <name>` accepted; config resolution below usually covers it) |
 | `/spec @draft.md` | Fresh | Draft Spec — interrogated, not trusted; it seeds the S2 agenda | You, when a doc already exists |
 | `/spec --from-findings @<register>` | Fresh | Findings register (remediation-loop entry, ADR 0017) — reuses the Fresh path; the register is the S2 conversation seed, interrogated like a Draft Spec, not trusted | `/remediate` — machine door, rarely typed by hand |
-| `/spec --resume @<spec>.manifest.yaml` | Resume | `completeness: incomplete` from a prior (possibly crashed) session — re-enters S2 grilling with the agenda = the validator's remaining unmet rules via `resume_projection.py` | Crash recovery (session-death-safe, HC5) and `/triage`'s incident-Spec re-entry |
+| `/spec --resume @<spec>.manifest.yaml` | Resume | `completeness: incomplete` from a prior (possibly crashed) session — re-enters S2 grilling with the agenda = the validator's remaining unmet rules via `resume_projection.py` (its partition governs: escalate-class gaps are grilled, mechanical-class gaps are filled silently) | Crash recovery (session-death-safe, HC5) and `/triage`'s incident-Spec re-entry |
 | `/spec --amend @<spec>.manifest.yaml <intent...>` | Amend | Amendment against a merged Spec → `manifest_revision` N+1; S2 re-opens scoped to the amendment intent | You, revising a shipped Spec — ID-stable so autopilot's revision-drift gate (AV3-04) keys on it |
 
 **Profile (fresh sessions):** run `scripts/profile_resolve.py` (order:
@@ -75,12 +75,18 @@ On `--resume`/`--amend`: run `scripts/validate_manifest.sh` FIRST and trust
 its exit-3 output over the stored `incomplete_fields` (the file may be stale
 after a crash); project it into work slots with
 `scripts/resume_projection.py`. Done when: reserved-ID set, resolved profile,
-and (resume/amend) projected slots are in hand.
+and (resume/amend) projected slots are in hand. Escape valve: if hydration
+runs long, start grilling with what you have and finish the remaining reads
+at the first S2 checkpoint — the time-box loses to the human's calendar,
+never the other way around.
 
 ### S2 — Grill
 
 The front door. Grilling starts **within a couple of minutes of invocation**.
-Load `references/grill-contract.md` and hold every question to it. Interview
+Load `references/grill-contract.md` and hold every question to it. Open with
+the proactive term sweep the old domain pass owned: challenge EVERY candidate
+term from the intent text against the glossary up front — a conflict is an
+early question, not a discovery synthesis makes later. Then interview
 the human relentlessly about the intent: walk the decision tree branch by
 branch, resolving dependencies between decisions one by one, with the
 completeness rules (manifest §10) as your AGENDA — the question tree is walked
@@ -90,28 +96,47 @@ confirmation), not run as a machine first. FACTS are looked up (codebase,
 `CONTEXT.md`, org-memory), never asked; DECISIONS are the human's — ask and
 WAIT.
 
-Capture as you go, inline (the grill-with-docs move, replacing the old domain
-pass): a term conflicting with the glossary surfaces immediately as a
+Capture as you go, inline (the grill-with-docs move): a term conflicting with
+the glossary surfaces immediately as a
 question; a new term gets a proposed definition; an answer meeting the ADR bar
 becomes a draft ADR (`docs/adr/DRAFT-<session-slug>-<title>.md`). Answers are
 recorded as `resolved_by: human` `interrogation.log` entries — batched at
 checkpoints with the `CONTEXT.md` edits and the branch commit, never between
 question and answer.
 
+**The answers need a committed carrier (HC5).** The FIRST S2 checkpoint
+creates `<spec>.manifest.yaml` as a schema-valid stub — `completeness:
+incomplete`, no journeys or behaviors yet — carrying the `interrogation.log`
+(mid-session manifests are legal: `spec_hash` is required only at
+`completeness: complete`). DL numbering is allocated in that file from the
+S1-reserved ID space. Every later checkpoint appends to it, so a session
+killed at minute 35 of the grill resumes via `--resume` with every answer
+intact, and S4's settled-decision source is never empty.
+
 Done when: the human **confirms shared understanding** (the confirmation
-gate) — ask for it explicitly; do not proceed to synthesis without it.
+gate) — ask for it explicitly; do not proceed to synthesis without it. On
+resume/amend the grill agenda is the S1-projected slots, partitioned by
+`resume_projection.py`: escalate-class gaps are grilled; mechanical-class
+gaps (facts fillable from the profile, codebase, or glossary) are FILLED
+silently, never asked.
 
 ### S3 — Synthesize
 
 Dispatch a `general-purpose` agent with `references/s3-proposer.md`, whose
-primary input is now the S2 conversation record. It writes the draft
-`<spec>.md` and a manifest skeleton — journey map, Given/When/Then behaviors,
+primary input is now the S2 conversation record. It EXTENDS the S2 manifest
+stub — preserving the S2 `interrogation.log` verbatim — and writes the draft
+`<spec>.md` plus the skeleton — journey map, Given/When/Then behaviors,
 per-step vitals from the profile taxonomy — FROM the conversation: everything
-`confirmation: proposed`, every ID allocator-minted, S2-answered decisions
+`confirmation: proposed`, every NEW ID allocator-minted (on resume/amend it
+extends the existing manifest and never re-mints IDs for existing entries —
+§12 joins and AV3-04 revision keying depend on it), S2-answered decisions
 carried as recorded, gaps the conversation left filled with concrete
 proposals. The *propose* half of propose-confirm. **Present the draft to the
 human for review** as soon as both files exist on the branch and the skeleton
-is schema-valid — S4 runs while they read.
+is schema-valid — S4 runs while they read. The review is NON-GATING: S4 runs
+regardless, and silence = proceed. A human objection during review routes as
+a correction — a one-question grill exchange for THAT decision, recorded like
+any S2 answer — and S3 patches the draft at the next checkpoint.
 
 ### S4 — Adversarial round (background, on the draft)
 

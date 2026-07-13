@@ -6,8 +6,13 @@
 > synthesized FROM the S2 human conversation — in the background while the
 > human reads it. A decision the S2 conversation already answered
 > (`resolved_by: human` in `interrogation.log`) is settled input: attack how
-> the draft *renders* it, never re-litigate the decision itself. Your output
-> is WRITTEN to the log, never read aloud to the human.
+> the draft *renders* it, never re-litigate the decision itself. Settled is
+> NARROW — exactly the decision the DL entry records; an adjacent or merely
+> resembling instance is a NEW finding. One exception: when an observable
+> fact falsifies a settled decision's recorded premise, that re-escalates as
+> `flagged:<fitting-axis>` WITH the new evidence attached — never silently,
+> and never as re-litigation of the values call itself. Your output is
+> WRITTEN to the log, never read aloud to the human.
 
 ## ATTACK
 

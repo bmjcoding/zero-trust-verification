@@ -117,7 +117,10 @@ answered. Present each **one at a time, with the adversarial round's recommendat
 one line** (surviving dissent recorded in the log, presented on request). Answers land
 as `resolved_by: human` entries
 (`exchange_ref` pointing at the session transcript section in the PR description).
-**Effectively-CORE `confirmation: confirmed` comes ONLY from S5 human answers** — there
+**Effectively-CORE `confirmation: confirmed` comes ONLY from S5 human answers** ⟨ADR-0026:
+same rule, wider locus — read "from recorded human answers": an answer recorded during the
+S2 grill confirms identically via its `DL-*` entry (rule 8), and S5 applies it without
+re-asking; the requirement is human-answered, not S5-located⟩ — there
 is no agent path to confirmed-CORE (manifest §10 class (b) and rule 8); the S4 agent path
 confirms sub-CORE entries only. Deferral scope: a human may defer *confirmation* on
 SUPPORTING/DEV entries (`proposed` is legal per manifest rule 4), but rules 1–2
@@ -162,7 +165,10 @@ session.
    provenance check (§8 induced) flags manifest diffs from non-spec-session branches.
 2. **Propose-confirm.** Nothing enters the manifest as `confirmed` without a recorded
    resolution: S5 human answers for effectively-CORE (exclusively), ADR-0002-legal agent
-   resolutions with dissent + `escalation_check: clear` for sub-CORE.
+   resolutions with dissent + `escalation_check: clear` for sub-CORE. ⟨ADR-0026: same
+   contract, wider locus — "human answers" includes those recorded during the S2 grill;
+   "exclusively" excludes agents, not S2. There is still no agent path to confirmed-CORE
+   (rule 8 unchanged).⟩
 3. **One writer.** This tier is the manifest's only writer (manifest spec §7) and never
    writes product code, runbooks, or trackers.
 4. **Escalations are one-at-a-time with a recommendation** — never a questionnaire dump,

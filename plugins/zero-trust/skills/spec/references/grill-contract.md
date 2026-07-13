@@ -35,7 +35,12 @@ understanding.
    **WAIT**. A question you answer yourself is self-interviewing.
 6. **NO background work while a question is pending.** Record the answer; the
    next question follows immediately. No dispatches, no re-validation runs,
-   no log-writing between the answer and the next question.
+   no log-writing between the answer and the next question. A fact lookup
+   needed to PHRASE the next question must be near-instant; anything longer
+   either gets one line telling the human what you are checking, or is
+   deferred to a checkpoint. Consequence: unexplained silence between
+   questions while you work is a contract violation — the same class of
+   breach as re-asking a settled decision.
 7. **Bookkeeping batches at checkpoints.** `interrogation.log` entries,
    `CONTEXT.md` edits, draft ADRs, and session-branch commits (HC5) land at
    step boundaries or natural pauses the HUMAN takes — never mid-exchange.
