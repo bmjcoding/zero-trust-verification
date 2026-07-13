@@ -25,17 +25,21 @@ Ships as the `spec-gen` plugin in the `zero-trust-verification` marketplace
 
 ## Session lifecycle (S1–S7)
 
-`hydrate → domain pass → skeleton proposal → adversarial round → escalation →
-finalize gate → emit`. Every step boundary **commits the session branch**, so a
-killed session resumes losslessly. Tradeoffs are resolved **agent-vs-agent** in the
-S4 adversarial round (two vanilla `general-purpose` attackers — a
-decomposition-refuter and a consumer-simulator) before anything reaches a human;
-only the MUST-escalate residue (values, external facts, irreversible commitments)
-is surfaced, **one at a time, with the recommendation and surviving dissent
-attached**. Full step text: [`skills/spec/SKILL.md`](skills/spec/SKILL.md).
+`hydrate → grill → synthesize → adversarial round (background) → residue grill →
+finalize gate → emit` (grill-first since ADR 0026). The human interview is the front
+door: grilling starts within minutes of invocation — **one decision per question,
+one-line recommendation, facts looked up never asked**. The Spec + manifest are
+synthesized FROM the conversation; the S4 adversarial round (two vanilla
+`general-purpose` attackers — a decomposition-refuter and a consumer-simulator)
+attacks the draft **in the background while the human reads it**, resolutions
+written to the log, never read aloud; S5 grills only the residue the conversation
+did not already answer. Every step boundary **commits the session branch**, so a
+killed session resumes losslessly. Full step text:
+[`skills/spec/SKILL.md`](skills/spec/SKILL.md).
 
 The one rule with no agent path: **effectively-CORE `confirmation: confirmed` comes
-only from a human answer at S5** (manifest §10 rule 8).
+only from a recorded human answer** — at the S2 grill or the S5 residue (manifest
+§10 rule 8).
 
 ## Deterministic substrate
 
