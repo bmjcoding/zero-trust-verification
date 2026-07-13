@@ -7,6 +7,43 @@ is the release marker. Since v2.0.0-rc.1 the suite ships as ONE plugin
 v1.x changelogs are preserved under `plugins/zero-trust/docs/<domain>/` (and
 `plugins/zero-trust/skills/autopilot/CHANGELOG.md`).
 
+## [2.1.0-rc.1] - 2026-07-12 (release candidate; tag at release merge)
+
+### Changed — /spec grill-first inversion (ADR 0026)
+
+Minor bump: breaking only in *interaction shape* — no artifact, gate, schema,
+script, or door changes. Field evidence: the field-session-v1 operator session
+(~50 min of agent runtime before the first human question; 33 pre-adjudicated
+findings; dissent-as-dialogue questions) rejected the pipeline-first flow.
+
+- **S2 is now the GRILL** (was: agent domain pass): the human interview starts
+  within a couple of minutes of invocation; the completeness rules are the
+  question AGENDA; domain-term + draft-ADR capture happens inline; ends when
+  the human confirms shared understanding. `[doc-only]` (prompt-level; the
+  deterministic seam is unchanged — spec-gen run_cases 89/89 green).
+- **S3 SYNTHESIZES from the conversation** (was: skeleton from raw intent);
+  the draft is presented to the human for review.
+- **S4 runs in the BACKGROUND on the draft** while the human reads it — same
+  two attackers, same output schemas (run_cases §F pins verbatim);
+  resolutions written to `interrogation.log`, never read aloud; S2-answered
+  decisions are settled input, never re-litigated.
+- **S5 is the residue grill**: only decisions the S2 conversation did not
+  answer; re-asking an answered decision is a contract violation.
+- **New shared reference** `skills/spec/references/grill-contract.md` — the
+  question-style contract (one decision per question; ≤3 sentences of setup;
+  recommendation in one line; dissent on request; facts looked up, never
+  asked; no background work while a question is pending; bookkeeping batched
+  at checkpoints). HC4 — same words — now governs S2 and S5 alike.
+- The Config-Profile fall-through question moved from S5-first to early-S2
+  (S5 asks it only if S2 never did).
+- **Frozen (verified unchanged):** all seven §4 hard contracts; the §10
+  completeness checker + every `scripts/` tool; the ADR 0002
+  escalation-criterion block (byte-identical); §5 criticality-scoped rigor;
+  the `--from-findings`/`--resume`/`--amend` doors (resume = re-enter S2 with
+  the agenda = remaining unmet rules via `resume_projection.py`); HC5
+  per-boundary commits. `docs/specs/spec-gen-tier-v1.md` amended with marked
+  ⟨ADR-0026⟩ sections.
+
 ## [2.0.0-rc.1] - 2026-07-12 (release candidate; tag at release merge)
 
 ### Changed — six plugins consolidated into ONE `zero-trust` plugin (ADR 0025, Wave 1)
