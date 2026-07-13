@@ -3,6 +3,11 @@
 > Status: DRAFT r2 (adversarial round 1 applied: 24 findings from two independent
 > attackers — corpus-consistency and executor-simulation lenses; all P0/P1 closed,
 > P2 closed or recorded) · 2026-07-04
+> **Amended 2026-07-12 by ADR 0026 (grill-first inversion):** sections marked
+> ⟨ADR-0026⟩ below redefine S-step CONTENT — the human interview (S2 grill) is the
+> front door; synthesis (S3) and the adversarial round (S4, background) follow it;
+> S5 shrinks to the residue. S1–S7 numbering, all §4 hard contracts, §5 rigor, the
+> completeness rules, the scripts, and the machine doors are unchanged.
 > Governing decisions: ADR 0002 (escalation criterion — vendored here as in every tier),
 > ADR 0005 (GWT behaviors), ADR 0006 (profiles), ADR 0008 (its output gates autonomous
 > drains), ADR 0009 (Spec lifecycle: Pickup is the Claim event).
@@ -32,47 +37,66 @@ The floor being raised is the *question floor*, not the prose ceiling.
 | Raw intent | a paragraph, meeting notes, a Jira description | The normal case. |
 | Draft Spec | an existing ADR/PRD/design doc | Interrogated, not trusted; gaps found the same way. |
 | Findings register | a GAPS_SPEC-style audit register | The remediation loop's entry point (future scope; input class first-class from day one). |
-| Incomplete manifest | `completeness: incomplete` from a prior session | Resume: re-validate, continue interrogation (§3 S1). |
+| Incomplete manifest | `completeness: incomplete` from a prior session | Resume: re-validate, continue interrogation (§3 S1). ⟨ADR-0026⟩ Resume = re-enter S2 grilling with the agenda = the validator's remaining unmet rules (resume projection). |
 | Complete manifest | an amendment request against a merged Spec | Amendment session: produces `manifest_revision` N+1 (the manifest spec §6 requires this session type to exist; the manifest has no other writer). |
 
 Invocation: `/spec [--profile <name>] <intent...>` · `/spec @draft.md` ·
 `/spec --resume @<spec>.manifest.yaml` · `/spec --amend @<spec>.manifest.yaml <intent...>`.
 
 **Profile resolution order (fresh sessions):** `--profile` flag → committed repo config
-(`spec-gen.config.yaml` at repo root, `profile:` key) → `default`, in which case S5 MUST
-surface "no Config Profile is configured — is `default` correct for this repo?" as its
-first escalation (an org-standard is an external fact; agents don't assume it, ADR 0002).
-Resume/amend sessions take the profile from the manifest.
+(`spec-gen.config.yaml` at repo root, `profile:` key) → `default`, in which case the
+fall-through MUST be surfaced as a question — an org-standard is an external fact;
+agents don't assume it (ADR 0002). ⟨ADR-0026⟩ It is asked as an EARLY S2 grill
+question; S5 asks it first only if the S2 conversation somehow never did (pre-0026 it
+was S5's mandated first escalation). Resume/amend sessions take the profile from the
+manifest.
 
 One session produces at most one Spec + one manifest (multi-doc unions are autopilot's
 concern, not this tier's).
 
 ## 3. Session lifecycle (S1–S7)
 
-**S1 — Hydrate.** Read CONTEXT.md, the ADR index (titles + one-liners), the resolved
-Config Profile, the committed manifest for this Spec path if one exists on main
-(ID-reservation input, HC7), and the claim surface of open spec-session branches touching
-the same manifest path (ADR 0009 — overlapping sessions are blessed, so ID allocation must
-see them). On `--resume`/`--amend`: run `validate_manifest.sh` FIRST and trust its exit-3
-output over the stored `incomplete_fields` (the file may be stale after a crash).
+**S1 — Hydrate.** ⟨ADR-0026: content unchanged, time-boxed framing — quick, and NO
+subagent dispatch; the human is waiting for S2.⟩ Read CONTEXT.md, the ADR index (titles
++ one-liners), the resolved Config Profile, the committed manifest for this Spec path if
+one exists on main (ID-reservation input, HC7), and the claim surface of open
+spec-session branches touching the same manifest path (ADR 0009 — overlapping sessions
+are blessed, so ID allocation must see them). On `--resume`/`--amend`: run
+`validate_manifest.sh` FIRST and trust its exit-3 output over the stored
+`incomplete_fields` (the file may be stale after a crash).
 
-**S2 — Domain pass.** Extract candidate terms from the intent; challenge each against the
-glossary (conflict → surface immediately; new term → propose a definition). Output
-persists as CONTEXT.md edits committed to the session branch — file state, not manifest
-fields and not context memory.
+**S2 — Grill.** ⟨ADR-0026: replaces the agent domain pass; the pre-0026 S2 text is in
+git history.⟩ The human interview is the front door and starts within a couple of
+minutes of invocation, under the question-style contract (one decision per question,
+≤3 sentences of setup, recommendation in one line, dissent on request, facts looked up
+never asked, no background work while a question is pending, bookkeeping batched at
+checkpoints — the skill's `references/grill-contract.md`). The completeness rules are
+the AGENDA: the question tree is walked toward completeness, not run as a machine
+first. Domain-term capture happens inline (conflict → surface immediately; new term →
+propose a definition; ADR-worthy answers → draft ADRs), persisting as CONTEXT.md edits
+committed to the session branch at checkpoints. Answers are recorded as
+`resolved_by: human` `interrogation.log` entries. S2 ends at the confirmation gate: the
+human explicitly confirms shared understanding.
 
-**S3 — Skeleton proposal.** Write the draft Spec skeleton to disk (`<spec>.md` on the
-session branch — it must exist before any manifest can reference it) and draft the journey
-map (names, criticality + reasons, steps with `vital_class`) and the Acceptance Behavior
-list (GWT, IDs per the manifest spec §6 grammar) — *proposed*, not confirmed. Propose
-vitals per step from the profile's taxonomy. Nothing here asks the human anything; it is
-the propose half of propose-confirm.
+**S3 — Synthesize.** ⟨ADR-0026: same proposer schema/output rules, re-aimed at
+conversation-as-input; the pre-0026 skeleton-from-raw-intent text is in git history.⟩
+Write the draft Spec to disk (`<spec>.md` on the session branch — it must exist before
+any manifest can reference it) and the manifest skeleton FROM the S2 conversation: the
+journey map (names, criticality + reasons, steps with `vital_class`) and the Acceptance
+Behavior list (GWT, IDs per the manifest spec §6 grammar) — *proposed*, not confirmed;
+S2-answered decisions carried faithfully, gaps filled with concrete proposals. Propose
+vitals per step from the profile's taxonomy. Nothing here asks the human anything; it
+is the propose half of propose-confirm. The draft is presented to the human for review;
+S4 runs while they read.
 
-**S4 — Adversarial round.** Up to two independent agents (depth per §5) attack the
-skeleton before any human sees it (ADR 0002): the **decomposition-refuter** (missing
-journeys, wrong criticality, untestable behaviors, GWT naming no observable trigger) and
-the **consumer-simulator** (would the planner find unmapped work? do the §12 join keys
-exist? does every money/external-write step have an idempotency answer *proposed*?).
+**S4 — Adversarial round.** ⟨ADR-0026: same two attackers, re-targeted at the S3 draft,
+run in the BACKGROUND while the human reviews the draft; resolutions are WRITTEN to the
+log, never read aloud; decisions the S2 conversation answered are settled input, never
+re-litigated.⟩ Up to two independent agents (depth per §5) attack the draft: the
+**decomposition-refuter** (missing journeys, wrong criticality, untestable behaviors,
+GWT naming no observable trigger) and the **consumer-simulator** (would the planner
+find unmapped work? do the §12 join keys exist? does every money/external-write step
+have an idempotency answer *proposed*?).
 Tradeoffs are resolved agent-vs-agent ONLY within ADR 0002's agent-decidable class; each
 resolution is an `interrogation.log` entry with `resolved_by: agent` and non-empty
 `dissent`. The S4 output schema REQUIRES per resolution an
@@ -83,12 +107,20 @@ involuntarily promoted to S5. Resolutions meeting the three ADR criteria are dra
 (`docs/adr/DRAFT-<session-slug>-<title>.md`); the final number is assigned at merge/rebase
 time — ADR numbers are not manifest IDs, renumber-at-rebase is legal and required.
 
-**S5 — Escalation.** What survives S4 is the MUST-escalate residue: values/risk appetite,
-unobservable external facts, irreversible commitments — plus everything `flagged:` by the
-checklist. Present each **one at a time, with the adversarial round's recommendation and
-dissent attached** (grilling discipline). Answers land as `resolved_by: human` entries
+**S5 — Residue grill.** ⟨ADR-0026: replaces the escalation ceremony; the residue is
+ONLY what the S2 conversation did not already answer, presented under the same
+`grill-contract.md` rules; re-asking an S2-answered decision is a contract violation —
+its recorded entry is applied instead (rule-8 `confirmed_by`).⟩ What survives S4 is the
+MUST-escalate residue: values/risk appetite, unobservable external facts, irreversible
+commitments — plus everything `flagged:` by the checklist — minus everything S2
+answered. Present each **one at a time, with the adversarial round's recommendation in
+one line** (surviving dissent recorded in the log, presented on request). Answers land
+as `resolved_by: human` entries
 (`exchange_ref` pointing at the session transcript section in the PR description).
-**Effectively-CORE `confirmation: confirmed` comes ONLY from S5 human answers** — there
+**Effectively-CORE `confirmation: confirmed` comes ONLY from S5 human answers** ⟨ADR-0026:
+same rule, wider locus — read "from recorded human answers": an answer recorded during the
+S2 grill confirms identically via its `DL-*` entry (rule 8), and S5 applies it without
+re-asking; the requirement is human-answered, not S5-located⟩ — there
 is no agent path to confirmed-CORE (manifest §10 class (b) and rule 8); the S4 agent path
 confirms sub-CORE entries only. Deferral scope: a human may defer *confirmation* on
 SUPPORTING/DEV entries (`proposed` is legal per manifest rule 4), but rules 1–2
@@ -133,11 +165,17 @@ session.
    provenance check (§8 induced) flags manifest diffs from non-spec-session branches.
 2. **Propose-confirm.** Nothing enters the manifest as `confirmed` without a recorded
    resolution: S5 human answers for effectively-CORE (exclusively), ADR-0002-legal agent
-   resolutions with dissent + `escalation_check: clear` for sub-CORE.
+   resolutions with dissent + `escalation_check: clear` for sub-CORE. ⟨ADR-0026: same
+   contract, wider locus — "human answers" includes those recorded during the S2 grill;
+   "exclusively" excludes agents, not S2. There is still no agent path to confirmed-CORE
+   (rule 8 unchanged).⟩
 3. **One writer.** This tier is the manifest's only writer (manifest spec §7) and never
    writes product code, runbooks, or trackers.
 4. **Escalations are one-at-a-time with a recommendation** — never a questionnaire dump,
-   never a question without the recommended answer and surviving dissent.
+   never a question without the recommended answer and surviving dissent. ⟨ADR-0026:
+   same words, wider scope — this contract now governs the S2 grill and the S5 residue
+   alike, via the skill's shared `references/grill-contract.md`; dissent is recorded in
+   the log and presented on request rather than read into every question.⟩
 5. **Session death is safe.** Every S-step boundary **commits** the session branch
    (manifest + draft Spec + glossary edits — all state is branch state, none is
    context-only). A killed session resumes losslessly via `--resume`. ⟨MS-AMEND-1⟩ makes
@@ -159,6 +197,10 @@ Rigor follows effective criticality, not document size:
 | CORE | full two-attacker round | every escalation answered by the human | `confirmed` only (rule 8) |
 | SUPPORTING | consumer-simulator only | rules 1–2 escalations answered; confirmation deferrable | `proposed` legal |
 | DEV | consumer-simulator only | rules 1–2 escalations answered; else none | `proposed` legal |
+
+⟨ADR-0026⟩ The "S5 requirement" column reads as the *human-answer* requirement: an
+answer recorded during the S2 grill satisfies it identically — the requirement is
+human-answered, not S5-located.
 
 The consumer-simulator is the attacker that survives reduction because its checks feed
 mechanical downstream gates (planner mapping, §12 joins). Note the rigor floor: ANY
