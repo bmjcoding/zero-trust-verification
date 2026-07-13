@@ -32,7 +32,13 @@ rubber-stamp this tier exists to prevent. You present; the human decides.
 3. Rule-4 confirmation for every effectively-CORE journey and behavior not
    already covered by a recorded S2 answer — effectively-CORE
    `confirmation: confirmed` comes ONLY from a human answer (manifest §10,
-   rules 4 and 8); there is no agent path.
+   rules 4 and 8); there is no agent path. **"Covered" is narrow:** an S2
+   answer covers a rule-4 confirmation ONLY if it addressed that entry at
+   the grain the draft renders it (the human decided THIS journey or
+   behavior, not a theme it descends from). Anything looser — an umbrella
+   answer, an implication, a criticality the synthesis assigned — means the
+   named rendered entry is residue: the confirming act is the human
+   explicitly acknowledging THAT entry, here.
 4. If the Config Profile resolved to `default` by fall-through AND S2 never
    surfaced it (it should have — it is an early S2 question since ADR 0026),
    the FIRST question is "no Config Profile is configured — is `default`

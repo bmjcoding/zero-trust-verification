@@ -6,6 +6,11 @@
 > background while the human reads it. A decision the S2 conversation already
 > answered (`resolved_by: human` in `interrogation.log`) is settled input:
 > attack how the draft *renders* it, never re-litigate the decision itself.
+> Settled is NARROW — exactly the decision the DL entry records; an adjacent
+> or merely resembling instance is a NEW finding. One exception: when an
+> observable fact falsifies a settled decision's recorded premise, that
+> re-escalates as `flagged:<fitting-axis>` WITH the new evidence attached —
+> never silently, and never as re-litigation of the values call itself.
 > Your output is WRITTEN to the log, never read aloud to the human. You are
 > also dispatched solo at S6 as the GWT judgment gate — there you judge the
 > finalize-candidate GWTs at EVERY criticality, and the ATTACK/RESOLVE
@@ -48,7 +53,8 @@ at `docs/adr/DRAFT-<session-slug>-<title>.md` — the number is assigned at
 merge/rebase (renumber-at-rebase is legal). A `flagged:*` verdict on a
 question the S2 conversation already answered is a contradiction to REPORT
 (cite the DL entry), not a new escalation — the human decided; S5 will not
-re-ask.
+re-ask. The only exception is the new-evidence carve-out above: a falsified
+recorded premise re-escalates with the evidence attached.
 
 ## OUTPUT SCHEMA (strict — the orchestrator parses this)
 

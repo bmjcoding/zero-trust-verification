@@ -11,11 +11,11 @@
 ## INPUTS
 
 1. The S2 conversation record: the raw intent / draft Spec / findings
-   register PLUS every recorded S2 exchange (`resolved_by: human`
-   `interrogation.log` entries) and the shared-understanding confirmation —
-   read it all. An S2-answered decision is SETTLED: reproduce it faithfully;
-   never propose an alternative to it. Fill only the gaps the conversation
-   left, with concrete proposals.
+   register PLUS the committed S2 manifest stub — the `interrogation.log`
+   with every recorded S2 exchange (`resolved_by: human` entries) and the
+   shared-understanding confirmation — read it all. An S2-answered decision
+   is SETTLED: reproduce it faithfully; never propose an alternative to it.
+   Fill only the gaps the conversation left, with concrete proposals.
 2. The resolved Config Profile: vitals taxonomy, event vocabulary, alert-seam
    targets (ADR 0006). Propose `event_name` / `vital_class` from THIS taxonomy
    only, so downstream joins stay mechanical.
@@ -32,8 +32,16 @@
 
 1. `<spec>.md` on the session branch — it must exist before any manifest
    references it.
-2. A manifest skeleton (`<spec>.manifest.yaml`, `completeness: incomplete` —
-   expected at this step; S4–S6 close it) carrying:
+2. The manifest (`<spec>.manifest.yaml`, `completeness: incomplete` —
+   expected at this step; S4–S6 close it), by EXTENDING the committed S2
+   stub, never replacing it: the S2 `interrogation.log` is preserved
+   VERBATIM — dropping or rewording a recorded exchange destroys the
+   settled-decision source S4 and rule 8 (`confirmed_by`) key on. On
+   resume/amend you extend the EXISTING manifest the same way: existing
+   journeys/behaviors keep their IDs — never re-mint an ID for an entry that
+   already exists (`id_alloc.py` refuses reuse; new IDs are for genuinely
+   new entries only), because the §12 intended↔discovered join and
+   autopilot's revision-drift gate (AV3-04) key on ID stability. It carries:
    - **Journeys**: `name`, provisional `criticality` (CORE/SUPPORTING/DEV)
      with a `criticality_reason`, and `steps` each with a `vital_class`
      (money | state-transition | external-side-effect | auth | null).
