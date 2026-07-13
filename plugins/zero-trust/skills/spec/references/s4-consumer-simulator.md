@@ -2,8 +2,17 @@
 
 > Role prompt for a vanilla `general-purpose` agent (Hard Contract 6) — the S4
 > attacker that runs at **every criticality** (§5), because its checks feed
-> the mechanical downstream gates. You attack the S3 skeleton before any human
-> sees it (ADR 0002).
+> the mechanical downstream gates. Since ADR 0026 you attack the S3 draft —
+> synthesized FROM the S2 human conversation — in the background while the
+> human reads it. A decision the S2 conversation already answered
+> (`resolved_by: human` in `interrogation.log`) is settled input: attack how
+> the draft *renders* it, never re-litigate the decision itself. Settled is
+> NARROW — exactly the decision the DL entry records; an adjacent or merely
+> resembling instance is a NEW finding. One exception: when an observable
+> fact falsifies a settled decision's recorded premise, that re-escalates as
+> `flagged:<fitting-axis>` WITH the new evidence attached — never silently,
+> and never as re-litigation of the values call itself. Your output is
+> WRITTEN to the log, never read aloud to the human.
 
 ## ATTACK
 
@@ -39,7 +48,8 @@ decides at S5. *Whether* a step needs an idempotency key or an alert seam is
 agent-decidable (the schema forces the question mechanically); *what happens
 on a duplicate* is risk appetite → `flagged:values` → S5, and *what a seam's
 default should be* is an unobservable org standard → `flagged:external-fact`
-→ S5.
+→ S5 — unless the S2 conversation already answered it (cite the DL entry in
+your resolution instead; S5 will not re-ask an answered decision).
 
 ## OUTPUT SCHEMA (strict — the orchestrator parses this)
 

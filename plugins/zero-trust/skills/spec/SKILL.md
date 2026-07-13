@@ -1,25 +1,28 @@
 ---
 name: spec
 description: >
-  Interrogate raw intent into a product-approvable Spec plus a complete
-  Verification Manifest — refusing to finalize while any completeness rule
-  fails. Fresh, resume, amend, and from-findings modes.
+  Grill the human about their intent — one question at a time, recommendation
+  attached — then synthesize a product-approvable Spec plus a complete
+  Verification Manifest from the conversation, refusing to finalize while any
+  completeness rule fails. Fresh, resume, amend, and from-findings modes.
 disable-model-invocation: true
 license: MIT
 argument-hint: "<intent...> | @draft.md — pipeline re-entry: --from-findings @<register> | --resume @<manifest> | --amend @<manifest> <intent...>"
 metadata:
-  version: "0.1.0"
+  version: "0.2.0"
 ---
 
 # Spec Generation (`/spec`)
 
-You are an **interrogator, not a generator**: walk the manifest schema as a
-question tree and **refuse to finalize** while any completeness rule fails —
-a wire-transfer flow cannot reach `completeness: complete` without an
-idempotency answer (manifest rule 2). Governing ADRs: 0002 (escalation), 0005
-(GWT, no Gherkin runtime), 0006 (Config Profiles), 0008 (complete manifests
-gate autonomous drains), 0009 (Spec lifecycle). `CONTEXT.md` is normative for
-every capitalized term.
+You are an **interrogator, not a generator** — and since ADR 0026 the
+interrogation is a *conversation, not a pipeline*: the human interview is the
+front door (S2), synthesis and adversarial attack come after it, and you
+**refuse to finalize** while any completeness rule fails — a wire-transfer
+flow cannot reach `completeness: complete` without an idempotency answer
+(manifest rule 2). Governing ADRs: 0002 (escalation), 0005 (GWT, no Gherkin
+runtime), 0006 (Config Profiles), 0008 (complete manifests gate autonomous
+drains), 0009 (Spec lifecycle), 0026 (grill-first inversion). `CONTEXT.md` is
+normative for every capitalized term.
 
 ### Escalation boundary (ADR 0002)
 
@@ -34,60 +37,110 @@ the manifest `interrogation.log`, never a tracker (Hard Contract 3).
 
 Five entry doors into ONE interrogation engine — modes, not features. The
 first two are the human surface; the last three are wired pipeline edges
-(remove one and the loop that enters through it breaks).
+(remove one and the loop that enters through it breaks). Every door leads to
+the S2 grill; only the conversation seed differs.
 
 | Invocation | Mode | Input class | Driven by |
 |---|---|---|---|
 | `/spec <intent...>` | Fresh | Raw intent (paragraph, meeting notes, Jira) | You — the daily default (`--profile <name>` accepted; config resolution below usually covers it) |
-| `/spec @draft.md` | Fresh | Draft Spec — interrogated, not trusted | You, when a doc already exists |
-| `/spec --from-findings @<register>` | Fresh | Findings register (remediation-loop entry, ADR 0017) — reuses the Fresh path; interrogated like a Draft Spec, not trusted | `/remediate` — machine door, rarely typed by hand |
-| `/spec --resume @<spec>.manifest.yaml` | Resume | `completeness: incomplete` from a prior (possibly crashed) session | Crash recovery (session-death-safe, HC5) and `/triage`'s incident-Spec re-entry |
-| `/spec --amend @<spec>.manifest.yaml <intent...>` | Amend | Amendment against a merged Spec → `manifest_revision` N+1 | You, revising a shipped Spec — ID-stable so autopilot's revision-drift gate (AV3-04) keys on it |
+| `/spec @draft.md` | Fresh | Draft Spec — interrogated, not trusted; it seeds the S2 agenda | You, when a doc already exists |
+| `/spec --from-findings @<register>` | Fresh | Findings register (remediation-loop entry, ADR 0017) — reuses the Fresh path; the register is the S2 conversation seed, interrogated like a Draft Spec, not trusted | `/remediate` — machine door, rarely typed by hand |
+| `/spec --resume @<spec>.manifest.yaml` | Resume | `completeness: incomplete` from a prior (possibly crashed) session — re-enters S2 grilling with the agenda = the validator's remaining unmet rules via `resume_projection.py` (its partition governs: escalate-class gaps are grilled, mechanical-class gaps are filled silently) | Crash recovery (session-death-safe, HC5) and `/triage`'s incident-Spec re-entry |
+| `/spec --amend @<spec>.manifest.yaml <intent...>` | Amend | Amendment against a merged Spec → `manifest_revision` N+1; S2 re-opens scoped to the amendment intent | You, revising a shipped Spec — ID-stable so autopilot's revision-drift gate (AV3-04) keys on it |
 
 **Profile (fresh sessions):** run `scripts/profile_resolve.py` (order:
 `--profile` flag → repo `spec-gen.config.yaml` → `default`). A fall-through to
-`default` is an unconfirmed external fact — S5 raises it as its first
-question. Resume/amend read the profile from the manifest.
+`default` is an unconfirmed external fact — raise it as an EARLY S2 question
+(it was S5's first question pre-0026; S5 asks it only if S2 never did).
+Resume/amend read the profile from the manifest.
 
 One session produces at most one Spec + one manifest.
 
 ## Session lifecycle (S1–S7)
 
-Every step ends by **committing the session branch** (Hard Contract 5). Load
-each step's reference prompt only when that step runs. The `scripts/` named
-below are the tested deterministic seam (`scripts/self_test.sh`) — call them,
-never re-derive their logic.
+Every step ends by **committing the session branch** (Hard Contract 5) — at
+the step boundary, never mid-question. Load each step's reference prompt only
+when that step runs. The `scripts/` named below are the tested deterministic
+seam — call them, never re-derive their logic. The interview discipline for
+S2 and S5 is ONE shared reference: `references/grill-contract.md`.
 
-### S1 — Hydrate
+### S1 — Hydrate (quick — minutes, not an expedition)
 
 Read `CONTEXT.md`, the ADR index, the resolved profile, the committed manifest
 for this Spec path on main, and the claim surface of open spec-session
 branches touching the same manifest path (overlapping sessions are blessed —
 ADR 0009 — so ID allocation must see them). Feed the union of reserved IDs to
-`scripts/id_alloc.py`. On `--resume`/`--amend`: run
-`scripts/validate_manifest.sh` FIRST and trust its exit-3 output over the
-stored `incomplete_fields` (the file may be stale after a crash); project it
-into work slots with `scripts/resume_projection.py`. Done when: reserved-ID
-set, resolved profile, and (resume/amend) projected slots are in hand.
+`scripts/id_alloc.py`. **No subagent dispatch here** — the human is waiting.
+On `--resume`/`--amend`: run `scripts/validate_manifest.sh` FIRST and trust
+its exit-3 output over the stored `incomplete_fields` (the file may be stale
+after a crash); project it into work slots with
+`scripts/resume_projection.py`. Done when: reserved-ID set, resolved profile,
+and (resume/amend) projected slots are in hand. Escape valve: if hydration
+runs long, start grilling with what you have and finish the remaining reads
+at the first S2 checkpoint — the time-box loses to the human's calendar,
+never the other way around.
 
-### S2 — Domain pass
+### S2 — Grill
 
-Challenge every candidate term from the intent against the glossary: a
-conflict surfaces immediately; a new term gets a proposed definition. Done
-when: the `CONTEXT.md` edits are committed to the session branch.
+The front door. Grilling starts **within a couple of minutes of invocation**.
+Load `references/grill-contract.md` and hold every question to it. Open with
+the proactive term sweep the old domain pass owned: challenge EVERY candidate
+term from the intent text against the glossary up front — a conflict is an
+early question, not a discovery synthesis makes later. Then interview
+the human relentlessly about the intent: walk the decision tree branch by
+branch, resolving dependencies between decisions one by one, with the
+completeness rules (manifest §10) as your AGENDA — the question tree is walked
+*toward* completeness (vital steps → rule 1 observability, money/external
+writes → rule 2 idempotency and duplicate policy, CORE entries → rule 4
+confirmation), not run as a machine first. FACTS are looked up (codebase,
+`CONTEXT.md`, org-memory), never asked; DECISIONS are the human's — ask and
+WAIT.
 
-### S3 — Skeleton proposal
+Capture as you go, inline (the grill-with-docs move): a term conflicting with
+the glossary surfaces immediately as a
+question; a new term gets a proposed definition; an answer meeting the ADR bar
+becomes a draft ADR (`docs/adr/DRAFT-<session-slug>-<title>.md`). Answers are
+recorded as `resolved_by: human` `interrogation.log` entries — batched at
+checkpoints with the `CONTEXT.md` edits and the branch commit, never between
+question and answer.
 
-Dispatch a `general-purpose` agent with `references/s3-proposer.md`. It writes
-the draft `<spec>.md` and a manifest skeleton — journey map, Given/When/Then
-behaviors, per-step vitals from the profile taxonomy — everything
-`confirmation: proposed`, every ID allocator-minted. The *propose* half of
-propose-confirm: the human is asked nothing here. Done when: both files exist
-on the branch and the skeleton is schema-valid.
+**The answers need a committed carrier (HC5).** The FIRST S2 checkpoint
+creates `<spec>.manifest.yaml` as a schema-valid stub — `completeness:
+incomplete`, no journeys or behaviors yet — carrying the `interrogation.log`
+(mid-session manifests are legal: `spec_hash` is required only at
+`completeness: complete`). DL numbering is allocated in that file from the
+S1-reserved ID space. Every later checkpoint appends to it, so a session
+killed at minute 35 of the grill resumes via `--resume` with every answer
+intact, and S4's settled-decision source is never empty.
 
-### S4 — Adversarial round
+Done when: the human **confirms shared understanding** (the confirmation
+gate) — ask for it explicitly; do not proceed to synthesis without it. On
+resume/amend the grill agenda is the S1-projected slots, partitioned by
+`resume_projection.py`: escalate-class gaps are grilled; mechanical-class
+gaps (facts fillable from the profile, codebase, or glossary) are FILLED
+silently, never asked.
 
-Attack the skeleton before any human sees it (ADR 0002), at the depth §5
+### S3 — Synthesize
+
+Dispatch a `general-purpose` agent with `references/s3-proposer.md`, whose
+primary input is now the S2 conversation record. It EXTENDS the S2 manifest
+stub — preserving the S2 `interrogation.log` verbatim — and writes the draft
+`<spec>.md` plus the skeleton — journey map, Given/When/Then behaviors,
+per-step vitals from the profile taxonomy — FROM the conversation: everything
+`confirmation: proposed`, every NEW ID allocator-minted (on resume/amend it
+extends the existing manifest and never re-mints IDs for existing entries —
+§12 joins and AV3-04 revision keying depend on it), S2-answered decisions
+carried as recorded, gaps the conversation left filled with concrete
+proposals. The *propose* half of propose-confirm. **Present the draft to the
+human for review** as soon as both files exist on the branch and the skeleton
+is schema-valid — S4 runs while they read. The review is NON-GATING: S4 runs
+regardless, and silence = proceed. A human objection during review routes as
+a correction — a one-question grill exchange for THAT decision, recorded like
+any S2 answer — and S3 patches the draft at the next checkpoint.
+
+### S4 — Adversarial round (background, on the draft)
+
+Attack the S3 draft **while the human reads it** (ADR 0002), at the depth §5
 sets, with up to two `general-purpose` attackers:
 
 - `references/s4-decomposition-refuter.md` — structure: missing journeys,
@@ -96,18 +149,25 @@ sets, with up to two `general-purpose` attackers:
   work, §12 join keys, idempotency proposals. *Every criticality* (its checks
   feed mechanical downstream gates).
 
-Done when: every finding carries an `interrogation.log` resolution
-(`resolved_by: agent`, with `dissent` + `escalation_check` per the prompts'
-output schema) or a `flagged:*` verdict promoting it to S5.
+A decision the S2 conversation already answered (`resolved_by: human`) is
+settled input, not attack surface. Done when: every finding carries an
+`interrogation.log` resolution (`resolved_by: agent`, with `dissent` +
+`escalation_check` per the prompts' output schema) or a `flagged:*` verdict
+promoting it to S5 — all of it **WRITTEN to the log, never read aloud**.
 
-### S5 — Escalation
+### S5 — Residue grill
 
 Load `references/s5-presenter.md` (inline or dispatched) over what survives
-S4. **Facts vs decisions:** a fact findable in the repo, manifest, or
-glossary is looked up, never asked; a decision — values/risk appetite, an
-unobservable external fact, an irreversible commitment — goes to the human
-one at a time with the S4 recommendation and its surviving dissent, and you
-**WAIT for the answer** (a question you answer yourself is
+S4 — under the SAME `references/grill-contract.md` rules as S2. The residue is
+ONLY decisions the attackers surfaced that the S2 conversation did not
+already answer; re-asking an S2-answered decision is a contract violation
+(apply its recorded answer to the manifest instead — rule-4/rule-8
+confirmations set `confirmed_by` to the existing `DL-<nnn>` entry).
+**Facts vs decisions:** a fact findable in the repo, manifest, or glossary is
+looked up, never asked; a decision — values/risk appetite, an unobservable
+external fact, an irreversible commitment — goes to the human one at a time
+with the S4 recommendation in one line (surviving dissent on request), and
+you **WAIT for the answer** (a question you answer yourself is
 self-interviewing, the failure this rule exists to stop). Answers land as
 `resolved_by: human` entries with `exchange_ref`; the presenter defines the
 residue, the restructuring re-entry into S4, and the deferral bounds. Done
@@ -159,8 +219,8 @@ exits 0 and the PR is open.
    validator exit 0 plus the S6 GWT gate — no override flag exists, because a
    complete manifest is what licenses autonomous drains (ADR 0008).
 2. **Propose-confirm.** Nothing enters the manifest as `confirmed` without a
-   recorded resolution, so every confirmation is auditable: S5 human answers
-   for effectively-CORE — exclusively;
+   recorded resolution, so every confirmation is auditable: human answers
+   (S2 grill or S5 residue) for effectively-CORE — exclusively;
    **there is no agent path to confirmed-CORE** (rule 8 makes it
    file-checkable) — and agent resolutions with `dissent` +
    `escalation_check: clear` for sub-CORE.
@@ -170,7 +230,9 @@ exits 0 and the PR is open.
    downstream.
 4. **Escalations are one-at-a-time with a recommendation** — a questionnaire
    dump bewilders, and a bare question gives the human a blank to face
-   instead of a proposal (recommendation + surviving dissent) to scrutinize.
+   instead of a proposal to scrutinize. Same words, new scope since ADR
+   0026: this governs every human-facing question — the S2 grill and the S5
+   residue alike; the shared rules live in `references/grill-contract.md`.
 5. **Session death is safe.** Every S-step boundary commits the session
    branch (manifest + draft Spec + glossary edits — all state is branch
    state), so a killed session resumes losslessly via `--resume`. A
@@ -188,13 +250,13 @@ exits 0 and the PR is open.
 
 Rigor follows **effective criticality**, not document size:
 
-| Criticality | S4 depth | S5 requirement | Ship state |
+| Criticality | S4 depth | Human-answer requirement (S2/S5) | Ship state |
 |---|---|---|---|
 | CORE | full two-attacker round | every escalation answered by the human | `confirmed` only (rule 8) |
 | SUPPORTING | consumer-simulator only | rules 1–2 answered; confirmation deferrable | `proposed` legal |
 | DEV | consumer-simulator only | rules 1–2 answered; else none | `proposed` legal |
 
 The floor: ANY journey with vital steps pays rules 1–2 interrogation at any
-criticality — the fast path is real only for vital-free specs. S3 criticality
-is provisional; when S5 raises an entry, S4 re-runs at the new depth (rigor
-is re-scoped, never grandfathered).
+criticality — the fast path is real only for vital-free specs. Criticality is
+provisional until confirmed; when an answer raises an entry, S4 re-runs at
+the new depth (rigor is re-scoped, never grandfathered).
