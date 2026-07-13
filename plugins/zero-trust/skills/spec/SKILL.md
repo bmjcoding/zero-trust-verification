@@ -203,11 +203,11 @@ exits 0 and the PR is open.
    and writes only markdown/YAML on the session branch — never product code,
    runbooks, or trackers — so a defective spec session can break nothing
    downstream.
-4. **Questions are one-at-a-time with a recommendation** — a questionnaire
+4. **Escalations are one-at-a-time with a recommendation** — a questionnaire
    dump bewilders, and a bare question gives the human a blank to face
-   instead of a proposal to scrutinize. Since ADR 0026 this governs the S2
-   grill and the S5 residue alike: the shared rules live in
-   `references/grill-contract.md`.
+   instead of a proposal to scrutinize. Same words, new scope since ADR
+   0026: this governs every human-facing question — the S2 grill and the S5
+   residue alike; the shared rules live in `references/grill-contract.md`.
 5. **Session death is safe.** Every S-step boundary commits the session
    branch (manifest + draft Spec + glossary edits — all state is branch
    state), so a killed session resumes losslessly via `--resume`. A
