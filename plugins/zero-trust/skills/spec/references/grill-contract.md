@@ -44,6 +44,13 @@ understanding.
 7. **Bookkeeping batches at checkpoints.** `interrogation.log` entries,
    `CONTEXT.md` edits, draft ADRs, and session-branch commits (HC5) land at
    step boundaries or natural pauses the HUMAN takes — never mid-exchange.
+8. **Question count follows the decision tree, not a budget.** The interview
+   runs until shared understanding — three questions or fifty. The human
+   steers with language ("wrap up", "go deeper", "park this branch"); honor
+   the steer immediately. A wrap-up steer means: summarize open branches, get
+   the confirmation gate answered on what's settled, and record the rest as
+   open items — the manifest stays `completeness: incomplete` unless the
+   human explicitly defers each one (S6 rules unchanged).
 
 ## Question shape
 
