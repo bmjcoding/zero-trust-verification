@@ -13,7 +13,7 @@
 
 The residue is what the S2 conversation did NOT already answer. Re-asking an
 S2-answered decision is a contract violation: apply its recorded
-`resolved_by: human` entry to the manifest instead (a rule-4/rule-8
+`resolved_by: human` entry to the manifest instead (a manifest rule-4/rule-8
 confirmation sets `confirmed_by` to that existing `DL-<nnn>`). Facts vs
 decisions per the grill contract: a fact you can find by exploring the repo,
 manifest, or glossary is looked up, never asked; a **decision** — values /
@@ -52,7 +52,7 @@ log and presented only on request, no background work while a question is
 pending. Each question also names the manifest field it resolves. The answer
 lands as a `resolved_by: human` `interrogation.log` entry; an
 effectively-CORE confirmation sets `confirmed_by` to that `DL-<nnn>` entry
-(rule 8 makes the no-agent-path contract file-checkable); `exchange_ref`
+(manifest rule 8 makes the no-agent-path contract file-checkable); `exchange_ref`
 points at the recorded exchange in the PR description. Bookkeeping batches at
 checkpoints, never between answer and next question.
 
@@ -66,7 +66,7 @@ escalations_presented:
     answer: <the human's decision>
     resolved_by: human
     dl_id: DL-<nnn>                        # the interrogation.log entry created
-    confirmed_by_target: <journey/behavior id> | null   # set for rule-4/rule-8 confirmations
+    confirmed_by_target: <journey/behavior id> | null   # set for manifest rule-4/rule-8 confirmations
     exchange_ref: "#<anchor in PR body>"
 ```
 
@@ -80,6 +80,6 @@ re-enters S4 at the new depth for the affected entries ONLY — bound: 2
 re-entries per entry; the third becomes itself an S5 escalation ("this
 decision is oscillating — human owns it now"). The human may `defer`
 *confirmation* on SUPPORTING/DEV entries (`proposed` is legal — manifest rule
-4); rules 1–2 escalations still fire for any journey with non-null
+4); manifest rules 1–2 escalations still fire for any journey with non-null
 `vital_class` steps. The same escalation surfaced 3 times without an answer
 is treated as `defer`.

@@ -9,7 +9,7 @@ disable-model-invocation: true
 license: MIT
 argument-hint: "<intent...> | @draft.md — pipeline re-entry: --from-findings @<register> | --resume @<manifest> | --amend @<manifest> <intent...>"
 metadata:
-  version: "0.2.0"
+  version: "0.3.0"
 ---
 
 # Spec Generation (`/spec`)
@@ -114,7 +114,7 @@ killed at minute 35 of the grill resumes via `--resume` with every answer
 intact, and S4's settled-decision source is never empty.
 
 **Big intents chart a map.** When the intent spans more decision branches
-than one sitting can grill, the opening question proposes chunking —
+than one sitting can grill, an early question proposes chunking —
 recommendation attached, human decides. On yes, the first S2 checkpoint also
 creates `<spec>.map.md` beside the manifest stub: items typed `decision`
 (grilled, resolved only by a human answer), `research` (AFK — dispatched at
@@ -128,7 +128,8 @@ before emission; the durable record is `interrogation.log`.
 
 Done when: the human **confirms shared understanding** (the confirmation
 gate) — ask for it explicitly; do not proceed to synthesis without it. On
-resume/amend the grill agenda is the S1-projected slots, partitioned by
+resume/amend the grill agenda is the S1-projected slots (joined to the map's unmet
+items when one exists), partitioned by
 `resume_projection.py`: escalate-class gaps are grilled; mechanical-class
 gaps (facts fillable from the profile, codebase, or glossary) are FILLED
 silently, never asked.
@@ -174,7 +175,7 @@ Load `references/s5-presenter.md` (inline or dispatched) over what survives
 S4 — under the SAME `references/grill-contract.md` rules as S2. The residue is
 ONLY decisions the attackers surfaced that the S2 conversation did not
 already answer; re-asking an S2-answered decision is a contract violation
-(apply its recorded answer to the manifest instead — rule-4/rule-8
+(apply its recorded answer to the manifest instead — manifest rule-4/rule-8
 confirmations set `confirmed_by` to the existing `DL-<nnn>` entry).
 **Facts vs decisions:** a fact findable in the repo, manifest, or glossary is
 looked up, never asked; a decision — values/risk appetite, an unobservable
@@ -237,7 +238,7 @@ exits 0 and the PR is open.
 2. **Propose-confirm.** Nothing enters the manifest as `confirmed` without a
    recorded resolution, so every confirmation is auditable: human answers
    (S2 grill or S5 residue) for effectively-CORE — exclusively;
-   **there is no agent path to confirmed-CORE** (rule 8 makes it
+   **there is no agent path to confirmed-CORE** (manifest rule 8 makes it
    file-checkable) — and agent resolutions with `dissent` +
    `escalation_check: clear` for sub-CORE.
 3. **One writer.** This tier is the manifest's **only writer** (manifest §7)
@@ -268,11 +269,11 @@ Rigor follows **effective criticality**, not document size:
 
 | Criticality | S4 depth | Human-answer requirement (S2/S5) | Ship state |
 |---|---|---|---|
-| CORE | full two-attacker round | every escalation answered by the human | `confirmed` only (rule 8) |
-| SUPPORTING | consumer-simulator only | rules 1–2 answered; confirmation deferrable | `proposed` legal |
-| DEV | consumer-simulator only | rules 1–2 answered; else none | `proposed` legal |
+| CORE | full two-attacker round | every escalation answered by the human | `confirmed` only (manifest rule 8) |
+| SUPPORTING | consumer-simulator only | manifest rules 1–2 answered; confirmation deferrable | `proposed` legal |
+| DEV | consumer-simulator only | manifest rules 1–2 answered; else none | `proposed` legal |
 
-The floor: ANY journey with vital steps pays rules 1–2 interrogation at any
+The floor: ANY journey with vital steps pays manifest rules 1–2 interrogation at any
 criticality — the fast path is real only for vital-free specs. Criticality is
 provisional until confirmed; when an answer raises an entry, S4 re-runs at
 the new depth (rigor is re-scoped, never grandfathered).
