@@ -47,6 +47,11 @@ understanding.
 
 ## Question shape
 
+Ask each question as plain conversational text in your reply — this block is
+the entire question interface — and take the human's free-text reply as the
+entire answer interface: free text steers the interview; option lists
+constrain it.
+
 ```text
 Q<n>. <the single decision, ≤3 sentences of setup>
    Recommend: <one-line recommended answer>
