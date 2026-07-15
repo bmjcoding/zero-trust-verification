@@ -113,6 +113,19 @@ S1-reserved ID space. Every later checkpoint appends to it, so a session
 killed at minute 35 of the grill resumes via `--resume` with every answer
 intact, and S4's settled-decision source is never empty.
 
+**Big intents chart a map.** When the intent spans more decision branches
+than one sitting can grill, the opening question proposes chunking —
+recommendation attached, human decides. On yes, the first S2 checkpoint also
+creates `<spec>.map.md` beside the manifest stub: items typed `decision`
+(grilled, resolved only by a human answer), `research` (AFK — dispatched at
+checkpoints as `general-purpose` agents, findings committed at later
+checkpoints), or `prototype` (grill-contract rule 9), with blocking edges.
+The map is the session's progress surface AND the resume agenda: when the
+context window runs long, end the session at a checkpoint on purpose —
+`--resume` re-enters with agenda = the map's unmet items joined to the
+validator's unmet rules. The map is session-scoped scaffolding: S7 deletes it
+before emission; the durable record is `interrogation.log`.
+
 Done when: the human **confirms shared understanding** (the confirmation
 gate) — ask for it explicitly; do not proceed to synthesis without it. On
 resume/amend the grill agenda is the S1-projected slots, partitioned by
@@ -204,7 +217,9 @@ Run `scripts/emission_check.py <bundle>` to gate the emission shape
 (one-branch-one-PR, manifest colocation, per-boundary commits, `exchange_ref`
 resolvability, provisional-ADR filenames). Finalize `<spec>.md` +
 `<spec>.manifest.yaml` (`completeness: complete`) + draft ADRs + glossary
-edits — all already branch state — and open **one PR** whose body carries the
+edits — all already branch state — delete `<spec>.map.md` if the session
+charted one (session-scoped scaffolding; its record lives in
+`interrogation.log`), and open **one PR** whose body carries the
 interrogation summary: decisions by class, dissents, `escalation_check`
 outcomes, every human exchange (the `exchange_ref` target). Lifecycle from
 here is ADR 0009's: product approval → merge → Pickup (autopilot's claim

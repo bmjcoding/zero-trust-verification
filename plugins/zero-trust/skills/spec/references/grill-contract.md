@@ -40,7 +40,10 @@ understanding.
    either gets one line telling the human what you are checking, or is
    deferred to a checkpoint. Consequence: unexplained silence between
    questions while you work is a contract violation — the same class of
-   breach as re-asking a settled decision.
+   breach as re-asking a settled decision. The rule bars launching or tending
+   work between an answer and the next question; AFK research dispatched at a
+   checkpoint keeps running concurrently, and its findings are consumed at a
+   later checkpoint.
 7. **Bookkeeping batches at checkpoints.** `interrogation.log` entries,
    `CONTEXT.md` edits, draft ADRs, and session-branch commits (HC5) land at
    step boundaries or natural pauses the HUMAN takes — never mid-exchange.
