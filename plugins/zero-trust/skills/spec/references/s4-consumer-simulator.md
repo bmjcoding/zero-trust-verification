@@ -35,7 +35,7 @@ that pins this manifest choke, mis-map, or find unmapped work?" Hunt:
   idempotency: verify a proposal EXISTS and is join-valid; the default's
   VALUE is an org standard you cannot observe → `flagged:external-fact` → S5.
 - **Criticality that under-scopes rigor** — a vital step buried in a
-  DEV-marked journey still pays rules 1–2 interrogation (§5 floor); flag any
+  DEV-marked journey still pays manifest rules 1–2 interrogation (§5 floor); flag any
   journey whose criticality would wrongly exempt its vital steps.
 
 ## RESOLVE
@@ -67,7 +67,7 @@ findings:
 resolutions:
   - finding: CS-<n>
     decision: <what was decided>
-    resolved_by: agent                    # sub-CORE only; effectively-CORE confirm is S5's (rule 8)
+    resolved_by: agent                    # sub-CORE only; effectively-CORE confirm is S5's (manifest rule 8)
     dissent: <non-empty: the surviving counter-argument>   # REQUIRED, non-empty (manifest rule 6)
     escalation_check: clear | flagged:values | flagged:external-fact | flagged:irreversible
     # ^ REQUIRED on every resolution. The ADR 0002 trilist applied as a checklist.

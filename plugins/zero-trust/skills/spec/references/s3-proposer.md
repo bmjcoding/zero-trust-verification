@@ -36,7 +36,7 @@
    expected at this step; S4–S6 close it), by EXTENDING the committed S2
    stub, never replacing it: the S2 `interrogation.log` is preserved
    VERBATIM — dropping or rewording a recorded exchange destroys the
-   settled-decision source S4 and rule 8 (`confirmed_by`) key on. On
+   settled-decision source S4 and manifest rule 8 (`confirmed_by`) key on. On
    resume/amend you extend the EXISTING manifest the same way: existing
    journeys/behaviors keep their IDs — never re-mint an ID for an entry that
    already exists (`id_alloc.py` refuses reuse; new IDs are for genuinely
