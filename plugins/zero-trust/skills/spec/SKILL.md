@@ -45,7 +45,7 @@ the S2 grill; only the conversation seed differs.
 | `/spec <intent...>` | Fresh | Raw intent (paragraph, meeting notes, Jira) | You — the daily default (`--profile <name>` accepted; config resolution below usually covers it) |
 | `/spec @draft.md` | Fresh | Draft Spec — interrogated, not trusted; it seeds the S2 agenda | You, when a doc already exists |
 | `/spec --from-findings @<register>` | Fresh | Findings register (remediation-loop entry, ADR 0017) — reuses the Fresh path; the register is the S2 conversation seed, interrogated like a Draft Spec, not trusted | `/remediate` — machine door, rarely typed by hand |
-| `/spec --resume @<spec>.manifest.yaml` | Resume | `completeness: incomplete` from a prior (possibly crashed) session — re-enters S2 grilling with the agenda = the validator's remaining unmet rules via `resume_projection.py` (its partition governs: escalate-class gaps are grilled, mechanical-class gaps are filled silently) | Crash recovery (session-death-safe, HC5) and `/triage`'s incident-Spec re-entry |
+| `/spec --resume @<spec>.manifest.yaml` | Resume | `completeness: incomplete` from a prior (possibly crashed) session — re-enters S2 grilling with the agenda = the validator's remaining unmet rules via `resume_projection.py` (its partition governs: escalate-class gaps are grilled, mechanical-class gaps are filled silently), joined to the unmet items of `<spec>.map.md` when the session charted one | Crash recovery (session-death-safe, HC5) and `/triage`'s incident-Spec re-entry |
 | `/spec --amend @<spec>.manifest.yaml <intent...>` | Amend | Amendment against a merged Spec → `manifest_revision` N+1; S2 re-opens scoped to the amendment intent | You, revising a shipped Spec — ID-stable so autopilot's revision-drift gate (AV3-04) keys on it |
 
 **Profile (fresh sessions):** run `scripts/profile_resolve.py` (order:
@@ -208,8 +208,9 @@ owed, unanswered confirmation stays an open escalation in the manifest (which
 therefore stays `completeness: incomplete`); it never converts to a defaulted
 answer. Writing
 `completeness: incomplete` and exiting is legal only on an explicit human
-`defer` at S5 (the same escalation surfaced 3 times unanswered counts as
-`defer`), never on your own initiative.
+`defer` — given at S5, or during the grill under grill-contract rules 8–9
+(wrap-up open items, prototype-class); the same escalation surfaced 3 times
+unanswered counts as `defer` — never on your own initiative.
 
 ### S7 — Emit
 
