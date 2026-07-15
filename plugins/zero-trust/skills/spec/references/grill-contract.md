@@ -51,6 +51,15 @@ understanding.
    the confirmation gate answered on what's settled, and record the rest as
    open items — the manifest stays `completeness: incomplete` unless the
    human explicitly defers each one (S6 rules unchanged).
+9. **Grillable vs ungrillable.** A decision needing higher fidelity than
+   conversation — how something should look, feel, or flow in use — is
+   ungrillable: name it as prototype-class instead of grilling it, and
+   propose the defer (the human's yes is the explicit defer S6 requires; the
+   slot stays `completeness: incomplete`). Point at the re-entry door —
+   `--resume` pre-merge, `--amend` post-merge — and continue down the other
+   branches. The prototype itself lives outside this session (HC3: this tier
+   writes only markdown/YAML); the human returns through that door with the
+   answer.
 
 ## Question shape
 
