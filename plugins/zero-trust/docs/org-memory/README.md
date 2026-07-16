@@ -10,7 +10,8 @@ of truth** (ADR 0019): every record carries a `{repo, commit_sha, path, source_l
 back-pointer to the authoritative bytes; there is no write-back, no edit surface, no
 copy of a fact that outlives one crawl. Rebuild-from-empty is always correct.
 
-The fifth independently-installable plugin in the Zero-Trust Verification marketplace.
+Ships inside the one `zero-trust` plugin (ADR 0025; installed via the
+skills-dir clone, ADR 0027).
 It grants **repo READ only**, scoped to the declared memory globs — strictly *less*
 surface than the audit tier (which reads the whole tree), and nothing an autonomous
 drain would.

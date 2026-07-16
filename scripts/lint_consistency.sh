@@ -13,9 +13,11 @@
 #   V2  — the `## Behavior coverage` PR-body format. One canonical definition
 #         (docs/specs/behavior-coverage-format.md) that the autopilot AV3-05
 #         producer and the codebase-health CH-06 consumer both use.
-#   V6  — the product marketplace (ADR 0001/0025): ONE root .claude-plugin/
-#         marketplace.json is the single entry point registering EXACTLY the one
-#         zero-trust plugin, whose source dir carries its own plugin.json.
+#   V6  — the product entry point (ADR 0027, formerly the root marketplace of
+#         ADR 0001/0025): distribution is a skills-dir clone, so NO
+#         marketplace.json may exist anywhere (residue guard), and EXACTLY one
+#         installable plugin (plugins/zero-trust, plugin.json named zero-trust)
+#         is the entry point.
 #   V9  — the triage telemetry-adapter observable contract (ADR 0006/0013;
 #         register TR-08): references/telemetry-contract.md is the single source
 #         of the <!-- vendored:telemetry-contract --> block; any copy carrying
@@ -90,65 +92,53 @@ else
   fi
 fi
 
-# ── V6: one product-entry marketplace registering EXACTLY the one installable
-#        plugin (ADR 0001 / 0025). The repo-root .claude-plugin/marketplace.json
-#        is the single entry point; the registered set must be exactly
-#        {zero-trust -> ./plugins/zero-trust}, and the source dir must carry a
-#        .claude-plugin/plugin.json whose name matches. Structural, per-object
-#        validation via python3 (catches a wrong source pairing or a rogue 2nd
-#        plugin that independent greps miss); a reduced grep check if python3 is
-#        absent. Formatting-insensitive.
-MKT="$ROOT/.claude-plugin/marketplace.json"
-if [ ! -f "$MKT" ]; then
-  violation V6 "root product marketplace missing: .claude-plugin/marketplace.json (ADR 0001)"
-else
-  # single entry point: no other marketplace.json in the product tree
-  v6_extra=0
-  while IFS= read -r m; do
-    [ -n "$m" ] || continue
-    [ "$m" = "$MKT" ] && continue
-    violation V6 "stray marketplace.json (single product entry point only, ADR 0001/0025): ${m#$ROOT/}"
-    v6_extra=$((v6_extra+1))
-  done < <(find "$ROOT" -path "$ROOT/.git" -prune -o -path "$ROOT/.claude" -prune -o -name node_modules -prune -o -name 'marketplace.json' -print 2>/dev/null)
-  [ "$v6_extra" -eq 0 ] && ok V6 "single product-entry marketplace (.claude-plugin/marketplace.json)"
+# ── V6: the product entry point is the plugin itself (ADR 0027; formerly the
+#        root marketplace of ADR 0001/0025 — retired: managed-settings
+#        marketplace allowlists made the marketplace undeliverable, so
+#        distribution is a local git clone consumed via the skills directory).
+#        Three checks: (1) residue guard — NO marketplace.json anywhere in the
+#        product tree; (2) exactly ONE installable plugin under plugins/
+#        (plugins/zero-trust — ADR 0025's single-plugin invariant, now policed
+#        on the tree instead of a registry); (3) its plugin.json is named
+#        'zero-trust' (the skills-dir install resolves the plugin by this
+#        name). Structural name check via python3; reduced grep if absent.
+PJ="$ZT/.claude-plugin/plugin.json"
+# (1) residue guard: the marketplace entry point stays retired (ADR 0027)
+v6_residue=0
+while IFS= read -r m; do
+  [ -n "$m" ] || continue
+  violation V6 "marketplace residue (distribution is a skills-dir clone, ADR 0027): ${m#$ROOT/}"
+  v6_residue=$((v6_residue+1))
+done < <(find "$ROOT" -path "$ROOT/.git" -prune -o -path "$ROOT/.claude" -prune -o -name node_modules -prune -o -name 'marketplace.json' -print 2>/dev/null)
+[ "$v6_residue" -eq 0 ] && ok V6 "no marketplace residue (skills-dir distribution, ADR 0027)"
 
+if [ ! -f "$PJ" ]; then
+  violation V6 "product entry point missing: plugins/zero-trust/.claude-plugin/plugin.json (ADR 0025/0027)"
+else
+  # (2) single installable plugin: no OTHER .claude-plugin/plugin.json under plugins/
+  v6_extra=0
+  while IFS= read -r pj; do
+    [ -n "$pj" ] || continue
+    [ "$pj" = "$PJ" ] && continue
+    violation V6 "rogue 2nd installable plugin (the product is exactly zero-trust, ADR 0025): ${pj#$ROOT/}"
+    v6_extra=$((v6_extra+1))
+  done < <(find "$ROOT/plugins" -name node_modules -prune -o -path '*/.claude-plugin/plugin.json' -print 2>/dev/null)
+  [ "$v6_extra" -eq 0 ] && ok V6 "single installable plugin (plugins/zero-trust)"
+
+  # (3) the plugin.json carries the name the skills-dir install resolves
   if command -v python3 >/dev/null 2>&1; then
-    v6_out="$(python3 - "$ROOT" "$MKT" <<'PYV6' 2>/dev/null
-import json, os, sys
-root, mkt = sys.argv[1], sys.argv[2]
-expected = {
-    "zero-trust": "./plugins/zero-trust",
-}
+    v6_out="$(python3 - "$PJ" <<'PYV6' 2>/dev/null
+import json, sys
+pj = sys.argv[1]
 try:
-    d = json.load(open(mkt))
+    d = json.load(open(pj))
 except Exception as e:
-    print("invalid marketplace JSON: %s" % e); sys.exit(0)
-got = {}
-for p in (d.get("plugins") or []):
-    got[p.get("name")] = p.get("source")
-for n in sorted(set(expected) - set(got)):
-    print("plugin '%s' not registered in root marketplace" % n)
-for n in sorted(set(got) - set(expected)):
-    print("unexpected plugin '%s' registered (source=%s) - the product is exactly the one zero-trust plugin (ADR 0025)" % (n, got[n]))
-for n, src in expected.items():
-    if n in got and got[n] != src:
-        print("plugin '%s' registered source '%s' != expected '%s' (name<->source mismatch)" % (n, got[n], src))
-for n, src in got.items():
-    if not src:
-        print("plugin '%s' has no source" % n); continue
-    rel = src[2:] if src.startswith("./") else src
-    pdir = os.path.join(root, rel)
-    pj = os.path.join(pdir, ".claude-plugin", "plugin.json")
-    if not os.path.isdir(pdir):
-        print("plugin '%s' source dir missing: %s" % (n, src)); continue
-    if not os.path.isfile(pj):
-        print("plugin '%s' source lacks .claude-plugin/plugin.json (not installable): %s" % (n, src)); continue
-    try:
-        pjn = json.load(open(pj)).get("name")
-    except Exception as e:
-        print("plugin '%s' plugin.json invalid under %s: %s" % (n, src, e)); continue
-    if pjn != n:
-        print("plugin.json name '%s' != registered name '%s' under %s" % (pjn, n, src))
+    print("invalid plugin JSON: %s" % e); sys.exit(0)
+n = d.get("name")
+if n != "zero-trust":
+    print("plugin.json name '%s' != 'zero-trust' (the skills-dir install resolves the plugin by this name)" % n)
+if not d.get("version"):
+    print("plugin.json carries no version (the release tag pairs with it)")
 PYV6
 )"
     if [ -n "$v6_out" ]; then
@@ -159,21 +149,15 @@ PYV6
 $v6_out
 V6OUT
     else
-      ok V6 "root marketplace registers exactly the zero-trust plugin; name<->source pairing + plugin.json name verified (structural)"
+      ok V6 "plugin.json name 'zero-trust' + version present (structural)"
     fi
   else
-    # reduced fallback (python3 absent): name+source presence + installability only
-    v6_bad=0
-    while IFS='|' read -r pname psrc; do
-      [ -n "$pname" ] || continue
-      grep -q "\"name\": \"$pname\"" "$MKT"  || { violation V6 "plugin '$pname' not registered in root marketplace"; v6_bad=1; }
-      grep -q "\"source\": \"$psrc\"" "$MKT" || { violation V6 "plugin '$pname' source '$psrc' not registered"; v6_bad=1; }
-      pdir="$ROOT/${psrc#./}"
-      { [ -d "$pdir" ] && [ -f "$pdir/.claude-plugin/plugin.json" ]; } || { violation V6 "plugin '$pname' source not installable: $psrc"; v6_bad=1; }
-    done <<'V6PLUGINS'
-zero-trust|./plugins/zero-trust
-V6PLUGINS
-    [ "$v6_bad" -eq 0 ] && ok V6 "zero-trust plugin registered + installable (reduced grep check; python3 absent)"
+    # reduced fallback (python3 absent): name presence only
+    if grep -q '"name": "zero-trust"' "$PJ"; then
+      ok V6 "zero-trust plugin.json present (reduced grep check; python3 absent)"
+    else
+      violation V6 "plugin.json does not carry name 'zero-trust'"
+    fi
   fi
 fi
 
@@ -524,7 +508,7 @@ fi
 #   (d) READ-ONLY PIN: wave_gate.py never writes state and spawns no detector
 #       (loop-safety invariants 1/7 — the gate reads /verify's judgment, it never
 #       re-grades or re-detects). Mirrors the remediation_scope_guard posture.
-#   Cross-domain presence (full tree only, keyed on the root marketplace): the
+#   Cross-domain presence (full tree only, keyed on the product plugin.json): the
 #   loop's merge step calls the autopilot host adapter and the marshal — their
 #   absence in a registered suite tree is a broken dispatch table (PR-2 review
 #   finding 8).
@@ -581,7 +565,7 @@ else
     fi
   fi
   # Cross-domain presence — only meaningful in a full registered tree.
-  if [ -f "$ROOT/.claude-plugin/marketplace.json" ]; then
+  if [ -f "$ZT/.claude-plugin/plugin.json" ]; then
     [ -f "$ZT/skills/autopilot/scripts/host.sh" ] \
       || { violation V13 "health-loop ships but the autopilot host adapter (skills/autopilot/scripts/host.sh) is absent — the merge step's PR surface is unresolvable"; v13_bad=1; }
     [ -f "$ZT/scripts/marshal.sh" ] \

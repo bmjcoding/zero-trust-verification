@@ -9,6 +9,28 @@ v1.x changelogs are preserved under `plugins/zero-trust/docs/<domain>/` (and
 
 ## [2.1.0-rc.1] - 2026-07-12 (release candidate; tag at release merge)
 
+### Changed — distribution: marketplace retired, skills-dir install (ADR 0027)
+
+Managed Claude Code deployments now enforce marketplace allowlists that
+third-party marketplaces cannot join — and a local-path marketplace add is
+policed by the same allowlist. Distribution is now a local git clone consumed
+through Claude Code's skills directory:
+`ln -s <clone>/plugins/zero-trust ~/.claude/skills/zero-trust` (auto-loads as
+`zero-trust@skills-dir` with every skill, agent, hook, and the org-memory MCP
+server; update = `git pull` in the clone).
+
+- **Removed** the root `.claude-plugin/marketplace.json` — the plugin's own
+  `plugin.json` is the product entry point (no marketplace residue anywhere).
+- **Lint V6 inverted**: was "ONE root marketplace registers exactly the one
+  plugin"; now "NO marketplace.json anywhere (residue guard) + exactly one
+  installable plugin under `plugins/` + plugin.json named `zero-trust`". The
+  V13 full-tree presence key moves from the marketplace to the plugin.json.
+  Self-test teeth re-cut to match (missing plugin.json, root + nested
+  marketplace residue, rogue 2nd installable plugin, name drift; compact-JSON
+  and non-installable-dir false-positive guards).
+- Install/update/migration docs rewritten for the clone+symlink path;
+  `--plugin-dir` documented as the session-only try-it door.
+
 ### Changed — /spec grill-first inversion (ADR 0026)
 
 Minor bump: breaking only in *interaction shape* — no artifact, gate, schema,

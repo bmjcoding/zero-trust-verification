@@ -62,26 +62,39 @@ Because the manifest links *design-time intent* to *runtime behavior* (event nam
 
 ## Install
 
-Requires [Claude Code](https://claude.com/claude-code). Add the marketplace, then install the one plugin:
+Requires [Claude Code](https://claude.com/claude-code). Distribution is a local
+git clone consumed through Claude Code's **skills directory** (ADR 0027) — no
+plugin marketplace involved, so it works unchanged under managed-settings
+marketplace allowlists:
 
-```
-/plugin marketplace add bmjcoding/zero-trust-verification
-/plugin install zero-trust@zero-trust-verification
-```
-
-**Migrating from v1.x (the six-plugin suite):** v2.0.0 consolidates
-`spec-gen`, `autopilot`, `codebase-health`, `marshal`, `org-memory`, and
-`triage` into the single `zero-trust` plugin (ADR 0025 — breaking: plugin
-names/install paths change; every command name is unchanged). Uninstall the six
-old plugins, refresh the catalog, then install the one:
-
-```
-/plugin uninstall spec-gen autopilot codebase-health marshal org-memory triage
-/plugin marketplace update zero-trust-verification
-/plugin install zero-trust@zero-trust-verification
+```bash
+git clone https://github.com/bmjcoding/zero-trust-verification.git
+ln -s "$(pwd)/zero-trust-verification/plugins/zero-trust" ~/.claude/skills/zero-trust
 ```
 
-**Updating:** `/plugin marketplace update zero-trust-verification` refreshes the catalog, then `/plugin update zero-trust` updates the installed plugin — the marketplace refresh alone does not. Auto-update is off by default for third-party marketplaces; enable it per-marketplace under `/plugin` → Marketplaces. Installs track `main` unless you pinned a tag (`/plugin marketplace add bmjcoding/zero-trust-verification@v2.0.0-rc.1`).
+Restart Claude Code. The plugin auto-loads as `zero-trust@skills-dir` — every
+skill and command, the seven audit agents, the org-memory MCP server, and the
+hooks; confirm with `claude plugin list`.
+
+**Updating:** `git pull` in the clone — the symlink picks it up next session.
+To pin a release, check out its tag instead of tracking `main`.
+
+**Trying it without installing:** `claude --plugin-dir /path/to/clone/plugins/zero-trust`
+loads it for one session only (note managed settings can disable sideload
+flags; the skills-dir install is the supported path).
+
+**Migrating from a marketplace install (≤ v2.0.x):** the marketplace entry
+point is retired (ADR 0027). Uninstall and remove it, then install as above —
+every command name is unchanged:
+
+```
+/plugin uninstall zero-trust
+/plugin marketplace remove zero-trust-verification
+```
+
+(v1.x six-plugin installs uninstall `spec-gen`, `autopilot`, `codebase-health`,
+`marshal`, `org-memory`, and `triage` instead — ADR 0025 consolidated them into
+the one `zero-trust` plugin.)
 
 Adopt tier by tier: the audit and org-memory are read-only, so a team can run them without granting an autonomous drain anything. Add spec-gen when you want better specs, autopilot when you want the drain, marshal when you want deterministic merge safety, triage when you want production incidents to become specs.
 
@@ -103,7 +116,7 @@ This suite was built *by itself*, spec-first. Every capability was implemented a
 The design record lives in the open:
 
 - **[CONTEXT.md](./CONTEXT.md)** — the glossary (the ubiquitous language every domain shares).
-- **[docs/adr/](./docs/adr/)** — 25 architecture decision records, with the dissent from each adversarial round preserved in *Considered Options*.
+- **[docs/adr/](./docs/adr/)** — 27 architecture decision records, with the dissent from each adversarial round preserved in *Considered Options*.
 - **[docs/specs/](./docs/specs/)** — the Verification Manifest schema and every capability's build register.
 - **[CHANGELOG.md](./CHANGELOG.md)** — what shipped in each release.
 
@@ -127,9 +140,11 @@ The design record lives in the open:
 ├── docs/adr/                  # architecture decision records
 ├── docs/specs/                # manifest spec + per-capability build registers
 ├── CONTEXT.md                 # the shared glossary
-├── CHANGELOG.md               # release notes
-└── .claude-plugin/            # root marketplace.json (product entry point)
+└── CHANGELOG.md               # release notes
 ```
+
+The product entry point is the plugin's own `plugins/zero-trust/.claude-plugin/plugin.json`
+(ADR 0027 — the root marketplace is retired).
 
 ## What's next
 
