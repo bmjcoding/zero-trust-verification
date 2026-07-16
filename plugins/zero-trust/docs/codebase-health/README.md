@@ -82,18 +82,12 @@ evaluated by running `/audit` on the corpus and comparing to the manifest.
 
 ## Install
 
-codebase-health ships as one of the four independently installable plugins in
-the `zero-trust-verification` marketplace (the repo-root `.claude-plugin/marketplace.json`
-is the single product entry point, per ADR 0001/0011):
+codebase-health ships inside the one `zero-trust` plugin (ADR 0025), installed
+via the skills-dir clone (ADR 0027 — no marketplace; see the root `README.md`):
 
 ```bash
-# From a local checkout of the zero-trust-verification suite:
-/plugin marketplace add /path/to/zero-trust-verification
-/plugin install codebase-health@zero-trust-verification
-
-# Or from the git repo:
-/plugin marketplace add <your-org>/zero-trust-verification
-/plugin install codebase-health@zero-trust-verification
+git clone <repo> zero-trust-verification
+ln -s "$(pwd)/zero-trust-verification/plugins/zero-trust" ~/.claude/skills/zero-trust
 ```
 
 Install the language tools you use (each auto-skips if absent), e.g. Python:

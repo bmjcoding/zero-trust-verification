@@ -24,5 +24,5 @@ documentation is under `docs/<domain>/` here (autopilot's under
 `skills/autopilot/`).
 
 **Migrating from v1.x:** uninstall the six old plugins, then install
-`zero-trust` from this marketplace — see the migration note in the root
-`README.md`.
+`zero-trust` via the skills-dir clone (ADR 0027) — see the migration note in
+the root `README.md`.

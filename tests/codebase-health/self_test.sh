@@ -1470,7 +1470,11 @@ if [ -f "$REPO_ROOT/plugins/zero-trust/commands/remediate.md" ]; then
 else
   fail "RL-11: /remediate command absent (red-first)"
 fi
-assert_not_grep "$REPO_ROOT/.claude-plugin/marketplace.json" '"name":[[:space:]]*"remediation' "RL-11: NO new marketplace plugin entry — the loop is a codebase-health skill (V6 exactly-five holds)"
+if [ -e "$REPO_ROOT/plugins/remediation" ] || [ -f "$REPO_ROOT/.claude-plugin/marketplace.json" ]; then
+  fail "RL-11: remediation ships as a new installable plugin or revives the retired marketplace (V6 single-plugin + no-residue, ADR 0027)"
+else
+  ok "RL-11: NO new installable plugin and no marketplace residue — the loop is a codebase-health skill (V6 single-plugin holds)"
+fi
 
 echo "== RL-12. scope guard (remediation_scope_guard.sh): no mutation tool, no whole-repo run_audit =="
 if [ -f "$REM/remediation_scope_guard.sh" ]; then

@@ -367,7 +367,7 @@ assert_contains   TR-07 "no-key refusal names the ledger dedupe reason" "cannot 
 
 # =============================================================================
 # TR-08 — lint teeth: the V9 rule catches a planted telemetry-contract drift.
-# (The V6 marketplace teeth live in scripts/suite_self_test.sh.)
+# (The V6 product-entry teeth live in scripts/suite_self_test.sh.)
 # =============================================================================
 echo "== TR-08 lint V9 teeth (telemetry-contract byte-identity) =="
 

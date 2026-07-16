@@ -5,8 +5,9 @@
 #
 #   1. cross-domain contract lints (scripts/lint_consistency.sh) — GREEN run
 #   2. lint RED-tests — plant a violation per surviving integrity rule
-#      (V6 marketplace incl. a wrong name<->source pairing and a rogue 2nd
-#      plugin, V9 triage telemetry-contract byte-identity + resume-helper
+#      (V6 product-entry incl. marketplace residue, a plugin.json name drift,
+#      and a rogue 2nd installable plugin, V9 triage telemetry-contract
+#      byte-identity + resume-helper
 #      re-vendor pin, V10 remediation tables, V11 outcome-store schema/contract
 #      byte-identity + the H1 anti-laundering guard, V12 System-Design Coverage
 #      unfalsifiability + no-parallel-comparator guards, V13 health-loop pins)
@@ -174,45 +175,56 @@ seed_sd() {
   cp "$ZT/schema/verification-manifest/v1.schema.json" "$d/plugins/zero-trust/schema/verification-manifest/"
 }
 
-# V6 — the registered plugin source loses its plugin.json (no longer installable).
-dr="$SANDBOX/v6"; mkdir -p "$dr/.claude-plugin"
-cp "$ROOT/.claude-plugin/marketplace.json" "$dr/.claude-plugin/"; seed_plugins "$dr"
+# V6 — the plugin loses its plugin.json (the product entry point vanishes).
+dr="$SANDBOX/v6"; seed_plugins "$dr"
 rm "$dr/plugins/zero-trust/.claude-plugin/plugin.json"
-expect_fail V6 "$dr" "registered plugin missing its plugin.json"
+expect_fail V6 "$dr" "product plugin.json missing"
 
-# V6 — a nested/stray marketplace.json reappears (single entry point violated).
-dr="$SANDBOX/v6s"; mkdir -p "$dr/.claude-plugin"
-cp "$ROOT/.claude-plugin/marketplace.json" "$dr/.claude-plugin/"; seed_plugins "$dr"
-cp "$ROOT/.claude-plugin/marketplace.json" "$dr/plugins/zero-trust/.claude-plugin/marketplace.json"
-expect_fail V6 "$dr" "stray nested marketplace.json"
+# V6 — marketplace residue reappears at the root (the retired entry point
+# comes back, ADR 0027).
+dr="$SANDBOX/v6s"; seed_plugins "$dr"; mkdir -p "$dr/.claude-plugin"
+printf '{"name":"zero-trust-verification","plugins":[]}\n' > "$dr/.claude-plugin/marketplace.json"
+expect_fail V6 "$dr" "marketplace.json residue at the repo root"
 
-# V6 — the name<->source pairing breaks (the name is registered against the
-# wrong source dir — the single-plugin analogue of the old swap test).
+# V6 — nested marketplace residue (inside the plugin dir).
+dr="$SANDBOX/v6n"; seed_plugins "$dr"
+printf '{}\n' > "$dr/plugins/zero-trust/.claude-plugin/marketplace.json"
+expect_fail V6 "$dr" "nested marketplace.json residue"
+
+# V6 — a rogue SECOND installable plugin appears under plugins/ (the product
+# is exactly one — ADR 0025, policed on the tree since ADR 0027).
+dr="$SANDBOX/v6r"; seed_plugins "$dr"
+mkdir -p "$dr/plugins/rogue/.claude-plugin"
+printf '{"name":"rogue-plugin","version":"0.0.1"}\n' > "$dr/plugins/rogue/.claude-plugin/plugin.json"
+expect_fail V6 "$dr" "rogue 2nd installable plugin under plugins/"
+
+# V6 false-positive guard — a non-installable helper dir under plugins/ (no
+# plugin.json, e.g. a schema-copy fixture) is not a rogue plugin.
+dr="$SANDBOX/v6x"; seed_plugins "$dr"
+mkdir -p "$dr/plugins/extra/schema"
+printf '{}\n' > "$dr/plugins/extra/schema/x.json"
+expect_no_fail V6 "$dr" "non-installable extra dir under plugins/ (no plugin.json)"
+
+# V6 — the plugin.json name drifts from 'zero-trust' (the skills-dir install
+# resolves the plugin by this name).
 if command -v python3 >/dev/null 2>&1; then
-  dr="$SANDBOX/v6sw"; mkdir -p "$dr/.claude-plugin"; seed_plugins "$dr"
+  dr="$SANDBOX/v6sw"; seed_plugins "$dr"
   python3 -c "
 import json
-d=json.load(open('$ROOT/.claude-plugin/marketplace.json'))
-by={p['name']:p for p in d['plugins']}
-by['zero-trust']['source']='./plugins/zero-trust-old'
-json.dump(d,open('$dr/.claude-plugin/marketplace.json','w'),indent=2)"
-  expect_fail V6 "$dr" "zero-trust registered against the wrong source dir"
-
-  # V6 — a rogue SECOND plugin with a non-existent source (the product is one).
-  dr="$SANDBOX/v6r"; mkdir -p "$dr/.claude-plugin"; seed_plugins "$dr"
-  python3 -c "
-import json
-d=json.load(open('$ROOT/.claude-plugin/marketplace.json'))
-d['plugins'].append({'name':'rogue-plugin','source':'./rogue'})
-json.dump(d,open('$dr/.claude-plugin/marketplace.json','w'),indent=2)"
-  expect_fail V6 "$dr" "rogue 2nd plugin registered (the product is exactly zero-trust)"
+p='$dr/plugins/zero-trust/.claude-plugin/plugin.json'
+d=json.load(open(p)); d['name']='zero-trust-old'
+json.dump(d,open(p,'w'),indent=2)"
+  expect_fail V6 "$dr" "plugin.json name drifted from 'zero-trust'"
 
   # V6 false-positive guard — a compact (whitespace-stripped) reserialization is fine.
-  dr="$SANDBOX/v6c"; mkdir -p "$dr/.claude-plugin"; seed_plugins "$dr"
-  python3 -c "import json;json.dump(json.load(open('$ROOT/.claude-plugin/marketplace.json')),open('$dr/.claude-plugin/marketplace.json','w'),separators=(',',':'))"
-  expect_no_fail V6 "$dr" "compact-JSON marketplace reserialization"
+  dr="$SANDBOX/v6c"; seed_plugins "$dr"
+  python3 -c "
+import json
+p='$dr/plugins/zero-trust/.claude-plugin/plugin.json'
+json.dump(json.load(open(p)),open(p,'w'),separators=(',',':'))"
+  expect_no_fail V6 "$dr" "compact-JSON plugin.json reserialization"
 else
-  echo "  [note] python3 absent — V6 structural red-tests (wrong-source / rogue / compact) skipped"
+  echo "  [note] python3 absent — V6 structural red-tests (name-drift / compact) skipped"
 fi
 
 # V9 (register TR-08) — the triage telemetry-adapter observable contract must not
@@ -353,8 +365,8 @@ expect_no_fail V12 "$dr" "prose comment naming a missing-X phrase (no emit/print
 
 # V13 (ADR 0024 / register HL) — the /health-loop presence/vocabulary/read-only
 # pins. Plant a violation per guard; a benign comment stays green. The seed
-# carries NO marketplace.json, so the full-tree cross-domain presence sub-check
-# stays out of these sandboxes by design.
+# carries NO product plugin.json, so the full-tree cross-domain presence
+# sub-check stays out of these sandboxes by design.
 seed_hl() {
   local d="$1" ca="plugins/zero-trust/skills/cleanup-audit"
   mkdir -p "$d/plugins/zero-trust/commands" "$d/$ca/references" "$d/$ca/scripts"
