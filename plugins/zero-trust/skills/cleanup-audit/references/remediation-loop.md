@@ -116,7 +116,7 @@ violation.
 
 ## Non-goals (v1)
 
-- A new plugin / marketplace entry.
+- A new plugin (a second installable entry point).
 - New detectors or a new severity scale.
 - RUNNING mutation testing (scoped or whole-repo) or any whole-repo scan.
 - Auto-merging; blocking. A Runbook PR + one-or-more Story PRs always await
