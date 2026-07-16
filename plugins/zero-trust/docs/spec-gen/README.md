@@ -13,8 +13,9 @@ without an idempotency answer (manifest rule 2). The floor being raised is the
 
 ## Install / invoke
 
-Ships as the `spec-gen` plugin in the `zero-trust-verification` marketplace
-(`.claude-plugin/marketplace.json`). Surface: one skill (`/spec`).
+Ships inside the one `zero-trust` plugin (ADR 0025), installed via the
+skills-dir clone (ADR 0027 — see the root `README.md`). Surface: one skill
+(`/spec`).
 
 ```
 /spec [--profile <name>] <intent...>          # fresh session from raw intent
