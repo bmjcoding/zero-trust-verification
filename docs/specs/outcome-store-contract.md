@@ -2,15 +2,14 @@
 
 The outcome store (`outcome/outcomes.json`) is written by TWO producers — the
 Marshal `outcome-capture` / digest modes and the codebase-health audit
-`outcome-emit` step. They MUST agree byte-for-byte on what a stored row means and
-on how the renderer badges it, or the two would drift and a reader could be misled
-about an agent-graded number's honesty. This file is the single canonical
-definition; the block below is vendored VERBATIM into each producer's reference
-(pinned byte-identical by lint rule V11, the V5/V7/V9 marker-block mechanism). The
+`outcome-emit` step. They MUST agree on what a stored row means and on how the
+renderer badges it, or the two would drift and a reader could be misled about an
+agent-graded number's honesty. This file is the SINGLE copy of that contract
+(ADR 0030): each producer's reference cites it instead of vendoring it, and the
+lint V11 tripwire catches any re-vendored block copy (byte-identity or red). The
 JSON Schema `schema/outcome/v1.schema.json` is the structural source of truth,
-validated by the manifest's jsonschema toolchain (ADR 0014); any vendored schema
-copy shipped for standalone install is byte-identical to it (V11, the V1/V8
-mechanism).
+validated by the manifest's jsonschema toolchain (ADR 0014); any schema copy that
+reappears in the tree must be byte-identical to it (V11).
 
 <!-- vendored:outcome-store-contract:begin -->
 Store shape (schema_version 1): append-only `runs[]` + one frozen `baseline`.
@@ -26,7 +25,9 @@ Every metric row carries, MANDATORY:
       fixture is [det], the number on a real repo is [audit-run].
     - `human-annotated`: an operator-entered external fact.
   NOTHING is model-estimated. The schema BINDS each metric name to its class
-  (`emission_share` => `agent-graded`; the four DORA metrics => `deterministic`; the
+  (`emission_share` => `agent-graded`; the four classic DORA delivery metrics
+  (2021 taxonomy; the fifth — operational reliability — is deliberately out of
+  scope: not deterministically derivable from git/host data) => `deterministic`; the
   external metrics => `deterministic`|`human-annotated`), so a row that is UNLABELED
   **or MISLABELED** (a laundered class) is schema-invalid — neither can enter the
   store, and the renderer badges a known metric by its authoritative class, never the
