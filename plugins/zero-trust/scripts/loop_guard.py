@@ -41,6 +41,8 @@ import sys
 from pathlib import Path
 
 _HERE = Path(__file__).resolve().parent
+sys.path.insert(0, str(_HERE))
+import validate_manifest as _VM  # noqa: E402  the public load API (ADR 0032)
 _DEFAULT_CONFIG = _HERE.parent / "triage.config.yaml"
 _DEFAULT_HOST = _HERE.parent / "skills" / "autopilot" / "scripts" / "host.sh"
 # States that mean the incident-Spec PR is NO LONGER an open proposal.
@@ -48,15 +50,15 @@ _TERMINAL = {"MERGED", "DECLINED", "NONE", "CLOSED"}
 
 
 def _load_config(path: Path) -> dict:
-    from ruamel.yaml import YAML
-    yaml = YAML(typ="safe", pure=True)
-    yaml.version = (1, 2)
+    """Config YAML through the canonical loader (ADR 0032); any failure degrades
+    to {} — the config is hand-editable and this guard must never crash."""
     try:
-        with path.open(encoding="utf-8") as fh:
-            data = yaml.load(fh)
-        return data if isinstance(data, dict) else {}
-    except (OSError, Exception):  # noqa: BLE001 - config is hand-editable; degrade to defaults
+        data, err = _VM.load_manifest(path)
+    except Exception:  # noqa: BLE001 - config is hand-editable; degrade to defaults
         return {}
+    if err is not None:
+        return {}
+    return data if isinstance(data, dict) else {}
 
 
 def _self_emitters(cfg: dict) -> set[str]:

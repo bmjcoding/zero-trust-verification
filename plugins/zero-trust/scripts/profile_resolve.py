@@ -29,6 +29,9 @@ import json
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import validate_manifest as _VM  # noqa: E402  the public load API (ADR 0032)
+
 DEFAULT_PROFILE = "default"
 CONFIG_FILENAME = "spec-gen.config.yaml"
 
@@ -40,31 +43,25 @@ NO_PROFILE_ESCALATION = (
 )
 
 
-def _load_yaml_12(path: Path):
-    """Parse with the same YAML 1.2 core-schema parser the validator uses (ADR 0014).
+def _load(path: Path):
+    """Parse through the canonical `validate_manifest.load_manifest` (ADR 0032).
 
-    A malformed config/manifest is hand-editable, so a parse error is surfaced as
-    a clean ValueError (which `_main` renders as `{"error": ...}` + exit 3) rather
-    than an uncaught YAMLError traceback — matching the canonical validator's own
-    `_load_yaml_12` discipline.
+    A malformed config/manifest is hand-editable, so the loader's (data, err)
+    tuple is re-raised here as a clean ValueError (which `_main` renders as
+    `{"error": ...}` + exit 3) — this module's boundary contract, wrapped around
+    the one shared loader instead of a duplicate parser.
     """
-    from ruamel.yaml import YAML
-    from ruamel.yaml.error import YAMLError
-
-    yaml = YAML(typ="safe", pure=True)
-    yaml.version = (1, 2)
-    try:
-        with path.open("r", encoding="utf-8") as fh:
-            return yaml.load(fh)
-    except YAMLError as exc:
-        raise ValueError(f"{path}: YAML parse error: {exc}") from exc
+    data, err = _VM.load_manifest(path)
+    if err is not None:
+        raise ValueError(f"{path}: {err}")
+    return data
 
 
 def _config_profile(config_path: Path | None):
     """Return the `profile:` value from spec-gen.config.yaml, or None if absent/blank."""
     if config_path is None or not config_path.exists():
         return None
-    data = _load_yaml_12(config_path)
+    data = _load(config_path)
     if not isinstance(data, dict):
         return None
     prof = data.get("profile")
@@ -90,7 +87,7 @@ def resolve_fresh(flag: str | None = None, config_path: Path | None = None) -> d
 
 def resolve_from_manifest(manifest_path: Path) -> dict:
     """Resume/amend resolution: read observability.profile from the manifest."""
-    data = _load_yaml_12(manifest_path)
+    data = _load(manifest_path)
     prof = ((data or {}).get("observability") or {}).get("profile")
     if not isinstance(prof, str) or not prof.strip():
         raise ValueError(
