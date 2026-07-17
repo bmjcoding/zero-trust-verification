@@ -41,8 +41,9 @@ EXIT_REFUSE_SECOND = 6
 EXIT_USAGE = 64
 
 _HERE = Path(__file__).resolve().parent
-# the canonical outcome-store schema lives inside the single plugin (ADR 0025)
-_SCHEMA = _HERE.parent / "plugins" / "zero-trust" / "schema" / "outcome" / "v1.schema.json"
+# the canonical outcome-store schema lives inside the single plugin (ADR 0025);
+# this module lives beside it now (ADR 0031: plugins/zero-trust/scripts/).
+_SCHEMA = _HERE.parent / "schema" / "outcome" / "v1.schema.json"
 
 
 def _err(msg: str) -> None:

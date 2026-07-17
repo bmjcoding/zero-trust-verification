@@ -4,10 +4,10 @@
 # venv), runs the Python case suite, then the consistency lint, then a planted-
 # violation check proving the lint actually goes red.
 #
-#   1. tests/run_cases.py — validator reuse, ID allocator, resume projection,
+#   1. tests/run_spec_gen_cases.py — validator reuse, ID allocator, resume projection,
 #      profile resolution, emission shape, and the S4 output-schema field (81+
 #      assertions; every SG-2/3/4/5 acceptance).
-#   2. lint_consistency.sh — the 8 cross-file contract rules (expect PASS).
+#   2. lint_spec_gen.sh — the 8 cross-file contract rules (expect PASS).
 #   3. planted violation — remove the canonical schema from a sandbox copy and
 #      assert the canonical-presence lint (L3) reports it (expect FAIL).
 #
@@ -24,11 +24,11 @@ if ! command -v uv >/dev/null 2>&1; then
 fi
 
 echo "== 1. deterministic case suite (uv run) =="
-uv run --project "$PLUGIN" python "$PLUGIN/tests/run_cases.py"
+uv run --project "$PLUGIN" python "$PLUGIN/tests/run_spec_gen_cases.py"
 
 echo
 echo "== 2. consistency lint (L1-L8) =="
-bash "$HERE/lint_consistency.sh"
+bash "$HERE/lint_spec_gen.sh"
 
 echo
 echo "== 3. planted-violation checks (lint must go red on each planted defect) =="
@@ -40,7 +40,7 @@ plant_and_expect_red() {  # label  tamper_fn (called with the sandbox plugin roo
   local SB="$SANDBOX/case"; rm -rf "$SB"; cp -R "$PLUGIN" "$SB"
   "$fn" "$SB"
   if SPEC_GEN_PLUGIN_ROOT="$SB" SPEC_GEN_REPO_ROOT="$REPO" \
-       bash "$HERE/lint_consistency.sh" >/dev/null 2>&1; then
+       bash "$HERE/lint_spec_gen.sh" >/dev/null 2>&1; then
     echo "FAIL — lint PASSED on planted violation: $label" >&2
     exit 1
   fi

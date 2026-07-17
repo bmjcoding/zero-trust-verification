@@ -37,7 +37,7 @@ from pathlib import Path
 
 PROTOCOL_VERSION = "2024-11-05"
 SERVER_NAME = "org-memory"
-SERVER_VERSION = "0.1.0"
+SERVER_VERSION = "2.1.0-rc.1"  # converged on plugin.json (ADR 0031: one version surface)
 
 _HERE = Path(__file__).resolve().parent
 

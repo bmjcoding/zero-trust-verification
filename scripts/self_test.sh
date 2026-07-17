@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Hermetic self-test for the Verification Manifest validator.
-# Uses uv (ADR 0015) to self-bootstrap deps from pyproject.toml + uv.lock, then
-# runs tests/run_cases.py. No manual venv, no pip.
+# Uses uv (ADR 0015) to self-bootstrap deps from the plugin's pyproject.toml +
+# uv.lock (the ONE uv project, ADR 0031), then runs tests/run_cases.py.
+# No manual venv, no pip.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -13,4 +14,4 @@ if ! command -v uv >/dev/null 2>&1; then
 fi
 
 # uv run auto-syncs the locked env (ruamel.yaml YAML-1.2 + jsonschema) before running.
-exec uv run --project "$ROOT" python "$ROOT/tests/run_cases.py"
+exec uv run --project "$ROOT/plugins/zero-trust" python "$ROOT/tests/run_cases.py"

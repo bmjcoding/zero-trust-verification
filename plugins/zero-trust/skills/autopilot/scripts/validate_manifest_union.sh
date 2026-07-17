@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# validate_manifest.sh --union
+# validate_manifest_union.sh --union
 #
 # GENERATE Step G4 multi-doc union validation (MS §2 / AV3-03). For a multi-doc
 # invocation (`--generate @a.md @b.md`), each Spec ships its own manifest but the
@@ -19,7 +19,7 @@
 # (`plugins/zero-trust/scripts/validate_manifest.sh` — the single copy, ADR 0025);
 # this script owns ONLY the union checks.
 #
-# Usage:  validate_manifest.sh --union <a.yaml> <b.yaml> [<c.yaml> ...]
+# Usage:  validate_manifest_union.sh --union <a.yaml> <b.yaml> [<c.yaml> ...]
 # Exit:   0 union-coherent (prints OK) · 1 GENERATE-FAILED (first violation) · 64 usage.
 #
 # Portability: bash 3.2 + BSD userland safe (no grep -P, no GNU sed).
@@ -27,7 +27,7 @@
 set -u
 
 usage() {
-  echo "usage: validate_manifest.sh --union <a.yaml> <b.yaml> [<c.yaml> ...]" >&2
+  echo "usage: validate_manifest_union.sh --union <a.yaml> <b.yaml> [<c.yaml> ...]" >&2
   echo "  (single-file schema validation is the canonical plugin validator — single copy, ADR 0025)" >&2
   exit 64
 }
@@ -36,7 +36,7 @@ usage() {
 shift
 (( $# >= 2 )) || usage   # a union needs at least two manifests
 
-for f in "$@"; do [[ -f "$f" ]] || { echo "validate_manifest: not found: $f" >&2; exit 64; }; done
+for f in "$@"; do [[ -f "$f" ]] || { echo "validate_manifest_union: not found: $f" >&2; exit 64; }; done
 
 fail() { echo "[GENERATE-FAILED: $1: $2]"; exit 1; }
 

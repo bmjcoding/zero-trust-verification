@@ -40,8 +40,8 @@ have_validator() { [ -x "$VALIDATE_MANIFEST" ]; }
 # uv-first Python (ADR 0015 "everything uv"): a hermetic interpreter with no
 # hand-managed venv. Falls back to python3 (the validate_manifest.sh precedent)
 # so the self-test still runs where uv is absent.
-if command -v uv >/dev/null 2>&1 && [ -f "$REPO_ROOT/pyproject.toml" ]; then
-  PYRUN=(uv run --quiet --project "$REPO_ROOT" python)
+if command -v uv >/dev/null 2>&1 && [ -f "$PLUGIN/pyproject.toml" ]; then
+  PYRUN=(uv run --quiet --project "$PLUGIN" python)
 else
   PYRUN=(python3)
 fi
@@ -174,11 +174,7 @@ git -c user.email=t@t -c user.name=t commit -qm add
 out=$(bash "$SKILL_SCRIPTS/check_new_debt.sh" 2>&1); rc=$?
 if [ "$rc" -eq 0 ] && [ -z "$out" ]; then ok "no diff → silent, exit 0"; else fail "no diff → silent, exit 0 [rc=$rc out=$out]"; fi
 
-# --- 5b. 1.4.0 hook sections + the ONE strictness contract (Decision 1, §4.3;
-# --- pre-flight fix C). RED-FIRST: check_new_debt.sh neither sources the new
-# --- regexes nor builds the flaky/vacuity/stdout/commented sections yet, and
-# --- its CLI default is still warn-only — the positive assertions below fail
-# --- until Wave 1 lands. Failures accumulate like every other section.
+# --- 5b. 1.4.0 hook sections + the ONE strictness contract (Decision 1, §4.3).
 mkdir -p tests
 printf 'import time\n\n\ndef test_poll_ready():\n    time.sleep(2)\n    assert 2 + 2 == 4\n' > tests/test_new_flaky.py
 # (untracked test file) hook surface: flaky warn text, exit 0

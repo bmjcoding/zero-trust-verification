@@ -20,7 +20,8 @@ SUPPRESS_RE='# ?noqa|# ?type: ?ignore|# ?mypy: ?ignore-errors|@ts-ignore|@ts-exp
 
 # What counts as a test file. Matches bare paths AND grep file:line prefixes.
 # Consumers: run_audit.sh (gates flaky/vacuity/skip IN, stdout-logging OUT),
-# check_new_debt.sh, /verify determinism screen, self_test.sh unit cases.
+# check_new_debt.sh, /verify determinism screen, self_test.sh unit cases,
+# sd_seeds.sh (production-only tz gating; env from run_audit or sourced here).
 # Precision fixture: planted_pkg/poller.py (N4) must never match.
 TEST_PATH_RE='(^|/)(tests?|__tests__|spec)/|(^|/)test_[^/:]*\.py(:|$)|(^|/)conftest\.py(:|$)|_test\.(py|go)(:|$)|\.(test|spec)\.(ts|tsx|js|jsx|mjs|cjs)(:|$)'
 

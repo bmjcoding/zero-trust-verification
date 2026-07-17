@@ -26,12 +26,12 @@ set -uo pipefail
 export LC_ALL=C
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SUITE_ROOT="$(cd "$HERE/../../.." && pwd)"   # plugins/zero-trust/scripts -> repo root
-PYDORA="$SUITE_ROOT/scripts/outcome_dora.py"
-PYASM="$SUITE_ROOT/scripts/outcome_assemble.py"
-STORE_SH="$SUITE_ROOT/scripts/outcome_store.sh"
+# the whole outcome family lives beside this script (ADR 0031)
+PYDORA="$HERE/outcome_dora.py"
+PYASM="$HERE/outcome_assemble.py"
+STORE_SH="$HERE/outcome_store.sh"
 
-py() { if command -v uv >/dev/null 2>&1 && [ -f "$SUITE_ROOT/pyproject.toml" ]; then uv run --no-project python "$@"; else python3 "$@"; fi; }
+py() { if command -v uv >/dev/null 2>&1 && [ -f "$HERE/../pyproject.toml" ]; then uv run --no-project python "$@"; else python3 "$@"; fi; }
 iso_utc() { local e="$1"; if [ "$e" = "-" ]; then date -u +%Y-%m-%dT%H:%M:%SZ; return; fi
   date -u -r "$e" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -d "@$e" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || echo "$e"; }
 
