@@ -47,8 +47,18 @@
 #                          --base > $AUTOPILOT_TRUNK > the repo's default branch.
 #                          (The Merge Marshal's queue primitive — see
 #                           plugins/zero-trust/references/host-contract.md.)
+#   repo-list         --org <org>                               (ADR 0028)
+#                       -> enumerate the org's repositories as TSV, one per line:
+#                          <slug>\t<clone-or-api-url>. Uses `gh api --paginate
+#                          /orgs/<org>/repos` (NOT `gh repo list` — it has no
+#                          --paginate), surfacing gh's own exit status and
+#                          stderr. Needs NO repo coordinates (--org is the
+#                          target), so it runs outside a repo when host.sh is
+#                          steered by $AUTOPILOT_HOST_BACKEND.
 #
-# Repo coords (OWNER/REPO) are derived from `git remote get-url origin`.
+# Repo coords (OWNER/REPO) are derived from `git remote get-url origin`,
+# LAZILY (ADR 0028): from the dispatch for the subcommands that need them
+# (repo-list does not).
 # Expected origin shapes: https://github.com/<owner>/<repo>(.git)
 #                         git@github.com:<owner>/<repo>(.git)
 #
@@ -77,7 +87,7 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 usage() {
   cat >&2 <<EOF
 usage: github.sh <subcommand> [args]
-subcommands: pr-open pr-ready pr-state pr-comment pr-approve pr-decline pr-merge pr-merge-strategies build-status pr-list-ready
+subcommands: pr-open pr-ready pr-state pr-comment pr-approve pr-decline pr-merge pr-merge-strategies build-status pr-list-ready repo-list
 EOF
   exit 64
 }
@@ -100,24 +110,34 @@ require_jq() {
 }
 
 # --- Repo coords --------------------------------------------------------------
+# Lazy derivation (ADR 0028): the dispatch calls derive_repo_coords for every
+# PR/build subcommand; repo-list skips it (--org is the target, and gh owns
+# credentials, so no origin remote is required for enumeration).
 
-ORIGIN_URL="$(git remote get-url origin 2>/dev/null || true)"
-[[ -n "$ORIGIN_URL" ]] || die_state "no-origin" "no origin remote configured"
-# Strip a trailing slash so `https://github.com/owner/repo/` parses (host.sh's
-# `*github.com/*` heuristic routes it here, so the backend must accept it).
-ORIGIN_URL="${ORIGIN_URL%/}"
+OWNER=""
+REPO=""
+REPO_NWO=""
+declare -a GH_REPO=()
+derive_repo_coords() {
+  local origin_url
+  origin_url="$(git remote get-url origin 2>/dev/null || true)"
+  [[ -n "$origin_url" ]] || die_state "no-origin" "no origin remote configured"
+  # Strip a trailing slash so `https://github.com/owner/repo/` parses (host.sh's
+  # `*github.com/*` heuristic routes it here, so the backend must accept it).
+  origin_url="${origin_url%/}"
 
-if [[ "$ORIGIN_URL" =~ github\.com[:/]([^/]+)/([^/]+)$ ]]; then
-  OWNER="${BASH_REMATCH[1]}"
-  REPO="${BASH_REMATCH[2]%.git}"
-else
-  die_state "origin-parse" "cannot parse GitHub owner/repo from origin URL: $ORIGIN_URL"
-fi
-REPO_NWO="${OWNER}/${REPO}"
+  if [[ "$origin_url" =~ github\.com[:/]([^/]+)/([^/]+)$ ]]; then
+    OWNER="${BASH_REMATCH[1]}"
+    REPO="${BASH_REMATCH[2]%.git}"
+  else
+    die_state "origin-parse" "cannot parse GitHub owner/repo from origin URL: $origin_url"
+  fi
+  REPO_NWO="${OWNER}/${REPO}"
 
-# Every gh invocation is pinned to --repo so the backend is independent of the
-# process CWD (host.sh may run from anywhere). Assembled once as an array.
-GH_REPO=(--repo "$REPO_NWO")
+  # Every gh invocation is pinned to --repo so the backend is independent of the
+  # process CWD (host.sh may run from anywhere). Assembled once as an array.
+  GH_REPO=(--repo "$REPO_NWO")
+}
 
 # Map a GitHub PR (state,isDraft) to the shared contract vocabulary.
 map_state() {  # <gh-state> <isDraft: true|false>
@@ -467,10 +487,51 @@ cmd_pr_list_ready() {
   done <<<"$rows"
 }
 
+# repo-list: enumerate an org's repositories as the OWM-consumable 2-column TSV
+# `<slug>\t<clone-or-api-url>` (ADR 0028 — org enumeration is a backend method
+# behind host.sh, never a parallel transport; see host-contract.md).
+# `gh api --paginate` walks EVERY page (`gh repo list` has no --paginate, so a
+# large org would silently truncate — the exact defect the retired transport
+# had). gh owns credentials (nothing on argv); its exit status is surfaced and
+# its stderr passes through — a transport/auth failure is LOUD, never an empty
+# TSV masquerading as an empty org.
+cmd_repo_list() {
+  require_gh; require_jq
+  local org=""
+  while (( $# > 0 )); do
+    case "$1" in
+      --org) org="$2"; shift 2 ;;
+      *) die_state "arg-parse" "repo-list: unknown arg $1" ;;
+    esac
+  done
+  [[ -n "$org" ]] || die_state "arg-parse" "repo-list: --org required"
+
+  local json rc=0
+  json="$(gh api --paginate "/orgs/${org}/repos")" || rc=$?
+  (( rc == 0 )) || die_state "repo-list-failed" "gh api --paginate /orgs/${org}/repos failed (rc=$rc)"
+  # --paginate emits one JSON array per page, concatenated; jq iterates every
+  # top-level input, so `.[]` covers all pages. String fields only -> `//` safe.
+  jq -r '
+    .[]
+    | ((.name // "")) as $slug
+    | select($slug != "")
+    | [ $slug, (.ssh_url // .clone_url // .html_url // "") ]
+    | @tsv
+  ' <<<"$json" || die_state "repo-list-parse" "cannot parse gh repository list"
+}
+
 # --- Dispatch -----------------------------------------------------------------
 
 (( $# >= 1 )) || usage
 SUB="$1"; shift
+# Lazy-coords split (ADR 0028): repo-list needs no OWNER/REPO; every other
+# subcommand derives them here (dying no-origin outside a repo, as before).
+case "$SUB" in
+  repo-list) : ;;
+  pr-open|pr-ready|pr-state|pr-comment|pr-approve|pr-decline|pr-merge|pr-merge-strategies|build-status|pr-list-ready)
+    derive_repo_coords
+    ;;
+esac
 case "$SUB" in
   pr-open)              cmd_pr_open "$@" ;;
   pr-ready)             cmd_pr_ready "$@" ;;
@@ -482,5 +543,6 @@ case "$SUB" in
   pr-merge-strategies)  cmd_pr_merge_strategies "$@" ;;
   build-status)         cmd_build_status "$@" ;;
   pr-list-ready)        cmd_pr_list_ready "$@" ;;
+  repo-list)            cmd_repo_list "$@" ;;
   *) usage ;;
 esac
