@@ -911,7 +911,7 @@ cmd_pr_list_ready() {
 # never derived here; BB_HOST resolution still runs (non-sidecar) and dies
 # no-host-source when neither origin nor AUTOPILOT_BITBUCKET_HOST supplies one.
 cmd_repo_list() {
-  require_jq
+  require_jq; require_python3
   local org=""
   while (( $# > 0 )); do
     case "$1" in
