@@ -5,9 +5,10 @@ suite pins semver per plugin (ADR 0001 — independent versions).
 
 ## [0.1.0] — 2026-07-06
 
-Initial release. The fifth independently-installable plugin (ADR 0019): a read-only,
-memory-glob-bounded index/crawler over repo-resident memory, exposed via a
-refuse-by-default MCP query surface — never a second store of truth.
+Initial release. The fifth independently-installable plugin (ADR 0019) *[since
+consolidated into the zero-trust plugin, ADR 0025; marketplace retired, ADR 0027]*:
+a read-only, memory-glob-bounded index/crawler over repo-resident memory, exposed
+via a refuse-by-default MCP query surface — never a second store of truth.
 
 ### Added
 - **OWM-01** — typed per-memory-class extractors (`scripts/extract_memory.sh`):
@@ -37,7 +38,8 @@ refuse-by-default MCP query surface — never a second store of truth.
   `memory_search`, `memory_resolve_term`, `memory_decisions` + a coverage resource,
   as a thin adapter over `query.sh` (output byte-identical to the CLI). Refuse-by-default
   on out-of-scope repos; self-exclusion of OWM's own output.
-- **OWM-10 / 12** — packaging: registered as the fifth plugin in the root marketplace;
+- **OWM-10 / 12** — packaging: registered as the fifth plugin in the root marketplace
+  *[since consolidated into the zero-trust plugin, ADR 0025; marketplace retired, ADR 0027]*;
   `lint_consistency.sh` V6 grows four→five; new V8 vendoring lint pins OWM's
   manifest-parse path to the canonical validator; `suite_self_test.sh` gains the
   `org-memory` component + the V8 planted-drift RED-test.

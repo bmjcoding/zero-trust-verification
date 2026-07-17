@@ -62,10 +62,15 @@ When the end-to-end `/audit` command drives this skill, also produce:
 The loop contracts for routing findings into rework live in `references/remediation-loop.md` (the `/remediate` drip) and `references/health-loop.md` (the `/health-loop` campaign); the audit-side outcome step in `references/outcome-emit.md`; the invariants that keep every loop harmless in `references/loop-safety.md`.
 
 ## Scripts
-- `scripts/run_audit.sh` — auto-detects language, runs the deterministic pack.
-- `scripts/render_report.py` — report markdown → self-contained HTML.
-- `scripts/check_new_debt.sh` — prevention ratchet on changed lines. Hook mode always warns and exits 0; the CLI/CI surface gates strict by default (`--no-strict` / `WARN_ONLY=1` escape hatches; stdout never gates).
-- `scripts/debt_patterns.sh` — the single source of truth for the shared regexes — sourced by both scripts above and `/verify`'s determinism screen.
+Grouped by family (every script carries a usage header):
+- **Audit pack** — `run_audit.sh` (auto-detects language, runs the deterministic pack); `render_report.py` (report markdown → self-contained HTML); `debt_patterns.sh` (the single source of truth for the shared regexes — sourced by `run_audit.sh`, `check_new_debt.sh`, and `/verify`'s determinism screen); `sd_seeds.sh` (SD-11 system-design seeds).
+- **PR Gate** — `pr_gate.sh` (the sibling composer) plus `check_new_debt.sh` (prevention ratchet on changed lines: hook mode always warns and exits 0; the CLI/CI surface gates strict by default, `--no-strict` / `WARN_ONLY=1` escape hatches; stdout never gates), `check_memory_rot.sh` (CH-05), `check_behavior_coverage.sh` (CH-06), `check_provenance.sh` (CH-07), `check_manifest_history.sh` (CH-09), `check_mutation_survivors.sh` (PR-side survivor reader, ingest-only).
+- **Manifest join** — `ingest_manifest.sh` (CH-01 ingestion + MODE token), `manifest_join.sh`/`.py` (CH-03 §12 intended↔discovered comparator), `manifest_lib.sh` (shared validator resolver, sourced).
+- **Remediation loop (RL-01..RL-12)** — `read_findings.sh` (RL-01 stream reader), `finding_eligible.sh` (RL-02 eligibility gate), `classify_fix.sh` + `slug_provenance.tsv` (RL-03 routing table + provenance pin), `remediation_route.sh` (RL-05 router), `build_register.sh` (RL-06 register builder), `already_filed.sh` / `remediation_stamp.sh` (RL-08 Guard 1 read / write), `remediation_depth.sh` (Guard 2 depth ceiling), `remediation_scope_guard.sh` (RL-12 scope guard), `remediation_state.py` + `remediation_lib.sh` (state backend + shared helpers, sourced).
+- **Health-loop** — `spec_wave.sh` (SPEC.md wave parser), `wave_gate.sh`/`.py` (wave-advance gate — a pure reader of `/verify`'s judgment), `wave_preauth_check.sh` (delegated-approval preconditions).
+- **Mutation** — `mutation_adapter.sh` (the ONE survivor→`file:line` resolver map; all three consumers resolve to it).
+- **Outcome** — `outcome_emit.sh` (the audit's journey emission-share step, report-only).
+- **Substrate** — `py_run.sh` (uv bootstrap against the plugin's own pyproject; never syncs a target repo's deps).
 
 ## Extending to a new language
 Add the tool pack to `references/cross-language-tooling.md` and a detection branch in `scripts/run_audit.sh`. Phases 3–5 are prompt-driven and need no changes.

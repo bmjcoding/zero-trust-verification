@@ -2,7 +2,8 @@
 # _triage_run.sh — shared runner sourced by the triage .sh wrappers that drive a
 # Python script needing ruamel/jsonschema (loop_guard.py, correlate.py,
 # emit_incident_spec.py, resume_projection.py). It routes the invocation through
-# `uv run` against the nearest pyproject.toml (the repo root; ADR 0015), falling
+# `uv run` against the nearest pyproject.toml (the plugin's —
+# plugins/zero-trust/pyproject.toml; ADR 0015), falling
 # back to an ambient python3 that already carries the deps — the exact philosophy
 # of scripts/validate_manifest.sh and org-memory's _owm_run.sh, so a
 # standalone-installed plugin still runs when its host env provides the deps.

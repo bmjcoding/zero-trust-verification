@@ -36,8 +36,9 @@ done
 case "$PARENT" in ''|*[!0-9]*) PARENT=0 ;; esac
 
 # Locate the VERIFIED claim_overlap primitive. The loop drains THROUGH autopilot
-# + spec-gen, so autopilot's canonical copy is present wherever the loop operates;
-# $CLAIM_OVERLAP overrides for hermetic tests / standalone vendoring.
+# + spec-gen, so autopilot's canonical copy (the single copy, ADR 0025) is present
+# wherever the loop operates; $CLAIM_OVERLAP overrides for hermetic tests /
+# non-standard layouts.
 resolve_claim_overlap() {
   if [ -n "${CLAIM_OVERLAP:-}" ] && [ -f "${CLAIM_OVERLAP}" ]; then echo "$CLAIM_OVERLAP"; return 0; fi
   local sib="$RL_DIR/claim_overlap.sh"

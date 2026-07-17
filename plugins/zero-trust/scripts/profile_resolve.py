@@ -45,7 +45,7 @@ def _load_yaml_12(path: Path):
 
     A malformed config/manifest is hand-editable, so a parse error is surfaced as
     a clean ValueError (which `_main` renders as `{"error": ...}` + exit 3) rather
-    than an uncaught YAMLError traceback — matching the vendored validator's own
+    than an uncaught YAMLError traceback — matching the canonical validator's own
     `_load_yaml_12` discipline.
     """
     from ruamel.yaml import YAML

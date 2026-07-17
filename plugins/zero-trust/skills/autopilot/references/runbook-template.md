@@ -241,7 +241,7 @@ manifest_revision: <int-or-absent> # AV3-04: frozen at GENERATE from the Spec's 
 status_reason: <string-or-absent> # set alongside STATUS: PAUSED|HUMAN_NEEDED (e.g.
                                   #   manifest-revision-drift, runtime-budget-expired). Cleared on Resume.
 trunk_branch: <name>              # from G1.5 TRUNK=
-host: bitbucket-dc
+host: bitbucket-dc                # informational only; host.sh detects the backend from origin (ADR 0013)
 ci:
   skip_wait: <bool>               # G1.5 CI_PRESENT auto-set
 branching:
