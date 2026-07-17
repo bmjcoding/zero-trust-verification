@@ -18,7 +18,7 @@ Refusals (degrade rule 4 + loop-safety):
   - a prior incident-Spec PR for this incident-key is still open -> SUPPRESS (exit 0),
     log `[note] already-open-incident-spec`, write nothing (TR-loop-guard dedupe).
 
-The incomplete_fields are RECONCILED against the vendored validator's real exit-3
+The incomplete_fields are RECONCILED against the canonical validator's real exit-3
 output (a two-pass build) so the file never claims an incompleteness the validator
 would not compute — and the emitter REFUSES if its own construction is not actually
 incomplete (guards against a vacuous "complete incident-Spec").
@@ -36,7 +36,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-import validate_manifest as V  # vendored, byte-identical
+import validate_manifest as V  # the canonical validator (single copy, ADR 0025)
 import loop_guard as LG        # sibling
 
 _HERE = Path(__file__).resolve().parent
@@ -280,7 +280,7 @@ def main(argv) -> int:
     man_path.write_text(_yaml_dump(manifest), encoding="utf-8")
     md_path.write_text(_prose(incident_id, primary, corr, drift, source), encoding="utf-8")
 
-    # ── prove it is resumable-incomplete through the VENDORED validator (exit 3) ──
+    # ── prove it is resumable-incomplete through the CANONICAL validator (exit 3) ──
     res = subprocess.run(["bash", str(_VALIDATE_SH), str(man_path)], capture_output=True, text=True)
     if res.returncode != V.EXIT_INCOMPLETE:
         print(f"emit: REFUSE: emitted manifest did not validate as incomplete (exit {res.returncode}): {res.stdout}{res.stderr}", file=sys.stderr)

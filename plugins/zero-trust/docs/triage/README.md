@@ -1,7 +1,8 @@
 # triage — Production-Telemetry Triage
 
 > The sixth Zero-Trust Verification plugin (register `docs/specs/prod-triage-register.md`,
-> ADR 0020). A read-only, bounded-window **source** that turns an emitted production
+> ADR 0020) *[since consolidated into the zero-trust plugin, ADR 0025; marketplace
+> retired, ADR 0027]*. A read-only, bounded-window **source** that turns an emitted production
 > incident into a resumable **incident-Spec** feeding spec-gen's RESUME path.
 
 This is **not a fourth Tier** (CONTEXT.md fixes *Tier* at three) and **not a new

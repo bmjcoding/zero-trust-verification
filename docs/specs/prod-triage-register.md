@@ -4,6 +4,14 @@
 > (fifth non-tier plugin, after Marshal). Because org-wide memory (ADR 0019) landed first as
 > the fifth *registered* plugin, `triage` is the **SIXTH registered** plugin in the root
 > marketplace; the code and lint V6 assert six. See ADR 0020's reconciliation note.
+>
+> Consolidation note (2026-07-17): the plugin counts above are historical — ADR 0025 merged all
+> six plugins into the single `zero-trust` plugin, and ADR 0027 retired the root marketplace
+> (lint V6 now asserts NO marketplace and exactly one installable plugin). Separately, the
+> `[det-cond]` premise below — "the journeys.json v2 backref, codebase-health CH-02, is not yet
+> built" — was retired as FALSE by ADR 0029 (CH-02 shipped 2026-07-05, before this register's
+> triage build merged); the cross-check remains skipped in the shipped code pending the ADR 0029
+> wiring. Entries below stand as written (append-only).
 > Status: HARDENED r2 (adversarial critique applied) · new plugin `triage` (fifth PLUGIN,
 > NOT a fifth Tier — CONTEXT.md fixes "Tier" at three; ADR 0011 already established a fourth
 > non-tier plugin, Marshal). GAPS_SPEC register style.

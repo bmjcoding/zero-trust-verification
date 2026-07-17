@@ -1,16 +1,15 @@
 # Shared helpers for the manifest-reading PR-Gate siblings (CH-01/03/06/09).
 # Sourced, never executed. Extended-regex (grep -E) syntax throughout.
 #
-# The manifest schema + validator are VENDORED per ADR 0001 (the one permitted
-# bootstrap): CH items CONSUME `scripts/validate_manifest.sh` + the vendored
-# `schema/verification-manifest/v1.schema.json`, never re-implement the schema.
-# In this monorepo the validator lives at the repo root; when the audit plugin
-# is installed standalone the vendored copy travels with it. Both cases resolve
-# through chpr_find_validator below (env override first, then an upward walk),
-# so nothing here hard-codes a path.
+# The manifest schema + validator are a CANONICAL single copy (ADR 0025 retired
+# the ADR 0001 per-plugin vendoring): CH items CONSUME the plugin's
+# `scripts/validate_manifest.sh` + `schema/verification-manifest/v1.schema.json`,
+# never re-implement the schema. Resolution goes through chpr_find_validator
+# below (env override first, then an upward walk), so nothing here hard-codes
+# a path and a target-repo audit still finds the plugin's copy.
 
 # Locate validate_manifest.sh. Resolution order (first hit wins):
-#   1. $VALIDATE_MANIFEST env override (the self-test + a vendored install set it)
+#   1. $VALIDATE_MANIFEST env override (the self-test + non-standard installs set it)
 #   2. walk up from the manifest file's own directory (a real audit: the manifest
 #      is colocated with a Spec inside the target repo)
 #   3. walk up from $PWD

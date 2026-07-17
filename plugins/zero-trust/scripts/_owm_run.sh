@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # _owm_run.sh — shared runner sourced by the OWM .sh wrappers (extract_memory.sh,
 # crawl.sh, index_build.sh, query.sh, coverage.sh). It routes every Python
-# invocation through `uv run` against the nearest pyproject.toml (the repo root;
+# invocation through `uv run` against the nearest pyproject.toml (the plugin's —
+# plugins/zero-trust/pyproject.toml;
 # ADR 0015), falling back to an ambient python3 that already has the deps — the
 # exact philosophy of scripts/validate_manifest.sh, so a standalone-installed
 # plugin (whose host env provides ruamel.yaml + jsonschema) still runs.

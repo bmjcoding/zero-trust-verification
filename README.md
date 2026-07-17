@@ -109,6 +109,28 @@ SUITE_STRICT=1 scripts/suite_self_test.sh   # require a zero-skip proof (needs a
 
 Green means: every domain's self-test passes, the manifest validator round-trips, the surviving cross-domain contract lints (V2, V6, V9–V13 — the byte-identity vendoring rules V1/V3/V4/V5/V7/V8 retired with the vendored copies, ADR 0025) hold, and every one of those lints has *teeth* — a planted-violation red-test proves it catches the drift it guards against. The Python substrate uses [uv](https://docs.astral.sh/uv/) (self-bootstrapping from `uv.lock`); shell tooling targets Bash 3.2 for portability. See [ADR 0015](./docs/adr/0015-substrate-shell-python-uv-not-rust.md).
 
+## ID conventions
+
+Prefixes you will meet in self-test output, lints, registers, and changelogs — prefix → meaning → home:
+
+| Prefix | Meaning | Home |
+|---|---|---|
+| `V<n>` | root cross-domain lint rule (V2, V6, V9–V13 live; V1/V3–V5/V7/V8 retired with the vendored copies, ADR 0025 — ids never renumber) | `scripts/lint_consistency.sh` |
+| `L<n>` | autopilot lint rule (L1–L24) | `plugins/zero-trust/skills/autopilot/scripts/lint_consistency.sh` — the spec-gen substrate lint (`plugins/zero-trust/scripts/lint_consistency.sh`) also uses L1–L8 ids (rename pending, ADR 0031) |
+| `T` / `HD` / `HG` / `H50` / `W345-*` | autopilot self-test assertion families (see the legend in its header) | `plugins/zero-trust/skills/autopilot/scripts/self_test.sh` |
+| `AV3-x.n` | autopilot v3 register assertion ids — they resolve to self-test assertions (the standalone v3 register doc was retired) | `plugins/zero-trust/skills/autopilot/scripts/self_test.sh` |
+| `AP-x` | autopilot adversarial-review finding ids, cited as behavior anchors (origin register retired; historical) | `plugins/zero-trust/skills/autopilot/references/lifecycle.md` |
+| `CH-x` | codebase-health manifest-consumer wiring (PR-Gate siblings, CH-01..CH-10) | `tests/codebase-health/self_test.sh` + `plugins/zero-trust/docs/codebase-health/CHANGELOG.md` |
+| `MT-x` | mutation-testing gate items (ADR 0016) | autopilot self-test `MT` family + `plugins/zero-trust/skills/cleanup-audit/scripts/mutation_adapter.sh` |
+| `RL-x` | remediation-loop items | `plugins/zero-trust/skills/cleanup-audit/references/remediation-loop.md` |
+| `SD-x` | system-design coverage items | `docs/specs/system-design-coverage-register.md` |
+| `OM-x` / `OWM-x` | outcome measurement / org-wide memory items | `docs/specs/outcome-measurement-register.md` / `docs/specs/org-wide-memory-register.md` |
+| `MG` / `TR-x` | marshal real-backend e2e section / triage items | `plugins/zero-trust/scripts/self_test_marshal.sh` / `self_test_triage.sh` + `docs/specs/prod-triage-register.md` |
+| `HC-n` | hard contracts — two numbered families: spec tier HC1–HC7 and autopilot's Hard Contracts 1–11 ("autopilot HC4" = never merges) | `plugins/zero-trust/skills/spec/SKILL.md` / `skills/autopilot/SKILL.md`, each §"Hard contracts" |
+| `MS §n` | the Verification Manifest spec, by section | `docs/specs/verification-manifest-v1.md` |
+| `DL-###` | decision-log line ids (per-manifest scope, MS §6) | CONTEXT.md "Decision Log" + each manifest's `interrogation.log` |
+| Defects A–H | remediation-loop adversarial-hardening defects | `plugins/zero-trust/skills/cleanup-audit/references/remediation-loop.md` + ADRs 0017/0018 |
+
 ## How it was built (and why that matters)
 
 This suite was built *by itself*, spec-first. Every capability was implemented against a merged, adversarially-reviewed spec, and every PR passed a multi-pass review: a spec-fidelity check, then independent skeptics trying to *block* the merge. That process is not decoration — it caught a Marshal defect a green self-test hid (a queue command that only worked against the test mock), an unpinned vendored-copy that could silently drift, and an honesty-class laundering hole where an agent-graded metric could render as deterministic. It **mutation-tests its own fixes**: reintroduce the original bug, confirm the new assertion goes red. A test that passes when the code is broken constrains nothing.
@@ -116,7 +138,7 @@ This suite was built *by itself*, spec-first. Every capability was implemented a
 The design record lives in the open:
 
 - **[CONTEXT.md](./CONTEXT.md)** — the glossary (the ubiquitous language every domain shares).
-- **[docs/adr/](./docs/adr/)** — 27 architecture decision records, with the dissent from each adversarial round preserved in *Considered Options*.
+- **[docs/adr/](./docs/adr/)** — 32 architecture decision records (indexed with supersession notes in [docs/adr/README.md](./docs/adr/README.md)), with the dissent from each adversarial round preserved in *Considered Options*.
 - **[docs/specs/](./docs/specs/)** — the Verification Manifest schema and every capability's build register.
 - **[CHANGELOG.md](./CHANGELOG.md)** — what shipped in each release.
 

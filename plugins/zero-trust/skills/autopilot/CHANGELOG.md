@@ -2,7 +2,9 @@
 
 All notable changes to the autopilot skill. Format follows Keep a Changelog; versioning is SemVer. CHANGELOG.md is the single source of truth for version history — the SKILL.md frontmatter does not carry a `version:` field.
 
-**Release gate (v2.4.0, GAPS M3/M6).** Every behavioral claim in a release entry MUST cite the `scripts/self_test.sh` assertion id (Txx) or `scripts/lint_consistency.sh` rule id (Lxx) that proves it, or be tagged `[doc-only]`. Both scripts must pass before tagging. Any drain failure attributable to the skill must land a failing self-test assertion before (or with) its fix — a gap found once may not recur silently. (This gate exists because v2.1.0–v2.3.0 shipped multiple claimed-but-unimplemented behaviors; see docs/GAPS_SPEC.md §B.)
+**Release gate (v2.4.0, GAPS M3/M6).** Every behavioral claim in a release entry MUST cite the `scripts/self_test.sh` assertion id (Txx) or `scripts/lint_consistency.sh` rule id (Lxx) that proves it, or be tagged `[doc-only]`. Both scripts must pass before tagging. Any drain failure attributable to the skill must land a failing self-test assertion before (or with) its fix — a gap found once may not recur silently. (This gate exists because v2.1.0–v2.3.0 shipped multiple claimed-but-unimplemented behaviors, recorded in the since-deleted GAPS register.)
+
+**ID note.** `AV3-x.n` ids cited below resolve to `scripts/self_test.sh` assertions (the standalone autopilot-v3 register doc was retired); `GAPS-xx` / M-x references in older entries are historical — `docs/GAPS_SPEC.md` was deleted in the ADR 0025 Wave 2 sediment deletion.
 
 ## [3.1.0] - 2026-07-10
 

@@ -207,8 +207,8 @@ the code; `journeys.json` is the audit's *trace*, not the as-built doc.)
   unknown fields; any breaking change is v2.
 - Consumers pin supported versions and **refuse newer majors** with
   `[MANIFEST-UNSUPPORTED: schema_version N > supported M]` — never best-effort parse.
-- The JSON Schema is vendored byte-identical into each plugin (ADR 0001); the repo-level
-  consistency lint diffs the copies and fails on drift.
+- The JSON Schema is a canonical single copy in the plugin's `schema/` tree (ADR 0025
+  retired ADR 0001's per-plugin byte-identical vendoring along with the copy-diff lint).
 
 ## 9. Rot link: `spec_hash`
 
@@ -300,7 +300,9 @@ Single-file, hermetic; history checks belong to the PR Gate.
 2. `scripts/validate_manifest.sh` — schema check + §10 rules; exit codes per §11; hermetic
    self-test with fixtures: valid-complete, incomplete (each rule), boolean-in-enum,
    dangling ref, intra-file duplicate ID, withdrawn-without-reason, empty-behaviors-complete.
-3. Vendoring lint rule (byte-identical schema copies) in the repo consistency lint.
+3. Repo consistency lint guarding the schema (originally a byte-identical-copies
+   vendoring rule; the per-plugin copies and that rule were retired by ADR 0025 —
+   one canonical schema remains).
 4. Fixture pair: a manifest + a hand-authored `journeys.json` for a toy repo exercising
    every §12 row, with the expected comparison verdicts asserted.
 

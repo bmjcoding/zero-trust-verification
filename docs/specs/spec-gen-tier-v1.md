@@ -219,6 +219,11 @@ rule following the ADR 0001 pattern). Read-mostly permission posture: writes are
 markdown/YAML + git branch/PR only — the second-lowest-trust plugin after the audit, and
 the adoption on-ramp for teams that want better specs before they want drains.
 
+> Supersession note (2026-07-17): this packaging paragraph is historical. ADR 0025 consolidated
+> the plugins into the single `zero-trust` plugin (as SG-1's `plugins/zero-trust/` path in §8
+> already reflects) and retired the per-plugin vendoring + byte-identity lints; ADR 0027 retired
+> the marketplace. The `/spec` surface and the permission posture stand as written.
+
 ## 7. Deterministic substrate and self-test
 
 The LLM interrogation cannot be self-tested; the deterministic seam can and is:

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Resume projection for the Spec Generation tier (SG-4, spec-gen §7.2).
 
-On `--resume`/`--amend`, S1 runs the vendored `validate_manifest.sh` FIRST and
+On `--resume`/`--amend`, S1 runs the canonical `validate_manifest.sh` FIRST and
 trusts its exit-3 output over the stored `incomplete_fields` (the file may be
 stale after a crash). This module is the DETERMINISTIC mapping that turns that
 exit-3 output into the S-step work queue:
@@ -22,7 +22,7 @@ S4 re-run over the resumed entries (spec-gen §3 S5, §7.2) and are deliberately
 excluded here so the projection stays deterministic and testable.
 
 CLI:
-  resume_projection.py <manifest.yaml>     # runs the vendored validator, projects exit-3
+  resume_projection.py <manifest.yaml>     # runs the canonical validator, projects exit-3
   resume_projection.py --fields -          # reads incomplete_fields lines on stdin
 Both print a JSON {escalate:[...], mechanical:[...]} projection.
 """
@@ -105,14 +105,14 @@ def project(fields) -> dict:
 
 
 def project_manifest(path: Path) -> dict:
-    """Run the vendored validator on `path`; project its exit-3 output.
+    """Run the canonical validator on `path`; project its exit-3 output.
 
     exit 3  -> project the `[SPEC-INCOMPLETE: ...]` lines.
     exit 0  -> complete, nothing to resume (empty projection).
     exit 4/5 -> caller must handle (schema-invalid / unsupported); we surface it.
     """
     sys.path.insert(0, str(Path(__file__).resolve().parent))
-    import validate_manifest as V  # vendored, byte-identical to repo root
+    import validate_manifest as V  # the canonical validator (single copy, ADR 0025)
 
     code, lines = V.validate_file(path)
     if code == V.EXIT_INCOMPLETE:

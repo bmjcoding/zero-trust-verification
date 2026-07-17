@@ -1,18 +1,19 @@
 # marshal — the Merge Marshal
 
 A serial, deterministic **composed-state merge backstop** for any ordinary shared
-repo. The fourth Zero-Trust Verification plugin (ADR 0011), installable entirely
-on its own: claims plus serial merge safety, with zero Bazel, zero autopilot, zero
-spec tier.
+repo. Originally the fourth Zero-Trust Verification plugin (ADR 0011); since
+ADR 0025 a capability — commands + scripts — inside the single `zero-trust`
+plugin. Still usable entirely on its own: claims plus serial merge safety, with
+zero Bazel, zero autonomous drain, zero spec tier.
 
 ## Status
 
 v0.1.0 (2026-07-05), beta. The deterministic substrate (`scripts/`) is covered by
-an executed hermetic self-test (`scripts/self_test.sh` — its `PASS=` line reports
-the current assertion count) that drives the whole loop through a mock host
-backend. One host primitive it needs
-(`pr-list-ready`) is specified here and implemented in the mock; wiring it into the
-real GitHub / Bitbucket DC adapters is a tracked follow-up — see
+an executed hermetic self-test (`scripts/self_test_marshal.sh` — its `PASS=` line
+reports the current assertion count) that drives the whole loop through a mock
+host backend. The `pr-list-ready` host primitive is implemented in both real
+adapters (GitHub and Bitbucket DC) as well as the mock — proven end-to-end by the
+`MG01–MG03` assertions in `scripts/self_test_marshal.sh` and documented in
 [`references/host-contract.md`](../../references/host-contract.md).
 
 ## Why a merge queue still exists
@@ -70,7 +71,7 @@ hermetic mock. A new host is a new backend, never a new caller path. See
 | `skills/autopilot/scripts/claim_overlap.sh` | the claim-overlap check (ADR 0009) — the ONE canonical copy in the plugin (ADR 0025); not forked |
 | `scripts/branch_age_watcher.sh` | the 48h staleness / planning-failure watcher (ADR 0012/0009) |
 | `scripts/mock_host.py` + `mock_host.sh` | the hermetic mock host backend (Python via `uv`, ADR 0015) |
-| `scripts/self_test.sh` | the hermetic self-test |
+| `scripts/self_test_marshal.sh` | the hermetic self-test |
 | `commands/marshal-pass.md` | `/marshal-pass` — run one serial pass by hand |
 | `commands/marshal-staleness.md` | `/marshal-staleness` — the branch-age + claim-overlap sweep |
 | `references/*.md` (plugin root) | loop semantics + host contract |
@@ -90,7 +91,7 @@ or `/marshal-pass` inside Claude Code. A human hotfix pin:
 MARSHAL_HOTFIX_PIN=1234 bash …/scripts/marshal.sh   # logged to the Force Audit
 ```
 
-The vendored kernels run standalone too:
+The kernels run standalone too:
 
 ```bash
 # foreign claims overlapping a branch's owned files (inventory-driven, ADR 0009)

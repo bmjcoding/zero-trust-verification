@@ -70,5 +70,5 @@ when the merge trunk is not the default branch.
 `pr-list-ready` ships across `host.sh` + `github.sh` + `bitbucket.sh`,
 covered by the real-backend contract matrix in
 `skills/autopilot/scripts/self_test.sh` and the end-to-end marshal run in
-this plugin's `scripts/self_test.sh` (section `MG`); the hermetic mock
+this plugin's `scripts/self_test_marshal.sh` (section `MG`); the hermetic mock
 (`scripts/mock_host.py`) is the canonical reference implementation.

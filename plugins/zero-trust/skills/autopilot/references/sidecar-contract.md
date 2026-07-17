@@ -1,6 +1,6 @@
 # Sidecar Contract v0
 
-The contract between autopilot's REST-calling scripts (`bitbucket.sh`, `ci_check.sh`, `secret_get.sh`) and the workspace's optional identity-proxy sidecar. The sidecar is OPTIONAL: when absent (`sidecar_detect.sh` outputs `MODE=local`), scripts fall back to the OS-native keychain, then environment variables (the resolver chain at the bottom).
+The contract between autopilot's REST-calling scripts (`bitbucket.sh`, `secret_get.sh` — `ci_check.sh` no longer calls REST directly; it reads build state through `host.sh` only) and the workspace's optional identity-proxy sidecar. The sidecar is OPTIONAL: when absent (`sidecar_detect.sh` outputs `MODE=local`), scripts fall back to the OS-native keychain, then environment variables (the resolver chain at the bottom).
 
 Versioned: v0 is the current minimum. Implementations MUST NOT reject unknown headers from the sidecar and MUST surface unknown error codes as opaque failures — so v1 additions can't break v0 callers.
 
