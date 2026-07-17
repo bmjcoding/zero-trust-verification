@@ -36,13 +36,16 @@ asserting a false composed behavior.
    MODE gate is load-bearing, not optional: `manifest_join.py` never
    schema-validates — CH-01 alone implements MS §11's schema-invalid-is-a-
    DEFECT row), then dispatches `manifest_join.sh` when journeys.json is also
-   present (both live in the same directory). The join is a reporter, so the
-   gate's warn-only posture is untouched. Honest `[not-covered]` lines cover
-   every non-dispatch branch (no manifest / no journeys / unparseable
-   manifest), and *malformed journeys.json degrades loudly instead of
-   crashing* (the MT-06 precedent — today `manifest_join.py` would traceback
-   on bad JSON). A new self-test exercises `pr_gate.sh` with a manifest — the
-   class of gap that let this go unnoticed.
+   present, on MODE=COMPLETE only (MS §11: an incomplete manifest is treated
+   as absent for facet purposes — the CH-01 not-covered line stands as the
+   honest non-dispatch record; both scripts live in the same directory). The
+   join is a reporter, so the gate's warn-only posture is untouched. Honest
+   `[not-covered]` lines cover every non-dispatch branch (no manifest /
+   incomplete manifest / no journeys / unparseable manifest), and *malformed
+   or wrong-shaped journeys.json degrades loudly instead of crashing* (the
+   MT-06 precedent — today `manifest_join.py` would traceback on bad JSON). A
+   new self-test exercises `pr_gate.sh` with a manifest — the class of gap
+   that let this go unnoticed.
 2. `correlate.py` gains an optional `--journeys <path>`. When provided, the
    backref cross-check runs (a ~5-line exact-match comparison per MS §12
    row 1); when absent — the common production case, since a prod-triage run

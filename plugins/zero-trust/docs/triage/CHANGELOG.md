@@ -2,6 +2,18 @@
 
 All notable changes to this plugin are documented here.
 
+## Unreleased — backref cross-check runs when given the audit artifact (2026-07-17, ADR 0029)
+
+The 0.1.0 entry below records "CH-02 unbuilt" — false at its own merge (CH-02
+shipped 2026-07-05; see ADR 0029 and the dated correction in
+`docs/specs/prod-triage-register.md`). `correlate.py` now takes an optional
+`--journeys <path>`: provided with an audit-produced journeys.json v2, the
+backref cross-check RUNS — `agreed` / `disagreed` (contradicted ids named;
+a spec-legal ABSENT backref is v2-optional and never a disagreement, MS §12
+row 1) — and absent (the common prod-triage case), malformed, wrong-shaped,
+or backref-less input reports `skipped` with the honest reason, never
+"unbuilt". The result stays `{status, note}` (schema unchanged).
+
 ## 0.1.0 — initial release (register `docs/specs/prod-triage-register.md`, ADR 0020)
 
 The sixth independently installable plugin: a read-only, bounded-window SOURCE that

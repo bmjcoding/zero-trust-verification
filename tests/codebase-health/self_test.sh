@@ -748,12 +748,15 @@ if have_validator; then
   assert_grep "$WORK/prg_join.out" '^ROW journey-backref PASS'                            "CH-04/ADR-0029: join output (backref row) visible in the gate output"
   assert_grep "$WORK/prg_join.out" '^ROW emission PASS'                                   "CH-04/ADR-0029: join output (emission row) visible in the gate output"
   assert_not_grep "$WORK/prg_join.out" '\[not-covered\] manifest-coverage'                "CH-04/ADR-0029: a dispatched join leaves NO manifest-coverage not-covered line"
-  # (a2) INCOMPLETE manifest + journeys -> still dispatched (MS §11: incomplete
-  #      degrades facets, but the comparator's inputs both exist — ADR 0029).
+  # (a2) INCOMPLETE manifest + journeys -> NOT dispatched (MS §11: incomplete is
+  #      treated as absent for facet purposes; CH-01's own not-covered line is
+  #      the honest non-dispatch record — ADR 0029 as amended).
   ( cd "$PRG" && bash "$SKILL_SCRIPTS/pr_gate.sh" "$BASECOMMIT" --manifest "$MANIFEST_FIX/incomplete.yaml" --journeys "$JOIN_FIX/journeys.json" ) > "$WORK/prg_join_inc.out" 2>&1; rc=$?
   if [ "$rc" -eq 0 ]; then ok "CH-04/ADR-0029: incomplete-manifest gate run stays exit 0"; else fail "CH-04/ADR-0029: incomplete-manifest gate run must exit 0 [rc=$rc]"; fi
   assert_grep "$WORK/prg_join_inc.out" '^MODE=INCOMPLETE$'                                "CH-04/ADR-0029: incomplete manifest -> MODE=INCOMPLETE surfaced"
-  assert_grep "$WORK/prg_join_inc.out" 'manifest_join.sh .CH-03 §12 intended.*discovered join' "CH-04/ADR-0029: MODE=INCOMPLETE + journeys -> join still dispatched"
+  assert_grep "$WORK/prg_join_inc.out" '\[not-covered\] manifest-coverage .§12 join.: manifest completeness: incomplete — treated as absent' "CH-04/ADR-0029: incomplete -> CH-01's honest as-absent not-covered line present (MS §11 incomplete row)"
+  assert_not_grep "$WORK/prg_join_inc.out" 'manifest_join.sh .CH-03'                      "CH-04/ADR-0029: MODE=INCOMPLETE -> the join is NOT dispatched (MS §11: as-absent for facet purposes)"
+  assert_not_grep "$WORK/prg_join_inc.out" '^ROW '                                        "CH-04/ADR-0029: MODE=INCOMPLETE -> zero join ROW lines in the gate output"
   # (b) manifest present but NO journeys -> honest not-covered, no dispatch.
   ( cd "$PRG" && bash "$SKILL_SCRIPTS/pr_gate.sh" "$BASECOMMIT" --manifest "$JOIN_FIX/manifest.yaml" ) > "$WORK/prg_nojour.out" 2>&1; rc=$?
   if [ "$rc" -eq 0 ]; then ok "CH-04/ADR-0029: manifest-without-journeys gate run stays exit 0"; else fail "CH-04/ADR-0029: manifest-without-journeys gate run must exit 0 [rc=$rc]"; fi
@@ -771,6 +774,13 @@ if have_validator; then
   if [ "$rc" -eq 0 ]; then ok "CH-04/ADR-0029: malformed journeys.json degrades — gate still exits 0"; else fail "CH-04/ADR-0029: malformed journeys must degrade, not break the gate [rc=$rc]"; fi
   assert_grep     "$WORK/prg_garbage.out" '\[not-covered\] manifest-coverage .§12 join.: malformed journeys.json' "CH-04/ADR-0029: malformed journeys -> loud not-covered degrade (MT-06 precedent)"
   assert_not_grep "$WORK/prg_garbage.out" 'Traceback'                                     "CH-04/ADR-0029: malformed journeys never surfaces a Python traceback in the gate"
+  # (d2) valid JSON but WRONG SHAPE (top-level array, no 'journeys' list) -> the
+  #      same loud degrade: manifest_join.py must never see a wrong-shaped file.
+  printf '[]' > "$WORK/journeys-wrongshape.json"
+  ( cd "$PRG" && bash "$SKILL_SCRIPTS/pr_gate.sh" "$BASECOMMIT" --manifest "$JOIN_FIX/manifest.yaml" --journeys "$WORK/journeys-wrongshape.json" ) > "$WORK/prg_wrongshape.out" 2>&1; rc=$?
+  if [ "$rc" -eq 0 ]; then ok "CH-04/ADR-0029: wrong-shaped journeys.json degrades — gate still exits 0"; else fail "CH-04/ADR-0029: wrong-shaped journeys must degrade, not break the gate [rc=$rc]"; fi
+  assert_grep     "$WORK/prg_wrongshape.out" '\[not-covered\] manifest-coverage .§12 join.: malformed journeys.json' "CH-04/ADR-0029: wrong-shaped journeys (valid JSON, no journeys list) -> loud not-covered degrade"
+  assert_not_grep "$WORK/prg_wrongshape.out" 'Traceback'                                  "CH-04/ADR-0029: wrong-shaped journeys never surfaces a Python traceback in the gate"
 else
   echo "  [skip] validate_manifest.sh absent — CH-04 §12-join-dispatch checks skipped (blocked-on the spec-gen validator drain)"
 fi
