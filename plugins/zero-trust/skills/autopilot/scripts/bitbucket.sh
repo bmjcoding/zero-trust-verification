@@ -47,6 +47,14 @@
 #                          Trunk: --base > $AUTOPILOT_TRUNK > repo default-branch.
 #                          (The Merge Marshal's queue primitive — see
 #                           plugins/zero-trust/references/host-contract.md.)
+#   repo-list         --org <PROJECT-KEY>                       (ADR 0028)
+#                       -> enumerate the project's repositories as TSV, one per
+#                          line: <slug>\t<clone-or-api-url> (ssh clone link
+#                          preferred, else the first clone link). Paginates the
+#                          DC repos endpoint; rides the same hardened path as
+#                          every other subcommand (secret_get.sh, -H @file,
+#                          bb_curl, die_state). Needs NO repo coordinates —
+#                          only a REST host (see the lazy-derivation note).
 #
 # Draft PRs (AV3-06 / AV3-15). AUTOPILOT_BITBUCKET_DRAFT_MODE selects the
 # mechanism:
@@ -60,7 +68,12 @@
 #                       ALSO honoured as DRAFT in either mode, so a server that
 #                       later gains native drafts is never misread.)
 #
-# All subcommands derive PROJECT_KEY and REPO_SLUG from `git remote get-url origin`.
+# All PR/build subcommands derive PROJECT_KEY and REPO_SLUG from
+# `git remote get-url origin`. Derivation is LAZY (ADR 0028): it runs from the
+# dispatch for the subcommands that need repo coordinates. `repo-list` does NOT
+# (its project key is the caller-supplied --org), but it still resolves BB_HOST
+# — sidecar base > $AUTOPILOT_BITBUCKET_HOST > origin-derived — and dies
+# `no-host-source` when none exists (host resolution is never skipped).
 # Expected origin shape: https://<host>/scm/<project>/<repo>.git
 #
 # BB_HOST derivation (non-sidecar REST target): AUTOPILOT_BITBUCKET_HOST env
@@ -103,7 +116,7 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 usage() {
   cat >&2 <<EOF
 usage: bitbucket.sh <subcommand> [args]
-subcommands: pr-open pr-ready pr-state pr-comment pr-approve pr-decline pr-merge pr-merge-strategies build-status pr-list-ready
+subcommands: pr-open pr-ready pr-state pr-comment pr-approve pr-decline pr-merge pr-merge-strategies build-status pr-list-ready repo-list
 internal:    repo-coords (debug: prints derived PROJECT_KEY/REPO_SLUG/BB_HOST; not part of the host-adapter contract)
 EOF
   exit 64
@@ -125,20 +138,28 @@ die_state() {
 die() { die_state "generic-failure" "$*"; }
 
 # --- Repo coords --------------------------------------------------------------
+# Lazy derivation (ADR 0028): the dispatch calls derive_repo_coords +
+# derive_bb_host for every PR/build subcommand (preserving the historical
+# no-origin -> origin-parse -> host-parse failure order); repo-list calls
+# ONLY derive_bb_host, and only outside sidecar mode.
 
 ORIGIN_URL="$(git remote get-url origin 2>/dev/null || true)"
-[[ -n "$ORIGIN_URL" ]] || die_state "no-origin" "no origin remote configured"
 
-if [[ "$ORIGIN_URL" =~ /scm/([^/]+)/([^/]+)\.git$ ]]; then
-  PROJECT_KEY="${BASH_REMATCH[1]}"
-  REPO_SLUG="${BASH_REMATCH[2]}"
-elif [[ "$ORIGIN_URL" =~ ([^/:]+)/([^/]+)\.git$ ]]; then
-  # ssh://git@host/PROJECT/repo.git or git@host:PROJECT/repo.git
-  PROJECT_KEY="${BASH_REMATCH[1]}"
-  REPO_SLUG="${BASH_REMATCH[2]}"
-else
-  die_state "origin-parse" "cannot parse origin URL: $ORIGIN_URL"
-fi
+PROJECT_KEY=""
+REPO_SLUG=""
+derive_repo_coords() {
+  [[ -n "$ORIGIN_URL" ]] || die_state "no-origin" "no origin remote configured"
+  if [[ "$ORIGIN_URL" =~ /scm/([^/]+)/([^/]+)\.git$ ]]; then
+    PROJECT_KEY="${BASH_REMATCH[1]}"
+    REPO_SLUG="${BASH_REMATCH[2]}"
+  elif [[ "$ORIGIN_URL" =~ ([^/:]+)/([^/]+)\.git$ ]]; then
+    # ssh://git@host/PROJECT/repo.git or git@host:PROJECT/repo.git
+    PROJECT_KEY="${BASH_REMATCH[1]}"
+    REPO_SLUG="${BASH_REMATCH[2]}"
+  else
+    die_state "origin-parse" "cannot parse origin URL: $ORIGIN_URL"
+  fi
+}
 
 # Bitbucket DC host (for non-sidecar mode). Precedence:
 #   1. $AUTOPILOT_BITBUCKET_HOST — explicit operator override; the escape hatch
@@ -154,20 +175,30 @@ fi
 #      evidence: 20+ REST calls per drain needed a manual workaround before
 #      this strip.) A deployment whose REST host genuinely contains `-ssh.`
 #      sets AUTOPILOT_BITBUCKET_HOST instead.
-if [[ -n "${AUTOPILOT_BITBUCKET_HOST:-}" ]]; then
-  BB_HOST="$AUTOPILOT_BITBUCKET_HOST"
-elif [[ "$ORIGIN_URL" =~ https?://([^/]+)/ ]]; then
-  BB_HOST="${BASH_REMATCH[1]}"
-elif [[ "$ORIGIN_URL" =~ @([^:/]+)[:/] ]]; then
-  BB_HOST="${BASH_REMATCH[1]}"
-  # Split-SSH-endpoint convention (see the precedence note above). The `(\.|$)`
-  # alternation covers dotless single-label intranet hosts (`bitbucket-ssh`),
-  # where the whole host IS the first label — a dot-anchored pattern never
-  # fired on them and left every REST call pointed at the SSH endpoint.
-  BB_HOST="$(printf '%s' "$BB_HOST" | sed -E 's/^([^.]+)-ssh(\.|$)/\1\2/')"
-else
-  die_state "host-parse" "cannot parse host from origin URL"
-fi
+BB_HOST=""
+derive_bb_host() {
+  if [[ -n "${AUTOPILOT_BITBUCKET_HOST:-}" ]]; then
+    BB_HOST="$AUTOPILOT_BITBUCKET_HOST"
+    return 0
+  fi
+  # Reachable with an empty origin ONLY via repo-list (PR/build subcommands die
+  # no-origin in derive_repo_coords first): outside a repo the REST target has
+  # no source at all — die usefully rather than fabricating a host (ADR 0028).
+  [[ -n "$ORIGIN_URL" ]] || die_state "no-host-source" \
+    "repo-list needs a REST host: run inside a repo with a Bitbucket origin, or set AUTOPILOT_BITBUCKET_HOST (or use the sidecar)"
+  if [[ "$ORIGIN_URL" =~ https?://([^/]+)/ ]]; then
+    BB_HOST="${BASH_REMATCH[1]}"
+  elif [[ "$ORIGIN_URL" =~ @([^:/]+)[:/] ]]; then
+    BB_HOST="${BASH_REMATCH[1]}"
+    # Split-SSH-endpoint convention (see the precedence note above). The `(\.|$)`
+    # alternation covers dotless single-label intranet hosts (`bitbucket-ssh`),
+    # where the whole host IS the first label — a dot-anchored pattern never
+    # fired on them and left every REST call pointed at the SSH endpoint.
+    BB_HOST="$(printf '%s' "$BB_HOST" | sed -E 's/^([^.]+)-ssh(\.|$)/\1\2/')"
+  else
+    die_state "host-parse" "cannot parse host from origin URL"
+  fi
+}
 
 # --- Auth/routing -------------------------------------------------------------
 
@@ -873,6 +904,63 @@ cmd_pr_list_ready() {
   rm -f "$resp_f"
 }
 
+# repo-list: enumerate a project's repositories as the OWM-consumable 2-column
+# TSV `<slug>\t<clone-or-api-url>` (ADR 0028 — org enumeration is a backend
+# method behind host.sh, never a parallel transport; see host-contract.md).
+# The lazy-coords split: --org IS the project key, so PROJECT_KEY/REPO_SLUG are
+# never derived here; BB_HOST resolution still runs (non-sidecar) and dies
+# no-host-source when neither origin nor AUTOPILOT_BITBUCKET_HOST supplies one.
+cmd_repo_list() {
+  require_jq
+  local org=""
+  while (( $# > 0 )); do
+    case "$1" in
+      --org) org="$2"; shift 2 ;;
+      *) die_state "arg-parse" "repo-list: unknown arg $1" ;;
+    esac
+  done
+  [[ -n "$org" ]] || die_state "arg-parse" "repo-list: --org required"
+  (( SIDECAR_MODE == 1 )) || derive_bb_host
+
+  # Paginate the DC repos endpoint — the same cursor loop as pr-list-ready.
+  local resp_f start=0 page=0 last nps
+  resp_f=$(mktemp)
+  while (( page < 1000 )); do   # hard page cap: a runaway-pagination backstop
+    page=$((page+1))
+    local url
+    url=$(build_url "/rest/api/1.0/projects/${org}/repos?limit=100&start=${start}")
+    bb_curl GET "$url" "$resp_f"
+    if (( HTTP_STATUS < 200 || HTTP_STATUS >= 300 )); then
+      rm -f "$resp_f"
+      die_state "repo-list-http-${HTTP_STATUS}" "repo-list failed for project ${org}"
+    fi
+    # slug + clone URL (ssh link preferred, else the first clone link). These
+    # are STRING fields, so jq `//` alternates are safe here; the boolean-
+    # carrying isLastPage cursor below stays on the has() guard.
+    jq -r '
+      (.values // [])
+      | .[]
+      | (.slug // .name // "") as $slug
+      | select($slug != "")
+      | ((.links.clone // []) | map(select((.name // "") == "ssh")) | (.[0].href // "")) as $ssh
+      | ((.links.clone // []) | (.[0].href // "")) as $first
+      | [ $slug, (if $ssh != "" then $ssh else $first end) ]
+      | @tsv
+    ' < "$resp_f" 2>/dev/null || { rm -f "$resp_f"; die_state "repo-list-parse" "cannot parse DC repository list"; }
+
+    # DC pagination cursor — identical discipline to pr-list-ready: isLastPage is
+    # a BOOLEAN, and jq's `//` treats false like null (`false // true` == true),
+    # so it MUST be read via has()+else or a genuine `false` stops after page 1.
+    last=$(jq -r 'if has("isLastPage") then .isLastPage else true end' < "$resp_f" 2>/dev/null || echo true)
+    [[ "$last" == "true" ]] && break
+    nps=$(jq -r '.nextPageStart // empty' < "$resp_f" 2>/dev/null || echo "")
+    # No advancing cursor -> stop (never loop forever on a malformed page).
+    [[ -n "$nps" && "$nps" != "$start" ]] || break
+    start="$nps"
+  done
+  rm -f "$resp_f"
+}
+
 # repo-coords: internal debug/self-test surface (NOT part of the host-adapter
 # contract; host.sh does not delegate it). Prints the derived repo coordinates
 # so origin-URL/host derivation — including the SSH `-ssh` suffix strip and the
@@ -885,6 +973,17 @@ cmd_repo_coords() {
 
 (( $# >= 1 )) || usage
 SUB="$1"; shift
+# Lazy-coords split (ADR 0028): repo-list needs no PROJECT_KEY/REPO_SLUG (it
+# resolves BB_HOST itself); every other subcommand derives the full coordinate
+# set here, preserving the historical failure order (no-origin -> origin-parse
+# -> host-parse) the H50 / W345-BB families pin.
+case "$SUB" in
+  repo-list) : ;;
+  repo-coords|pr-open|pr-ready|pr-state|pr-comment|pr-approve|pr-decline|pr-merge|pr-merge-strategies|build-status|pr-list-ready)
+    derive_repo_coords
+    derive_bb_host
+    ;;
+esac
 case "$SUB" in
   repo-coords)          cmd_repo_coords "$@" ;;
   pr-open)              cmd_pr_open "$@" ;;
@@ -897,5 +996,6 @@ case "$SUB" in
   pr-merge-strategies)  cmd_pr_merge_strategies "$@" ;;
   build-status)         cmd_build_status "$@" ;;
   pr-list-ready)        cmd_pr_list_ready "$@" ;;
+  repo-list)            cmd_repo_list "$@" ;;
   *) usage ;;
 esac

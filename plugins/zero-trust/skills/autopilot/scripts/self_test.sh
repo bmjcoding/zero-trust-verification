@@ -21,8 +21,10 @@
 #   Txx      core substrate + bitbucket.sh/DC backend (T01-T38; T03 = credential
 #            never on curl argv)
 #   HDxx     Bitbucket DC draft-PR handling (native draft / [DRAFT] title modes)
-#   HGxx     github.sh backend via the gh argv shim (HG01-HG33)
+#   HGxx     github.sh backend via the gh argv shim (HG01-HG36)
 #   H50      host.sh backend detection from the origin URL
+#   HRxx     host.sh repo-list (ADR 0028): enumeration argv secrecy + the
+#            lazy-coords split (repo-list outside a repo; PR ops still die)
 #   AV3-x.n  v3 register assertions (the standalone register doc was retired;
 #            these ids live only here now)
 #   MT-x     D6.5 mutation gate (adapter, isolation, budget, verdicts)
@@ -196,6 +198,22 @@ class H(http.server.BaseHTTPRequestHandler):
             if "at=refs/heads/feature-x" in p:
                 self._send_json({"values": [{"id": 42, "state": "OPEN"}]}); return
             self._send_json({"values": []}); return
+        if re.search(r"/projects/[^/]+/repos\?", p):
+            # ADR 0028 repo-list fixture, served in TWO pages so the DC pagination
+            # cursor loop is exercised (isLastPage:False on page 1 is the
+            # `false // true` jq trap — a regressed cursor drops page 2 entirely).
+            # Aligned with the gh shim for the shared contract_matrix row:
+            # page 1 (start=0) carries `widget`, page 2 (start=50) `pricing`.
+            if "start=50" in p:
+                self._send_json({"isLastPage": True, "values": [
+                    {"slug": "pricing", "links": {"clone": [
+                        {"name": "http", "href": "https://bb.example.com/scm/acme/pricing.git"},
+                        {"name": "ssh", "href": "ssh://git@bb.example.com:7999/acme/pricing.git"}]}}]})
+                return
+            self._send_json({"isLastPage": False, "nextPageStart": 50, "values": [
+                {"slug": "widget", "links": {"clone": [
+                    {"name": "ssh", "href": "ssh://git@bb.example.com:7999/acme/widget.git"}]}}]})
+            return
         if "/settings/pull-requests" in p:
             self._send_json({"mergeConfig": {"strategies": [
                 {"id": "squash", "enabled": True},
@@ -375,6 +393,18 @@ contract_matrix() {  # <id> <invoker-fn>
   local picked
   picked="$($H pr-list-ready 2>/dev/null | awk -F"$TB" '$2!="" && $5=="APPROVED"' | sort -t"$TB" -k1,1n -k2,2n | awk -F"$TB" '{printf "%s,",$2}')"
   assert_eq "$ID" "marshal ordering over real output -> only APPROVED PR 42" "42," "$picked"
+
+  # repo-list — org enumeration as a backend method (ADR 0028): the OWM-consumable
+  # 2-column TSV `<slug>\t<clone-or-api-url>`. BOTH backends serve the acme
+  # fixture in TWO pages (DC isLastPage/nextPageStart cursor; gh --paginate
+  # concatenation), so slug completeness here IS the pagination proof. Clone
+  # URLs are host-shaped, so the shared body asserts the contract shape (two
+  # columns, non-empty url) + the full slug set; exact-URL assertions live in
+  # the per-backend sections (HD14 / HG34).
+  out="$($H repo-list --org acme 2>/dev/null)"; rc=$?
+  assert_eq "$ID" "repo-list --org exits 0" "0" "$rc"
+  assert_eq "$ID" "repo-list emits both pages' slugs as a 2-col TSV (url non-empty)" \
+    "$(printf 'pricing\nwidget')" "$(printf '%s\n' "$out" | awk -F"$TB" 'NF==2 && $2!="" {print $1}' | sort)"
 }
 
 echo "== bitbucket.sh + DC backend (T01-T07, T35, T36, HD01-HD10) =="
@@ -530,6 +560,14 @@ assert_eq HD12 "DC pr-list-ready empty queue -> exit 0" "0" "$rc"
 out="$(AUTOPILOT_TRUNK=page2branch hostbb pr-list-ready 2>/dev/null | sort -t"$(printf '\t')" -k1,1n)"
 assert_eq HD13 "DC pr-list-ready follows pagination to page 2 (PR 201)" \
   "$(printf '1783250000\t201\tfeature-p2\tfff201sha\tAPPROVED')" "$out"
+
+# HD14 — DC repo-list PAGINATES (ADR 0028): `pricing` lives on page 2 (start=50),
+# reachable ONLY if the cursor loop honours page 1's isLastPage:False and follows
+# nextPageStart (the `.isLastPage // true` jq trap would truncate to `widget`).
+# The ssh clone link is preferred over the http link (pricing carries both).
+out="$(hostbb repo-list --org acme 2>/dev/null | sort)"
+assert_eq HD14 "DC repo-list follows the two-page cursor; ssh clone link preferred" \
+  "$(printf 'pricing\tssh://git@bb.example.com:7999/acme/pricing.git\nwidget\tssh://git@bb.example.com:7999/acme/widget.git')" "$out"
 
 else
   skip DC-bitbucket "mock Bitbucket DC server unavailable in this environment"
@@ -1948,7 +1986,7 @@ assert_eq T27 "owner session passes the guard" "0" "$rc"
 CLAUDE_SESSION_ID=sess-INTRUDER bash "$DCD" "$CHAIN_TRK" >/dev/null 2>&1; rc=$?
 assert_eq T27 "second session is refused" "2" "$rc"
 
-echo "== github.sh backend via gh argv shim (H-GH, HG01-HG33) =="
+echo "== github.sh backend via gh argv shim (H-GH, HG01-HG36) =="
 
 # A fake `gh` that answers exactly the argv github.sh drives. This is the
 # GitHub counterpart to the DC mock server (ADR 0013: the same T01-class
@@ -2030,7 +2068,28 @@ case "$sub" in
     ;;
   api)
     path="${2:-}"
+    # ADR 0028 repo-list drives `gh api --paginate <path>`; existing calls
+    # never pass --paginate, so their argv is untouched.
+    paginate=0
+    if [[ "$path" == "--paginate" ]]; then paginate=1; path="${3:-}"; fi
     case "$path" in
+      /orgs/acme/repos)
+        # repo-list fixture: --paginate is REQUIRED argv (`gh repo list` has no
+        # --paginate — the ADR 0028 correction), so a paginate-less enumeration
+        # FAILS LOUD here. gh --paginate concatenates one JSON array per page;
+        # emit TWO pages (widget, pricing — aligned with the DC mock) so
+        # multi-page extraction is the asserted shape.
+        if (( paginate )); then
+          printf '[{"name":"widget","ssh_url":"git@github.com:acme/widget.git"}]\n[{"name":"pricing","ssh_url":"git@github.com:acme/pricing.git"}]\n'
+        else
+          printf 'ghshim: repo enumeration without --paginate\n' >&2
+          exit 1
+        fi ;;
+      /orgs/failorg/repos)
+        printf 'gh: HTTP 404: Not Found (/orgs/failorg/repos)\n' >&2
+        exit 1 ;;
+      /orgs/emptyorg/repos)
+        printf '[]\n' ;;
       graphql)
         # ReadyForReviewEvent lookup (pr-list-ready FIFO-key refinement). Returns
         # a real event only for PR 91; every other PR was opened non-draft (empty
@@ -2144,6 +2203,27 @@ out="$(ggh pr-list-ready --base hardening 2>/dev/null)"
 assert_eq HG33 "fractional createdAt converts + empty-head-sha PR dropped (one bad row != whole-queue abort)" \
   "$(printf '1783245600\t93\tfeature-frac\tfff93sha\tAPPROVED')" "$out"
 
+# HG34 — repo-list (ADR 0028) drives `gh api --paginate /orgs/<org>/repos` —
+# NEVER `gh repo list` (it has no --paginate): the shim EXITS 1 on a
+# paginate-less enumeration, so this assertion also pins the argv. Both
+# concatenated pages land in the 2-column TSV, in page order.
+out="$(hgh repo-list --org acme 2>/dev/null)"
+assert_eq HG34 "gh repo-list: --paginate argv + both pages in the 2-col TSV" \
+  "$(printf 'widget\tgit@github.com:acme/widget.git\npricing\tgit@github.com:acme/pricing.git')" "$out"
+
+# HG35 — gh's exit status is SURFACED (no 2>/dev/null discard): a failed
+# enumeration is die_state + gh's own stderr, never an empty-TSV false success
+# (the retired transport's silent-failure defect).
+err="$(hgh repo-list --org failorg 2>&1 >/dev/null)"; rc=$?
+assert_eq HG35 "gh enumeration failure -> exit 1 (never a silent empty TSV)" "1" "$rc"
+assert_contains HG35 "failure classified via LAST_STATE" "LAST_STATE=repo-list-failed" "$err"
+assert_contains HG35 "gh's own stderr passes through (not discarded)" "HTTP 404" "$err"
+
+# HG36 — a genuinely-empty org is DISTINGUISHABLE from failure: empty TSV, exit 0.
+out="$(hgh repo-list --org emptyorg 2>/dev/null)"; rc=$?
+assert_eq HG36 "empty org -> no output" "" "$out"
+assert_eq HG36 "empty org -> exit 0" "0" "$rc"
+
 echo "== host.sh backend detection (H50) =="
 
 det() { ( cd "$1" && bash "$HERE/host.sh" backend 2>/dev/null ); }
@@ -2216,6 +2296,65 @@ git -C "$DOTLESS_REPO" remote add origin "git@bitbucket-ssh:PROJ/myrepo.git"
 out="$(coords "$DOTLESS_REPO")"
 val=$(sed -n 's/^BB_HOST=//p' <<<"$out")
 assert_eq W345-BB6 "dotless intranet host: -ssh suffix stripped" "bitbucket" "$val"
+
+echo "== host.sh repo-list — ADR 0028 lazy-coords split + argv secrecy (HR01-HR04) =="
+
+# Deterministic (no mock server): a curl PATH-shim answers the REAL bitbucket.sh
+# bb_curl invocation shape (-o <body> / -w %{http_code}) and logs argv, so the
+# enumeration path's transport shape is asserted offline.
+HRSHIM="$SANDBOX/hrshim"; mkdir -p "$HRSHIM"
+cat > "$HRSHIM/curl" <<'SHIMEOF'
+#!/usr/bin/env bash
+printf '%s\n' "$@" >> "${CURL_ARGV_LOG:?}"
+out=""; prev=""
+for a in "$@"; do
+  [[ "$prev" == "-o" ]] && out="$a"
+  prev="$a"
+done
+[[ -n "$out" ]] && printf '{"isLastPage": true, "values": [{"slug": "argvrepo", "links": {"clone": [{"name": "ssh", "href": "ssh://git@bb.example.com/acme/argvrepo.git"}]}}]}' > "$out"
+printf '200'
+SHIMEOF
+chmod +x "$HRSHIM/curl"
+
+# HR01 — T03-analog for the enumeration path (ADR 0028): the token reaches curl
+# via -H @file, NEVER argv — the exact hardening the retired host_repo_list.sh
+# transport lacked (it interpolated `Bearer $TOKEN` into curl's command line).
+hr_argv_log="$SANDBOX/hr_curl_argv.log"; : > "$hr_argv_log"
+out=$( cd "$API_REPO" && PATH="$HRSHIM:$PATH" CURL_ARGV_LOG="$hr_argv_log" \
+  AUTOPILOT_BITBUCKET_TOKEN="supersecret-enum-token-999" \
+  bash "$HERE/host.sh" repo-list --org acme 2>/dev/null )
+assert_eq HR01 "repo-list rides the hardened transport (TSV emitted)" \
+  "$(printf 'argvrepo\tssh://git@bb.example.com/acme/argvrepo.git')" "$out"
+hr_argv="$(cat "$hr_argv_log" 2>/dev/null || true)"
+assert_not_contains HR01 "enumeration token never appears on curl argv" "supersecret-enum-token-999" "$hr_argv"
+assert_contains HR01 "enumeration auth header passed via -H @file" "@/" "$hr_argv"
+
+# HR02 — repo-list works OUTSIDE a repo when $AUTOPILOT_HOST_BACKEND steers the
+# backend and a host source exists (the documented env-override path — the
+# lazy-coords split: repo-list derives no PROJECT_KEY/REPO_SLUG).
+HR_NOREPO="$SANDBOX/hr-norepo"; mkdir -p "$HR_NOREPO"
+out=$( cd "$HR_NOREPO" && PATH="$HRSHIM:$PATH" CURL_ARGV_LOG="$hr_argv_log" \
+  AUTOPILOT_HOST_BACKEND=BITBUCKET_DC AUTOPILOT_BITBUCKET_HOST=bb.example.com \
+  AUTOPILOT_BITBUCKET_TOKEN="supersecret-enum-token-999" \
+  bash "$HERE/host.sh" repo-list --org acme 2>/dev/null )
+assert_contains HR02 "repo-list outside a repo (override + explicit host) works" "argvrepo" "$out"
+
+# HR03 — outside a repo with NO host source at all, repo-list dies with a USEFUL
+# LAST_STATE (host resolution is never skipped — ADR 0028 Decision 4).
+err=$( cd "$HR_NOREPO" && AUTOPILOT_HOST_BACKEND=BITBUCKET_DC \
+  bash "$HERE/host.sh" repo-list --org acme 2>&1 >/dev/null ); rc=$?
+assert_eq HR03 "repo-list with no host source -> exit 1" "1" "$rc"
+assert_contains HR03 "…classified no-host-source" "LAST_STATE=no-host-source" "$err"
+assert_contains HR03 "…and names the AUTOPILOT_BITBUCKET_HOST knob" "AUTOPILOT_BITBUCKET_HOST" "$err"
+
+# HR04 — lazy-coords REGRESSION PIN: every existing subcommand still dies
+# no-origin outside a repo (the split must relax repo-list ONLY).
+err=$( cd "$HR_NOREPO" && bash "$HERE/bitbucket.sh" pr-state --num 1 2>&1 >/dev/null ); rc=$?
+assert_eq HR04 "bitbucket.sh pr-state outside a repo still exits 1" "1" "$rc"
+assert_contains HR04 "bitbucket.sh existing subcommand still dies no-origin" "LAST_STATE=no-origin" "$err"
+err=$( cd "$HR_NOREPO" && bash "$HERE/github.sh" pr-state --num 1 2>&1 >/dev/null ); rc=$?
+assert_eq HR04 "github.sh pr-state outside a repo still exits 1" "1" "$rc"
+assert_contains HR04 "github.sh existing subcommand still dies no-origin" "LAST_STATE=no-origin" "$err"
 
 echo "== consistency lint (L1-L23) =="
 

@@ -20,6 +20,12 @@
 #   pr-list-ready      -> enumerate the ready+approval-tagged merge queue as TSV
 #                         (the Merge Marshal's queue primitive; see
 #                          plugins/zero-trust/references/host-contract.md)
+#   repo-list --org <org>
+#                      -> enumerate an org/project's repositories as TSV
+#                         `<slug>\t<clone-or-api-url>` (org-memory's OWM-09
+#                         enumeration primitive — ADR 0028; see host-contract.md).
+#                         Outside a repo, set $AUTOPILOT_HOST_BACKEND (detection
+#                         below still requires an origin remote otherwise).
 #
 # Plus one introspection subcommand, host-local (not delegated):
 #   backend            -> prints the detected backend id (BITBUCKET_DC | GITHUB)
@@ -45,7 +51,7 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 usage() {
   cat >&2 <<EOF
 usage: host.sh <subcommand> [args]
-subcommands: backend pr-open pr-ready pr-state pr-comment pr-approve pr-decline pr-merge pr-merge-strategies build-status pr-list-ready
+subcommands: backend pr-open pr-ready pr-state pr-comment pr-approve pr-decline pr-merge pr-merge-strategies build-status pr-list-ready repo-list
 EOF
   exit 64
 }
@@ -90,7 +96,7 @@ case "$SUB" in
   backend)
     detect_backend; echo
     ;;
-  pr-open|pr-ready|pr-state|pr-comment|pr-approve|pr-decline|pr-merge|pr-merge-strategies|build-status|pr-list-ready)
+  pr-open|pr-ready|pr-state|pr-comment|pr-approve|pr-decline|pr-merge|pr-merge-strategies|build-status|pr-list-ready|repo-list)
     BACKEND="$(detect_backend)"
     SCRIPT="$(backend_script "$BACKEND")"
     [[ -f "$SCRIPT" ]] || die_state "backend-missing" "backend script not found: $SCRIPT"

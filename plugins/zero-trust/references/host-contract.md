@@ -14,6 +14,7 @@ Bitbucket Data Center, or the hermetic mock (`scripts/mock_host.py`).
 | `build-status --sha <sha>` | composed-state verification on the post-rebase head |
 | `pr-comment --num <n> --body-file <path>` | kickback comments (budget / conflict / Composition Break) |
 | `pr-merge --num <n> [--strategy <s>]` | the merge (smallest write scope, with rebase-push) |
+| `repo-list --org <org>` | org repo enumeration (org-memory OWM-09, ADR 0028) — **not** a Marshal call; defined below |
 
 The Marshal deliberately does **not** call `pr-open`, `pr-ready`,
 `pr-approve`, or `pr-decline` in the merge path — its write scope is
@@ -72,3 +73,33 @@ covered by the real-backend contract matrix in
 `skills/autopilot/scripts/self_test.sh` and the end-to-end marshal run in
 this plugin's `scripts/self_test_marshal.sh` (section `MG`); the hermetic mock
 (`scripts/mock_host.py`) is the canonical reference implementation.
+
+## `repo-list` (org enumeration — ADR 0028)
+
+Org-memory's optional enumeration primitive (OWM-09), implemented by both
+backends behind the same `host.sh` surface — never a parallel transport.
+Not called by the Marshal.
+
+```
+repo-list --org <org>
+  -> TSV on stdout, one repository per line, columns TAB-separated:
+       <slug>              repository slug/name
+       <clone-or-api-url>  ssh clone link preferred, else the first clone/api link
+  --org is REQUIRED: the GitHub organization login / Bitbucket DC project key.
+  Repo coordinates are NOT derived (--org is the target), so repo-list runs
+  outside a repo when $AUTOPILOT_HOST_BACKEND steers backend detection; on
+  Bitbucket DC a REST host is still required (origin-derived, or
+  $AUTOPILOT_BITBUCKET_HOST / sidecar) — with no host source it dies
+  LAST_STATE=no-host-source.
+  Empty org -> no output, exit 0. Failure = die_state: LAST_STATE + reason on
+  stderr, exit 1 — NEVER an empty TSV masquerading as an empty org.
+```
+
+Backend mappings: **GitHub** — `gh api --paginate /orgs/<org>/repos` (`gh repo
+list` has no `--paginate`); gh owns credentials, its exit status and stderr are
+surfaced. **Bitbucket DC** — paginated `GET /rest/api/1.0/projects/<org>/repos`
+through `bb_curl` (secret resolver chain, `-H @file` — the token is never on
+curl's argv) with the `has()`-guarded `isLastPage`/`nextPageStart` cursor.
+Covered by the contract matrix + `HD14`/`HG34`–`HG36`/`HR01`–`HR04` in
+`skills/autopilot/scripts/self_test.sh` and OWM-09 in
+`scripts/self_test_org_memory.sh`.
