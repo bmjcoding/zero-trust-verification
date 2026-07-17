@@ -18,8 +18,9 @@ telemetry.sh window (BOUNDED) → loop_guard exclude-self → correlate (§12 ev
 
 An emitted vital is correlated to the Verification Manifest's journey + behavior IDs
 via the §12 `event_name` join key (the journey is **DERIVED** from the match, not read
-from a backref — the journeys.json v2 backref lives in the unbuilt codebase-health
-CH-02). A confident join becomes a partial, `completeness: incomplete` manifest that
+from a backref — telemetry carries none; when an audit-produced journeys.json v2 is
+supplied via `--journeys`, its CH-02 backref is cross-checked, ADR 0029). A confident
+join becomes a partial, `completeness: incomplete` manifest that
 references EXISTING behavior IDs (minting none) and re-enters spec-gen's resume path
 as a DRAFT PR **proposal** for human review.
 
