@@ -29,7 +29,7 @@ CRAWL="$HERE/crawl.sh"
 INDEX="$HERE/index_build.sh"
 QUERY="$HERE/query.sh"
 COVERAGE="$HERE/coverage.sh"
-HRL="$HERE/host_repo_list.sh"
+HOST_SH="$HERE/../skills/autopilot/scripts/host.sh"   # repo-list backend method (ADR 0028)
 OWM_SCHEMA="$HERE/../schema/org-memory/v1.schema.json"
 MCP="$HERE/../mcp/mcp_server.py"
 
@@ -433,25 +433,56 @@ covclean="$(bash "$COVERAGE" --db "$SANDBOX/clean.db" --all)"
 assert_eq       OWM-08 "a fully-clean org reports zero crawl errors" "0" "$(printf '%s' "$covclean" | jget 'd["crawl_error_count"]')"
 
 # =============================================================================
-# OWM-09 — host repo-list: NEW backend method, BOTH backends, mock matrix + fallback
+# OWM-09 — host repo-list: a host.sh backend method (ADR 0028), BOTH backends.
+# The old parallel transport (host_repo_list.sh) is retired; enumeration now
+# rides the hardened adapter path, so the mocks inject credentials the way the
+# autopilot contract fixtures do (env-tier secret for secret_get.sh; the curl
+# shim sees the -H @file auth shape, never a token on argv).
 # =============================================================================
-echo "== OWM-09 host repo-list (optional) =="
+echo "== OWM-09 host repo-list (optional; ADR 0028) =="
 
 SHIM="$SANDBOX/shim"; mkdir -p "$SHIM"
+# gh shim: answers exactly the enumeration argv github.sh drives —
+# `gh api --paginate /orgs/<org>/repos` (`gh repo list` has no --paginate).
 cat > "$SHIM/gh" <<'EOF'
 #!/usr/bin/env bash
-[ "$1" = "repo" ] && [ "$2" = "list" ] && printf '[{"name":"widget","sshUrl":"git@github.com:acme/widget.git"},{"name":"pricing","sshUrl":"git@github.com:acme/pricing.git"}]\n'
+if [ "$1" = "api" ]; then
+  paginate=0; path=""
+  shift
+  for a in "$@"; do
+    case "$a" in
+      --paginate) paginate=1 ;;
+      /*) path="$a" ;;
+    esac
+  done
+  if [ "$path" = "/orgs/acme/repos" ] && [ "$paginate" = "1" ]; then
+    printf '[{"name":"widget","ssh_url":"git@github.com:acme/widget.git"},{"name":"pricing","ssh_url":"git@github.com:acme/pricing.git"}]\n'
+    exit 0
+  fi
+fi
+echo "gh-shim: unhandled argv: $*" >&2
+exit 1
 EOF
+# curl shim: emulates the bb_curl invocation shape (`-o <body> -w %{http_code}`)
+# for the DC repos endpoint, one final page.
 cat > "$SHIM/curl" <<'EOF'
 #!/usr/bin/env bash
-printf '{"values":[{"slug":"widget","links":{"clone":[{"name":"ssh","href":"ssh://git@bb/acme/widget.git"}]}},{"slug":"pricing","links":{"clone":[{"name":"ssh","href":"ssh://git@bb/acme/pricing.git"}]}}]}\n'
+out=""; prev=""
+for a in "$@"; do
+  [ "$prev" = "-o" ] && out="$a"
+  prev="$a"
+done
+[ -n "$out" ] && printf '{"isLastPage":true,"values":[{"slug":"widget","links":{"clone":[{"name":"ssh","href":"ssh://git@bb/acme/widget.git"}]}},{"slug":"pricing","links":{"clone":[{"name":"ssh","href":"ssh://git@bb/acme/pricing.git"}]}}]}' > "$out"
+printf '200'
 EOF
 chmod +x "$SHIM/gh" "$SHIM/curl"
 
-gh_tsv="$(OWM_HOST_BACKEND=GITHUB PATH="$SHIM:$PATH" bash "$HRL" repo-list --org acme)"
+gh_tsv="$(AUTOPILOT_HOST_BACKEND=GITHUB PATH="$SHIM:$PATH" bash "$HOST_SH" repo-list --org acme)"
 assert_contains OWM-09 "GITHUB backend: mock org -> TSV of repos"    "widget	git@github.com:acme/widget.git" "$gh_tsv"
-bb_tsv="$(OWM_HOST_BACKEND=BITBUCKET_DC PATH="$SHIM:$PATH" bash "$HRL" repo-list --org acme)"
-assert_contains OWM-09 "BITBUCKET_DC backend: mock org -> TSV of repos" "widget	ssh://git@bb/acme/widget.git" "$bb_tsv"
+bb_tsv="$(AUTOPILOT_HOST_BACKEND=BITBUCKET_DC AUTOPILOT_BITBUCKET_HOST=bb.example \
+          AUTOPILOT_BITBUCKET_TOKEN=owm-test-token PATH="$SHIM:$PATH" \
+          bash "$HOST_SH" repo-list --org acme)"
+assert_contains OWM-09 "BITBUCKET_DC backend: mock org -> TSV of repos (hardened path)" "widget	ssh://git@bb/acme/widget.git" "$bb_tsv"
 # the crawler CONSUMES the enumerated output (build a config from the TSV over a real repo)
 mkdir -p "$FX/enum/widget/docs/adr"; printf 'enum-sha\n' > "$FX/enum/widget/.owm-sha"
 cat > "$FX/enum/widget/docs/adr/0001-enumerated.md" <<'MD'
@@ -478,12 +509,16 @@ EOF
 printf '], "allow":["widget"] }' >> "$enum_cfg"
 enum_rec="$(bash "$CRAWL" --config "$enum_cfg" 2>/dev/null)"
 assert_contains OWM-09 "crawler consumes the enumerated repo list"   "widget:adr:enumerated" "$enum_rec"
-# fallback: no backend/capability -> exit 3 + loud note (caller uses the OWM-03 config)
+# ADR 0028 failure contract (replaces the old soft exit-3 fallback): with no
+# backend detectable AND no $AUTOPILOT_HOST_BACKEND, the adapter dies loudly —
+# die_state + LAST_STATE on stderr, exit 1. Config-first is a CALLER posture
+# (OWM-03 remains the source of truth); the adapter never soft-succeeds.
 NOBK="$SANDBOX/nobackend"; mkdir -p "$NOBK"
 fb_rc=0
-( cd "$NOBK" && OWM_HOST_BACKEND="" bash "$HRL" repo-list --org acme >/dev/null 2>"$SANDBOX/fb.err" ) || fb_rc=$?
-assert_eq       OWM-09 "no enumeration capability -> exit 3 (fall back to config)" "3" "$fb_rc"
-assert_contains OWM-09 "fallback emits a loud note"                  "fall back to the OWM-03 explicit config list" "$(cat "$SANDBOX/fb.err")"
+( cd "$NOBK" && AUTOPILOT_HOST_BACKEND="" bash "$HOST_SH" repo-list --org acme >/dev/null 2>"$SANDBOX/fb.err" ) || fb_rc=$?
+assert_eq       OWM-09 "no backend detectable + no override -> die_state exit 1" "1" "$fb_rc"
+assert_contains OWM-09 "failure emits LAST_STATE on stderr (loud, classifiable)" "LAST_STATE=no-origin" "$(cat "$SANDBOX/fb.err")"
+assert_contains OWM-09 "failure names the AUTOPILOT_HOST_BACKEND override knob"  "AUTOPILOT_HOST_BACKEND" "$(cat "$SANDBOX/fb.err")"
 
 # =============================================================================
 # OWM-11 — MCP server: protocol round trip, identical-to-CLI, refuse-by-default

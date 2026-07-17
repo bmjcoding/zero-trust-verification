@@ -33,7 +33,9 @@ via a refuse-by-default MCP query surface — never a second store of truth.
 - **OWM-09** (optional) — host org-enumeration (`scripts/host_repo_list.sh`) as a NEW
   `repo-list` backend method for GitHub (`gh`) and Bitbucket DC (REST), against a
   T01-class mock matrix; falls back to the explicit config list. No runtime dependency
-  on the autopilot plugin.
+  on the autopilot plugin. *[superseded by ADR 0028 (2026-07-17): `repo-list` is a
+  `host.sh` backend method on the hardened adapter path; `host_repo_list.sh` and its
+  soft exit-3 fallback are retired — failures are `die_state`, config-first unchanged]*
 - **OWM-11** — MCP server (`mcp/mcp_server.py`): read-only `memory_lookup`,
   `memory_search`, `memory_resolve_term`, `memory_decisions` + a coverage resource,
   as a thin adapter over `query.sh` (output byte-identical to the CLI). Refuse-by-default
