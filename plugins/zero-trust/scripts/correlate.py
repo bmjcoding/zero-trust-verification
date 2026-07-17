@@ -106,7 +106,7 @@ def correlate(window: list[dict], manifest_path: Path) -> dict:
             result["no_join"].append({"event_name": rec.get("event_name"), "reason": "manifest-absent"})
         return result
 
-    data, err = V._load_yaml_12(manifest_path)
+    data, err = V.load_manifest(manifest_path)
     if err is not None:
         raise SystemExit(f"correlate.py: REFUSE: manifest unreadable/parse error: {err}")
     code, lines = V.validate_mapping(data)

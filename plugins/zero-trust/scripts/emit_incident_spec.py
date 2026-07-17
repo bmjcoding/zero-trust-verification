@@ -46,9 +46,14 @@ REFUSE_NO_JOIN = 2
 
 
 def _yaml_dump(data) -> str:
+    """WRITER, pinned to the same safe/YAML-1.2 discipline as the canonical
+    loader (ADR 0032) so what the tier writes obeys the Norway guard it reads
+    by. Emits a `%YAML 1.2` directive; no test asserts emitted bytes — the
+    acceptance proof is the validator exit-3 round-trip below."""
     from ruamel.yaml import YAML
     import io
-    y = YAML()
+    y = YAML(typ="safe", pure=True)
+    y.version = (1, 2)
     y.default_flow_style = False
     y.width = 4096
     buf = io.StringIO()
@@ -265,7 +270,7 @@ def main(argv) -> int:
         print(f"[note] already-open-incident-spec (key={key}) — suppressing duplicate incident-Spec (TR-loop-guard).", file=sys.stderr)
         return 0  # suppression is the correct, safe outcome — not an error
 
-    source, err = V._load_yaml_12(Path(args.manifest))
+    source, err = V.load_manifest(Path(args.manifest))
     if err is not None:
         print(f"emit: REFUSE: source manifest unreadable: {err}", file=sys.stderr)
         return REFUSE_NO_JOIN

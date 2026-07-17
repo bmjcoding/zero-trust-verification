@@ -5,7 +5,7 @@ The LLM interrogation (S2–S5 judgment) cannot be self-tested; the deterministi
 seam can and is (spec-gen §7). Case groups map 1:1 to the deliverable acceptance:
 
   0. Canonical copies ... validate_manifest.{sh,py} + schema present ONCE in the plugin (SG-3/SG-6, ADR 0025)
-  A. Validator reuse .... the vendored (== repo) validator over the repo fixtures
+  A. Validator reuse .... the canonical (single-copy) validator over the repo fixtures
                           + a rule-8 mutation + the mid-session manifest       (SG-3)
   B. ID allocator ....... §6 grammar: next-id, 999→new-slug, reuse refusal      (SG-4/§7.3)
   C. Resume projection .. validator exit-3 → escalate(1,2,4) / mechanical slots (SG-4/§7.2)
@@ -36,10 +36,6 @@ import id_alloc                         # noqa: E402
 import resume_projection                # noqa: E402
 import profile_resolve                  # noqa: E402
 import emission_check                   # noqa: E402
-from ruamel.yaml import YAML            # noqa: E402
-
-_yaml = YAML(typ="safe", pure=True)
-_yaml.version = (1, 2)
 
 passed = 0
 failed = 0
@@ -56,8 +52,9 @@ def check(name, cond, detail=""):
 
 
 def load(path):
-    with open(path) as fh:
-        return _yaml.load(fh)
+    data, err = V.load_manifest(Path(path))  # the public load API (ADR 0032)
+    assert err is None, err
+    return data
 
 
 # ---- 0. Canonical single copies present (SG-3/SG-6, post-ADR-0025) ---------------
@@ -137,7 +134,7 @@ except id_alloc.IdError:
     check("claim() refuses an id reserved on an open branch", True)
 check("claim() accepts a fresh well-formed id", id_alloc.claim("J-wire-009", reserved) == "J-wire-009")
 
-# grammar: every emitted id matches the vendored schema regex; malformed rejected.
+# grammar: every emitted id matches the canonical schema regex; malformed rejected.
 check("emitted ids are §6-valid", id_alloc.valid("J-pay-002") and id_alloc.valid("B-fee-x-001"))
 check("uppercase slug rejected (schema regex)", not id_alloc.valid("J-Pay-001"))
 check("2-digit suffix rejected", not id_alloc.valid("J-pay-01"))
