@@ -31,13 +31,8 @@ WATCH="$HERE/branch_age_watcher.sh"
 MOCK="$HERE/mock_host.sh"
 TAB="$(printf '\t')"
 
-PASS=0
-FAIL=0
-fail() { echo "FAIL [$1] $2" >&2; FAIL=$((FAIL+1)); }
-pass() { echo "ok   [$1] $2"; PASS=$((PASS+1)); }
-assert_eq()        { if [[ "$3" == "$4" ]]; then pass "$1" "$2"; else fail "$1" "$2 — expected [$3], got [$4]"; fi; }
-assert_contains()  { if grep -qF -- "$3" <<<"$4"; then pass "$1" "$2"; else fail "$1" "$2 — missing [$3] in:\n$4"; fi; }
-assert_not_contains() { if grep -qF -- "$3" <<<"$4"; then fail "$1" "$2 — found forbidden [$3]"; else pass "$1" "$2"; fi; }
+. "$ROOT/scripts/test_harness.sh"   # the ONE assertion library (ADR 0025 Wave 4)
+th_init A banner ""
 
 SANDBOX="$(mktemp -d)"
 cleanup() { rm -rf "$SANDBOX"; }
@@ -566,8 +561,4 @@ assert_contains MG03 "pass summary records the single real-backend merge" "done 
 fi  # GH_OK
 
 # ==============================================================================
-echo
-echo "==============================="
-echo "PASS=$PASS FAIL=$FAIL"
-echo "==============================="
-(( FAIL == 0 ))
+th_summary

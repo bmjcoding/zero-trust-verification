@@ -33,13 +33,8 @@ MOCK="$ZT/scripts/mock_host.sh"
 py() { if command -v uv >/dev/null 2>&1 && [ -f "$ZT/pyproject.toml" ]; then uv run --no-project python "$@"; else python3 "$@"; fi; }
 jget() { py - "$@"; }  # convenience: run inline python reading argv
 
-PASS=0; FAIL=0
-pass() { echo "ok   [$1] $2"; PASS=$((PASS+1)); }
-fail() { echo "FAIL [$1] $2" >&2; FAIL=$((FAIL+1)); }
-assert_eq() { if [ "$3" = "$4" ]; then pass "$1" "$2"; else fail "$1" "$2 — expected [$3] got [$4]"; fi; }
-assert_rc() { if [ "$3" = "$4" ]; then pass "$1" "$2 (rc=$4)"; else fail "$1" "$2 — expected rc=$3 got rc=$4"; fi; }
-assert_contains() { case "$4" in *"$3"*) pass "$1" "$2";; *) fail "$1" "$2 — missing [$3]";; esac; }
-assert_absent()   { case "$4" in *"$3"*) fail "$1" "$2 — found forbidden [$3]";; *) pass "$1" "$2";; esac; }
+. "$HERE/test_harness.sh"   # the ONE assertion library (ADR 0025 Wave 4)
+th_init A banner "outcome_self_test: "
 
 SANDBOX="$(mktemp -d)"; trap 'rm -rf "$SANDBOX"' EXIT INT TERM
 export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null
@@ -452,8 +447,4 @@ else
   echo "  [skip] DG01-DG06 digest assertions SKIPPED (no uv/mock host)"
 fi
 
-echo
-echo "==============================="
-echo "outcome_self_test: PASS=$PASS FAIL=$FAIL"
-echo "==============================="
-[ "$FAIL" -eq 0 ]
+th_summary

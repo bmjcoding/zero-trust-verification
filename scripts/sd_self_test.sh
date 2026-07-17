@@ -49,12 +49,8 @@ else
   PYRUN=(python3)
 fi
 
-PASS=0
-FAIL=0
-ok()   { PASS=$((PASS+1)); echo "  ok  - $1"; }
-fail() { FAIL=$((FAIL+1)); echo "  FAIL - $1"; }
-assert_grep()     { if grep -qiE "$2" "$1" 2>/dev/null; then ok "$3"; else fail "$3"; fi; }
-assert_not_grep() { if grep -qiE "$2" "$1" 2>/dev/null; then fail "$3"; else ok "$3"; fi; }
+. "$HERE/test_harness.sh"   # the ONE assertion library (ADR 0025 Wave 4)
+th_init B plain "sd_self_test: "
 
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT INT TERM
@@ -288,11 +284,4 @@ for slug in abuse-controls-drift resilience-posture-drift isolation-drift timeou
 done
 
 # =============================================================================
-echo
-if [ "$FAIL" -eq 0 ]; then
-  echo "sd_self_test: PASS=$PASS FAIL=0"
-  exit 0
-else
-  echo "sd_self_test: PASS=$PASS FAIL=$FAIL"
-  exit 1
-fi
+th_summary
