@@ -30,7 +30,9 @@ PYEMIT="$PLUGIN_ROOT/scripts/outcome_emission.py"
 PYASM="$PLUGIN_ROOT/scripts/outcome_assemble.py"
 STORE_SH="$PLUGIN_ROOT/scripts/outcome_store.sh"
 
-py() { if command -v uv >/dev/null 2>&1 && [ -f "$PLUGIN_ROOT/pyproject.toml" ]; then uv run --no-project python "$@"; else python3 "$@"; fi; }
+# stdlib-only runner via the plugin's shared _py_run.sh (ADR 0025 Wave 4).
+. "$(cd "$HERE" && pwd -P)/../../../scripts/_py_run.sh"
+py() { py_run_noproj "$@"; }
 iso_utc() { local e="$1"; if [ "$e" = "-" ]; then date -u +%Y-%m-%dT%H:%M:%SZ; return; fi
   date -u -r "$e" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -d "@$e" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || echo "$e"; }
 
