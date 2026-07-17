@@ -14,13 +14,16 @@ Bitbucket Data Center, or the hermetic mock (`scripts/mock_host.py`).
 | `build-status --sha <sha>` | composed-state verification on the post-rebase head |
 | `pr-comment --num <n> --body-file <path>` | kickback comments (budget / conflict / Composition Break) |
 | `pr-merge --num <n> [--strategy <s>]` | the merge (smallest write scope, with rebase-push) |
-| `repo-list --org <org>` | org repo enumeration (org-memory OWM-09, ADR 0028) — **not** a Marshal call; defined below |
 
 The Marshal deliberately does **not** call `pr-open`, `pr-ready`,
 `pr-approve`, or `pr-decline` in the merge path — its write scope is
 rebase-push + merge only (ADR 0011). Rebase-push is a plain
 `git push --force-with-lease` to the PR's source branch, not a host
 subcommand.
+
+Beyond the Marshal's verbs, the same host surface provides `repo-list
+--org <org>` — org repo enumeration for org-memory (OWM-09, ADR 0028; never
+called by the Marshal) — defined below.
 
 ## `pr-list-ready`
 
