@@ -43,8 +43,8 @@ JOINPY="$SKILL_SCRIPTS/manifest_join.py"
 SD_SEEDS="$SKILL_SCRIPTS/sd_seeds.sh"
 
 # uv-first Python (ADR 0015). Falls back to python3 (validate_manifest.sh precedent).
-if command -v uv >/dev/null 2>&1 && [ -f "$REPO_ROOT/pyproject.toml" ]; then
-  PYRUN=(uv run --quiet --project "$REPO_ROOT" python)
+if command -v uv >/dev/null 2>&1 && [ -f "$PLUGIN/pyproject.toml" ]; then
+  PYRUN=(uv run --quiet --project "$PLUGIN" python)
 else
   PYRUN=(python3)
 fi

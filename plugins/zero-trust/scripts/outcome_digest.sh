@@ -23,10 +23,9 @@ set -uo pipefail
 export LC_ALL=C
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SUITE_ROOT="$(cd "$HERE/../../.." && pwd)"
 CAPTURE="$HERE/outcome_capture.sh"
-EMIT="$SUITE_ROOT/plugins/zero-trust/skills/cleanup-audit/scripts/outcome_emit.sh"
-REPORT_SH="$SUITE_ROOT/scripts/outcome_report.sh"
+EMIT="$HERE/../skills/cleanup-audit/scripts/outcome_emit.sh"
+REPORT_SH="$HERE/outcome_report.sh"
 HOST_DEFAULT="${MARSHAL_HOST:-$HERE/../skills/autopilot/scripts/host.sh}"
 
 STORE="${OUTCOME_STORE:-}"; REPO="."; TRUNK="${MARSHAL_MAIN:-main}"; WEEKS="8"

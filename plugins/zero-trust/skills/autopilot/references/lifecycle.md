@@ -6,7 +6,7 @@
 
 ## Step G0 — Mode inference (ADR 0008 / AV3-01)
 
-Decide the GENERATE *shape* from the input's companion Verification Manifest. Locate `<spec-basename>.manifest.yaml` next to each input doc; if present, validate it with the manifest validator — the plugin's canonical single-file `scripts/validate_manifest.sh`, NOT autopilot's `--union`-only checker (exit codes 0 complete · 3 incomplete · 4 schema-invalid · 5 unsupported). For multi-doc invocations also run `scripts/validate_manifest.sh --union` (AV3-03) first. Then:
+Decide the GENERATE *shape* from the input's companion Verification Manifest. Locate `<spec-basename>.manifest.yaml` next to each input doc; if present, validate it with the manifest validator — the plugin's canonical single-file `scripts/validate_manifest.sh` (exit codes 0 complete · 3 incomplete · 4 schema-invalid · 5 unsupported). For multi-doc invocations also run `scripts/validate_manifest_union.sh --union` (AV3-03) first. Then:
 
 ```bash
 bash ${SKILL_DIR}/scripts/detect_input_mode.sh \
@@ -81,7 +81,7 @@ A consolidated group becomes one Subtask: `id` = `<lowest-id>+` (e.g. `B2+`); un
 
 **Dependency validation.** Validate every `depends_on[]` entry against the union of planner-emitted IDs — planners run in parallel, so cross-Story references are unverifiable at plan time; this check runs on EVERY generate path. Unknown ID → `[GENERATE-FAILED: dangling-dependency]`. Topo-sort; cycles → `[GENERATE-FAILED: dependency-cycle]`; same file in two non-dependent Subtasks → `[GENERATE-FAILED: ownership-overlap]`.
 
-**Manifest union (MS §2 / AV3-03), multi-doc only.** `bash ${SKILL_DIR}/scripts/validate_manifest.sh --union <a.manifest.yaml> <b.manifest.yaml> ...`: a Journey/Behavior ID shared across manifests → `[GENERATE-FAILED: manifest-id-collision: <id>]` (interrogation-log `DL-###` IDs are per-manifest and not unioned); differing `observability.profile` or `environments` → `[GENERATE-FAILED: manifest-union-mismatch: <profile|environments>]`.
+**Manifest union (MS §2 / AV3-03), multi-doc only.** `bash ${SKILL_DIR}/scripts/validate_manifest_union.sh --union <a.manifest.yaml> <b.manifest.yaml> ...`: a Journey/Behavior ID shared across manifests → `[GENERATE-FAILED: manifest-id-collision: <id>]` (interrogation-log `DL-###` IDs are per-manifest and not unioned); differing `observability.profile` or `environments` → `[GENERATE-FAILED: manifest-union-mismatch: <profile|environments>]`.
 
 **Sizing + mapping gate (ADR 0012 / AV3-07 + MS §13.6 / AV3-02).** Render the planner union to `.autopilot/plan.json` — repo-relative, alongside the `.autopilot/runbooks/` artifacts (a GENERATE-time intermediate, not part of the runbook/tracker canonical artifact set); run `bash ${SKILL_DIR}/scripts/validate_plan_mapping.sh .autopilot/plan.json [<manifest.yaml>]` (manifest arg only on manifest-backed drains):
 

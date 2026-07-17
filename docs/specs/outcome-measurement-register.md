@@ -376,3 +376,12 @@ machine-checkable guard against re-laundering H1 in a future edit.
   fixture) agent-graded number (the H1 guard, mechanized).
 - [det] every [det] acceptance in OM-01..OM-08 is covered by a named assertion in a
   producer self-test (the CH-10-style close).
+
+> **Correction note (2026-07-17, ADR 0031):** the outcome runtime family moved from
+> repo-root `scripts/` into `plugins/zero-trust/scripts/` (post-consolidation residue:
+> the plugin is the one installable unit). Acceptance entries above that cite
+> `scripts/outcome_store.sh` (OM-01), `scripts/outcome_baseline.sh` (OM-02) and
+> `scripts/outcome_report.sh` (OM-07) now resolve at
+> `plugins/zero-trust/scripts/outcome_*.sh`; the acceptance semantics, exit contracts
+> and honesty-class rules are unchanged. Entries are append-only, so the original
+> lines stay as written (ADR 0031).
