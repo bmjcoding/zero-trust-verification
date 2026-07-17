@@ -26,8 +26,13 @@ _HERE = Path(__file__).resolve().parent
 _SCHEMA = _HERE.parent / "schema" / "verification-manifest" / "v1.schema.json"
 
 
-def _load_yaml_12(path: Path):
-    """Parse with a YAML 1.2 core-schema parser (ADR 0014). Returns (data, error)."""
+def load_manifest(path: Path):
+    """Public parse API (ADR 0032): THE one manifest/YAML loader for the tree.
+
+    YAML 1.2 core-schema, safe + pure (ADR 0014). Returns (data, error): error is
+    None on success; on a parse/read failure data is None and error is a one-line
+    string. Every consumer imports this instead of constructing its own parser.
+    """
     from ruamel.yaml import YAML
     from ruamel.yaml.error import YAMLError
 
@@ -184,8 +189,8 @@ def completeness_violations(m) -> list[str]:
 # ---- driver ----------------------------------------------------------------------
 
 def validate_file(path: Path):
-    """Return (exit_code, lines)."""
-    data, err = _load_yaml_12(path)
+    """Return (exit_code, lines). Exactly one parse path: load, then validate."""
+    data, err = load_manifest(path)
     if err is not None:
         return EXIT_SCHEMA_INVALID, [err]
     return validate_mapping(data)
@@ -218,11 +223,16 @@ def validate_union(paths: list[Path]):
     lines, worst = [], EXIT_COMPLETE
     per_ids, profiles, envs = [], set(), set()
     for p in paths:
-        code, out = validate_file(p)
+        # ONE parse per file (ADR 0032): load once, validate the mapping, and
+        # reuse the same data for the cross-file checks below.
+        data, err = load_manifest(p)
+        if err is not None:
+            code, out = EXIT_SCHEMA_INVALID, [err]
+        else:
+            code, out = validate_mapping(data)
         lines.append(f"== {p.name}: exit {code} ==")
         lines.extend(out)
         worst = max(worst, code) if code != EXIT_COMPLETE else worst
-        data, _ = _load_yaml_12(p)
         if isinstance(data, dict):
             ids = {x.get("id") for x in (data.get("journeys", []) + data.get("behaviors", [])) if isinstance(x, dict)}
             for other in per_ids:
