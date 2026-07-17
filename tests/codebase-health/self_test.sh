@@ -46,14 +46,8 @@ else
   PYRUN=(python3)
 fi
 
-PASS=0
-FAIL=0
-ok()   { PASS=$((PASS+1)); echo "  ok  - $1"; }
-fail() { FAIL=$((FAIL+1)); echo "  FAIL - $1"; }
-assert_grep()     { if grep -qiE "$2" "$1" 2>/dev/null; then ok "$3"; else fail "$3"; fi; }
-assert_not_grep() { if grep -qiE "$2" "$1" 2>/dev/null; then fail "$3"; else ok "$3"; fi; }
-# assert_py CODE MSG — CODE is Python that exits 0 on pass, non-zero on fail.
-assert_py()       { if "${PYRUN[@]}" -c "$1" >/dev/null 2>&1; then ok "$2"; else fail "$2"; fi; }
+. "$REPO_ROOT/scripts/test_harness.sh"   # the ONE assertion library (ADR 0025 Wave 4)
+th_init B worded
 
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
@@ -1730,6 +1724,4 @@ else
   fail "HL-04: loop_e2e.sh absent (red-first)"
 fi
 
-echo
-echo "== self-test: $PASS passed, $FAIL failed =="
-[ "$FAIL" -eq 0 ]
+th_summary
