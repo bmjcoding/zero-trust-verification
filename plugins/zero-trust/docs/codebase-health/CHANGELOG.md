@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased — §12 join wired into the PR Gate (2026-07-17, ADR 0029)
+
+`pr_gate.sh` now dispatches CH-01 → CH-03 when a manifest is present: the
+CH-01 MODE token gates the dispatch (COMPLETE/INCOMPLETE with a parseable prior
+journeys.json → `manifest_join.sh` runs; schema-invalid/unsupported/no-journeys/
+malformed-journeys → honest `[not-covered]` lines, MT-06-style loud degrade).
+Warn-only exit-0 posture unchanged; retires the "CH-02 unbuilt" claim (false
+since 2026-07-05) across triage/docs. First `pr_gate --manifest` self-test
+coverage (section 18b).
+
 ## Unreleased — /health-loop attended wave drain (ADR 0024, register HL-01..HL-03)
 
 The audit tier gains its campaign mode: `/health-loop` drains a whole

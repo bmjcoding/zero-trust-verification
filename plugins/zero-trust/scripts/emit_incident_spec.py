@@ -193,7 +193,7 @@ def _prose(incident_id, primary, corr, drift, source) -> str:
         "> CONSTRUCTION — spec-gen interrogates the risk/values residue; the drain (never",
         "> this tier) authors any fix.",
         "",
-        "## What the join found (DERIVED, not a backref — CH-02 unbuilt)",
+        "## What the join found (journey DERIVED from the event_name match; backref agreement in correlation.backref_cross_check)",
         "",
         f"- Runtime event `{primary['event_name']}` correlates to journey **{jid}**, step "
         f"{primary['step_index']} (§12 event_name key, exact string).",

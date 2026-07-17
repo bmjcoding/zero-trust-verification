@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://zero-trust-verification/schema/triage/correlation/v1",
   "title": "Incident<->manifest correlation output (TR-03)",
-  "description": "The schema-versioned, idempotent output of correlate.py. Detection NEVER mutates: the same window + manifest produce byte-identical correlation.json. Each correlated record carries its DERIVED journey_id + step index + affected behavior IDs (never a backref — CH-02 is unbuilt), or lands in an explicit no-join bucket with a reason. Class-drift and unmapped-in-prod are surfaced, never dropped; a manifest CORE step absent from the bounded window is informational ONLY (absence-in-a-window is not absence-in-prod — degrade rule 4).",
+  "description": "The schema-versioned, idempotent output of correlate.py. Detection NEVER mutates: the same window + manifest produce byte-identical correlation.json. Each correlated record carries its DERIVED journey_id + step index + affected behavior IDs (derived from the event_name match — telemetry carries no backref; agreement with the audit-produced journeys.json v2 backref is reported in backref_cross_check when --journeys supplies one, ADR 0029), or lands in an explicit no-join bucket with a reason. Class-drift and unmapped-in-prod are surfaced, never dropped; a manifest CORE step absent from the bounded window is informational ONLY (absence-in-a-window is not absence-in-prod — degrade rule 4).",
   "type": "object",
   "additionalProperties": false,
   "required": ["schema_version", "manifest_status", "correlated", "no_join", "class_drift", "core_steps_absent_in_window", "backref_cross_check"],
@@ -70,7 +70,7 @@
       }
     },
     "backref_cross_check": {
-      "description": "The [det-cond] audit-backref agreement check. SKIPPED until codebase-health CH-02 ships (the v2 journeys.json manifest_journey_id backref does not exist in the built suite).",
+      "description": "The [det-cond] audit-backref agreement check (ADR 0029). Runs when an audit-produced journeys.json v2 (codebase-health CH-02 manifest_journey_id backref) is supplied via --journeys: agreed = every derived journey id backref-confirmed, disagreed names the mismatching ids in the note. Without that artifact (the common prod-triage case) or on a malformed one, status is skipped with the honest reason — never silently assumed.",
       "type": "object",
       "additionalProperties": false,
       "required": ["status", "note"],

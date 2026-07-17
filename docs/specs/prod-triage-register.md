@@ -318,3 +318,27 @@ change to five, or V6 documents a lie (flagged as a required edit, not left impl
 - Added TR-loop-guard (self-ingestion exclusion + open-incident dedupe) — the missing infinite-
   regress prevention; refuse-by-default.
 - Added the marketplace 'four-plugin' description as a REQUIRED edit so V6 doesn't lint a lie.
+## F. Correction note — 2026-07-17 (ADR 0029): the CH-02-unbuilt premise is retired as false
+
+> **Dated correction (2026-07-17), append-only — the entries above are history and are not
+> rewritten.** ADR 0029 verified that codebase-health CH-02 (the journeys.json v2
+> `manifest_journey_id` backref) shipped on 2026-07-05 (880cc0d), BEFORE this register's
+> TR-03 hardcode merged (2026-07-07, 3d83048) — so every "CH-02 unbuilt / not yet built"
+> premise above (the `[det-cond]` vocabulary definition, the TR-03 honesty correction, the
+> TR-03 acceptance bullet pinning `[note] backref-unavailable (CH-02 unbuilt)`, and item E's
+> demotion rationale) was already false at its own merge. Post-0029 truth:
+>
+> - `correlate.py` now takes an optional `--journeys <path>`. Provided + parseable, the
+>   backref cross-check RUNS: `agreed` when every derived journey id is backref-confirmed
+>   by a v2 `manifest_journey_id`, `disagreed` naming the mismatching ids in the note.
+>   Absent — the common production case, since a prod-triage run has no audit artifact —
+>   the status stays `skipped` with the honest note "no journeys.json provided", never
+>   "unbuilt". Malformed input degrades loudly to `skipped` naming the parse failure.
+> - The `[det-cond]` tag KEEPS its meaning of "asserted against a triage-owned fixture,
+>   not end-to-end suite proof"; what changes is the reason: the gating dependency is no
+>   longer "unbuilt" but "an audit-produced artifact this hermetic self-test does not have".
+>   The cross-check paths (agreed / disagreed / skipped / malformed) are `[det-cond]`
+>   asserted in self_test_triage.sh TR-03 against the triage-owned v2 fixture.
+> - The §12 join itself now also has a live caller on the audit side: `pr_gate.sh`
+>   dispatches CH-01 (MODE gate) → CH-03 (`manifest_join.sh`) when a manifest and a prior
+>   journeys.json are present (ADR 0029; warn-only posture unchanged).
