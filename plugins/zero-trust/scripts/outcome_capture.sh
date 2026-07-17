@@ -2,7 +2,9 @@
 # outcome_capture.sh — the Marshal's DORA outcome-capture mode (ADR 0023, OM-03).
 #
 # A NEW retroactive read (ADR 0011: NOT "the stream the Marshal already watches").
-# Derives the four DORA-family metrics DETERMINISTICALLY (Class-D) over a trailing
+# Derives the four classic DORA delivery metrics (2021 taxonomy; the fifth —
+# operational reliability — is deliberately out of scope: not deterministically
+# derivable from git/host data) DETERMINISTICALLY (Class-D) over a trailing
 # window — deploy frequency + lead time from `git log` first-parent, change-failure
 # rate from reverts + post-merge `build-status`, build-MTTR from `build-status` —
 # and appends ONE runs[] row to the outcome store. Every field honesty_class:

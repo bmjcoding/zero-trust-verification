@@ -163,9 +163,10 @@ fi
 
 # ── V9: the triage telemetry-adapter observable contract (ADR 0006/0013; register
 #        TR-08). plugins/zero-trust/references/telemetry-contract.md is the SINGLE
-#        SOURCE of the <!-- vendored:telemetry-contract --> block; any backend-
-#        contract copy (references/backends.md, …) carries it byte-identical — the
-#        host-contract precedent, the marker-block mechanism. A lone/unpaired
+#        SOURCE of the <!-- vendored:telemetry-contract --> block; the live tree is
+#        copy-free (carriers cite it — ADR 0030), and this scan stays as a dormant
+#        tripwire: any re-vendored copy that reappears must carry the block
+#        byte-identical — the marker-block mechanism. A lone/unpaired
 #        marker in prose is documentation, not a copy (no false positive).
 #        The ID stays V9 (V7/V8 are retired, never reused; V10 is remediation's).
 v9_begin='vendored:telemetry-contract:begin'
