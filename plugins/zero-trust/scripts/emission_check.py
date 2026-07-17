@@ -26,7 +26,7 @@ Checks (each a spec-gen contract):
 
 Returns a list of `Ennn: <detail>` violation strings; empty == emission is well-shaped.
 This is a SHAPE gate; manifest content (completeness rules, rule-8 no-agent-path-
-to-confirmed-CORE) is the vendored validator's job and runs at S6, not here.
+to-confirmed-CORE) is the canonical validator's job and runs at S6, not here.
 
 CLI: emission_check.py <bundle.yaml>   # exit 0 clean, exit 3 with violations printed
 """
@@ -36,6 +36,9 @@ import json
 import re
 import sys
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import validate_manifest as _VM  # noqa: E402  the public load API (ADR 0032)
 
 # HC5: every S-step boundary commits. A completed session commits at each of S1..S7.
 REQUIRED_BOUNDARIES = ["S1", "S2", "S3", "S4", "S5", "S6", "S7"]
@@ -124,16 +127,12 @@ def check_emission(bundle: dict, required_boundaries=REQUIRED_BOUNDARIES) -> lis
 
 
 def _load(path: Path):
-    from ruamel.yaml import YAML
-    from ruamel.yaml.error import YAMLError
-
-    yaml = YAML(typ="safe", pure=True)
-    yaml.version = (1, 2)
-    try:
-        with path.open("r", encoding="utf-8") as fh:
-            return yaml.load(fh)
-    except YAMLError as exc:
-        raise ValueError(f"{path}: YAML parse error: {exc}") from exc
+    """Bundle YAML through the canonical loader (ADR 0032); a parse failure is
+    re-raised as ValueError so `_main` renders `{"error": ...}` + exit 4."""
+    data, err = _VM.load_manifest(path)
+    if err is not None:
+        raise ValueError(f"{path}: {err}")
+    return data
 
 
 def _main(argv) -> int:
