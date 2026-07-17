@@ -16,10 +16,13 @@ agent-assumed.
    cadence.
 
 2. **Which identity enumerates the org, and what is its READ scope?**
-   The optional `host_repo_list.sh` (OWM-09) needs a credential to list repos
-   — a security call. *Default posture:* enumeration is OFF; OWM crawls the
-   explicit `config/repos.*` list (OWM-03), falling back to it with a loud
-   note when enumeration auth is unavailable — it never blocks.
+   The optional `host.sh repo-list --org <org>` (OWM-09, ADR 0028) needs a
+   credential to list repos — a security call. It rides the hardened host
+   adapter (secret resolver chain / sidecar; token never on argv), and a
+   failure is loud (`die_state` + `LAST_STATE`, exit 1), never an empty list.
+   *Default posture:* enumeration is OFF; OWM crawls the explicit
+   `config/repos.*` list (OWM-03) — the config list remains the source of
+   truth, so the build never blocks on the credential decision.
 
 3. **May restricted-visibility repo memory be surfaced cross-repo?**
    A data-governance call, not agent-decidable (ADR 0019). *Default posture:*

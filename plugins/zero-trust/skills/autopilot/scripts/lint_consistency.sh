@@ -246,7 +246,7 @@ grep -q 'host adapter is the single PR/build surface' "$ROOT/SKILL.md" || { viol
 #     README. Matches `<backend>.sh <verb>` (invocation form); the reference-index
 #     rows that merely NAME a backend and list its verbs use backticks/colons,
 #     not this form, so they are not false-positived.
-verbs='pr-open|pr-ready|pr-state|pr-comment|pr-merge-strategies|pr-merge|pr-approve|pr-decline|build-status'
+verbs='pr-open|pr-ready|pr-state|pr-comment|pr-merge-strategies|pr-merge|pr-approve|pr-decline|build-status|repo-list'
 if hits=$(grep -l -E "(bitbucket|github)\.sh ($verbs)" "${DOCS[@]}" 2>/dev/null); then
   violation L16 "doc calls a backend script directly (use host.sh): $(tr '\n' ' ' <<<"$hits")"
   l16_bad=1
