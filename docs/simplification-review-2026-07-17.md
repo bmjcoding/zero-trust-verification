@@ -18,6 +18,10 @@ documentation layer still narrates the retired six-plugin/marketplace world.
 
 ## 1. BUG — fix first: seven stale `plugins/autopilot/` default paths (verified)
 
+> **Status 2026-07-17: EXECUTED** as commit `edd3cb8` (PR #52) — all seven defaults
+> fixed + lint V13 default-resolution pin + suite red test V13-e. Kept below as the
+> original finding record.
+
 Wave 1 moved autopilot to `plugins/zero-trust/skills/autopilot/`, but seven scripts
 still default to the pre-consolidation `plugins/autopilot/scripts/…` path (directory
 does not exist). Masked because every self-test injects `MARSHAL_HOST`/`TRIAGE_HOST`/

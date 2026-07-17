@@ -116,7 +116,7 @@ Prefixes you will meet in self-test output, lints, registers, and changelogs —
 | Prefix | Meaning | Home |
 |---|---|---|
 | `V<n>` | root cross-domain lint rule (V2, V6, V9–V13 live; V1/V3–V5/V7/V8 retired with the vendored copies, ADR 0025 — ids never renumber) | `scripts/lint_consistency.sh` |
-| `L<n>` | autopilot lint rule (L1–L24) | `plugins/zero-trust/skills/autopilot/scripts/lint_consistency.sh` — the spec-gen substrate lint (`plugins/zero-trust/scripts/lint_consistency.sh`) also uses L1–L8 ids (rename pending, ADR 0031) |
+| `L<n>` | autopilot lint rule (L1–L23; L24 pending in PR #47) | `plugins/zero-trust/skills/autopilot/scripts/lint_consistency.sh` — the spec-gen substrate lint (`plugins/zero-trust/scripts/lint_consistency.sh`) also uses L1–L8 ids (rename pending, ADR 0031) |
 | `T` / `HD` / `HG` / `H50` / `W345-*` | autopilot self-test assertion families (see the legend in its header) | `plugins/zero-trust/skills/autopilot/scripts/self_test.sh` |
 | `AV3-x.n` | autopilot v3 register assertion ids — they resolve to self-test assertions (the standalone v3 register doc was retired) | `plugins/zero-trust/skills/autopilot/scripts/self_test.sh` |
 | `AP-x` | autopilot adversarial-review finding ids, cited as behavior anchors (origin register retired; historical) | `plugins/zero-trust/skills/autopilot/references/lifecycle.md` |
@@ -126,10 +126,10 @@ Prefixes you will meet in self-test output, lints, registers, and changelogs —
 | `SD-x` | system-design coverage items | `docs/specs/system-design-coverage-register.md` |
 | `OM-x` / `OWM-x` | outcome measurement / org-wide memory items | `docs/specs/outcome-measurement-register.md` / `docs/specs/org-wide-memory-register.md` |
 | `MG` / `TR-x` | marshal real-backend e2e section / triage items | `plugins/zero-trust/scripts/self_test_marshal.sh` / `self_test_triage.sh` + `docs/specs/prod-triage-register.md` |
-| `HC-n` | hard contracts — two numbered families: spec tier HC1–HC7 and autopilot's Hard Contracts 1–11 ("autopilot HC4" = never merges) | `plugins/zero-trust/skills/spec/SKILL.md` / `skills/autopilot/SKILL.md`, each §"Hard contracts" |
+| `HC-n` | hard contracts — two numbered families: spec tier HC1–HC7 and autopilot's Hard Contracts 1–15 ("autopilot HC4" = never merges) | `plugins/zero-trust/skills/spec/SKILL.md` / `skills/autopilot/SKILL.md`, each §"Hard contracts" |
 | `MS §n` | the Verification Manifest spec, by section | `docs/specs/verification-manifest-v1.md` |
 | `DL-###` | decision-log line ids (per-manifest scope, MS §6) | CONTEXT.md "Decision Log" + each manifest's `interrogation.log` |
-| Defects A–H | remediation-loop adversarial-hardening defects | `plugins/zero-trust/skills/cleanup-audit/references/remediation-loop.md` + ADRs 0017/0018 |
+| Defects A–H | remediation-build adversarial-hardening defect letters (historical; not every letter survives in live docs — H: `references/remediation-loop.md`; C: ADR 0018; others in cleanup-audit script comments) | `plugins/zero-trust/skills/cleanup-audit/scripts/{finding_eligible,build_register,remediation_depth}.sh` |
 
 ## How it was built (and why that matters)
 

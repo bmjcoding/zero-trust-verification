@@ -43,7 +43,7 @@ deleting the copies loses nothing.
 3. **Red tests are retargeted, not deleted — all THREE live-tree drift
    tests and all three false-positive guards.** The suite red tests that
    plant drift in live-tree copies (`seed_tel` telemetry drift; the v11b
-   append-only mutation) *and triage's TR-08* (`self_test_triage.sh:374-387`,
+   append-only mutation) *and triage's TR-08* (`self_test_triage.sh:~370-388`,
    which seds live `backends.md` and asserts `LINT-FAIL [V9]`) move to the
    sandbox-synthesized-copy pattern the suite already uses for V9's helper
    tests. The false-positive guards that append benign prose to the carriers

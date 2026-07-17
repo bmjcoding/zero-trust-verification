@@ -18,10 +18,10 @@
 #   - Run after ANY change under scripts/ or references/.
 #
 # Assertion-id legend (family -> what it covers):
-#   Txx      core substrate + bitbucket.sh/DC backend (T01-T36; T03 = credential
+#   Txx      core substrate + bitbucket.sh/DC backend (T01-T38; T03 = credential
 #            never on curl argv)
 #   HDxx     Bitbucket DC draft-PR handling (native draft / [DRAFT] title modes)
-#   HGxx     github.sh backend via the gh argv shim (HG01-HG28)
+#   HGxx     github.sh backend via the gh argv shim (HG01-HG33)
 #   H50      host.sh backend detection from the origin URL
 #   AV3-x.n  v3 register assertions (the standalone register doc was retired;
 #            these ids live only here now)
@@ -1948,7 +1948,7 @@ assert_eq T27 "owner session passes the guard" "0" "$rc"
 CLAUDE_SESSION_ID=sess-INTRUDER bash "$DCD" "$CHAIN_TRK" >/dev/null 2>&1; rc=$?
 assert_eq T27 "second session is refused" "2" "$rc"
 
-echo "== github.sh backend via gh argv shim (H-GH, HG01-HG28) =="
+echo "== github.sh backend via gh argv shim (H-GH, HG01-HG33) =="
 
 # A fake `gh` that answers exactly the argv github.sh drives. This is the
 # GitHub counterpart to the DC mock server (ADR 0013: the same T01-class

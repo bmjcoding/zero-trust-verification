@@ -8,7 +8,7 @@
 
 Verified residue of the six-plugin world:
 
-- **Ten outcome runtime files at repo root** (`scripts/outcome_{store,report,
+- **Eleven outcome runtime files at repo root** (`scripts/outcome_{store,report,
   dora,emission,external,assemble,annotate,baseline}.*`) while all three
   production callers live inside the plugin and escape via
   `SUITE_ROOT="$HERE/../../.."`. README:126 claims "everything installable
@@ -45,7 +45,7 @@ Verified residue of the six-plugin world:
    `sd_self_test.sh:46-50`, `tests/codebase-health/self_test.sh:43-47`,
    `outcome_self_test.sh:32`, `outcome_store.sh`, **and the three plugin
    self-tests that hard-code `uv run --project "$ROOT"` with ROOT = repo
-   root and no fallback** (`self_test_triage.sh:30`,
+   root and no fallback** (`self_test_triage.sh:31`,
    `self_test_org_memory.sh:26`, `self_test_marshal.sh:26` — these fail
    outright, not silently, if missed; the sd/codebase-health pair degrade
    *silently* to bare python3, so the re-point is verified by grep, not just

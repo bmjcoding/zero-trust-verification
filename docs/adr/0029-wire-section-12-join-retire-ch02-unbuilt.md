@@ -19,7 +19,7 @@ Two composed-truth defects, verified against the live tree:
    that exists nowhere in the tree.
 2. **Triage asserts a falsehood about its sibling.** `correlate.py:89-94`
    hardcodes `backref_cross_check: skipped — "CH-02 unbuilt"`, the schema
-   repeats it (`correlation.schema.json:5,:73`), and `self_test_triage.sh:258-259`
+   repeats it (`correlation.schema.json:5,:73`), and `self_test_triage.sh:259-260`
    asserts the false note verbatim. CH-02 (journeys.json v2 `manifest_journey_id`
    backref) shipped 2026-07-05 (880cc0d); the triage hardcode merged 2026-07-07
    (3d83048) — the claim was already false at its own merge.

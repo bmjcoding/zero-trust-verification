@@ -11,7 +11,7 @@ but not the parsed data, so every consumer that needs the data reaches through
 the interface or forks the loader. Verified inventory:
 
 - **Private reach:** `correlate.py:105`, `emit_incident_spec.py:268`, and
-  `owm.py:248,:336` call `V._load_yaml_12` directly; `owm.py:236+248` parses
+  `owm.py:249,:337` call `V._load_yaml_12` directly; `owm.py:237+249` parses
   the same file twice (validate, then reload).
 - **The module itself has the defect:** `validate_union` parses every file
   twice (`validate_file` then `_load_yaml_12`).
