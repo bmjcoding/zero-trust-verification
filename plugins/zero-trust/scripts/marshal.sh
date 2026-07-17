@@ -65,7 +65,7 @@ case "${1:-}" in
   outcome-digest)  shift; exec bash "$HERE/outcome_digest.sh"  "$@" ;;
 esac
 
-MARSHAL_HOST="${MARSHAL_HOST:-$HERE/../../autopilot/scripts/host.sh}"
+MARSHAL_HOST="${MARSHAL_HOST:-$HERE/../skills/autopilot/scripts/host.sh}"
 TRUNK="${MARSHAL_MAIN:-main}"
 FILE_BUDGET="${MARSHAL_REBASE_FILE_BUDGET:-2}"
 HUNK_BUDGET="${MARSHAL_REBASE_HUNK_BUDGET:-3}"

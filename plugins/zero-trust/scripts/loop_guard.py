@@ -42,7 +42,7 @@ from pathlib import Path
 
 _HERE = Path(__file__).resolve().parent
 _DEFAULT_CONFIG = _HERE.parent / "triage.config.yaml"
-_DEFAULT_HOST = _HERE.parent.parent / "autopilot" / "scripts" / "host.sh"
+_DEFAULT_HOST = _HERE.parent / "skills" / "autopilot" / "scripts" / "host.sh"
 # States that mean the incident-Spec PR is NO LONGER an open proposal.
 _TERMINAL = {"MERGED", "DECLINED", "NONE", "CLOSED"}
 

@@ -27,7 +27,7 @@ SUITE_ROOT="$(cd "$HERE/../../.." && pwd)"
 CAPTURE="$HERE/outcome_capture.sh"
 EMIT="$SUITE_ROOT/plugins/zero-trust/skills/cleanup-audit/scripts/outcome_emit.sh"
 REPORT_SH="$SUITE_ROOT/scripts/outcome_report.sh"
-HOST_DEFAULT="${MARSHAL_HOST:-$HERE/../../autopilot/scripts/host.sh}"
+HOST_DEFAULT="${MARSHAL_HOST:-$HERE/../skills/autopilot/scripts/host.sh}"
 
 STORE="${OUTCOME_STORE:-}"; REPO="."; TRUNK="${MARSHAL_MAIN:-main}"; WEEKS="8"
 SINCE=""; UNTIL=""; NOW=""; HOST="$HOST_DEFAULT"; HOST_REPO=""; HOST_STATE=""
