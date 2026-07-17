@@ -27,7 +27,7 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$HERE/_triage_run.sh"
 PLUGIN_ROOT="$(cd "$HERE/.." && pwd)"
 PROJECTOR="$HERE/resume_projection.py"   # vendored byte-identical from spec-gen
-HOST="${TRIAGE_HOST:-$PLUGIN_ROOT/../autopilot/scripts/host.sh}"
+HOST="${TRIAGE_HOST:-$PLUGIN_ROOT/skills/autopilot/scripts/host.sh}"
 
 die() { echo "resume_handoff.sh: REFUSE: $*" >&2; exit 1; }
 

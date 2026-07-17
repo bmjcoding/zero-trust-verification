@@ -37,7 +37,7 @@ iso_utc() { local e="$1"; if [ "$e" = "-" ]; then date -u +%Y-%m-%dT%H:%M:%SZ; r
 
 STORE="${OUTCOME_STORE:-}"; REPO="."; TRUNK="${MARSHAL_MAIN:-main}"; WEEKS="8"
 SINCE=""; UNTIL=""; NOW=""
-HOST="${MARSHAL_HOST:-$HERE/../../autopilot/scripts/host.sh}"; HOST_REPO=""; HOST_STATE=""
+HOST="${MARSHAL_HOST:-$HERE/../skills/autopilot/scripts/host.sh}"; HOST_REPO=""; HOST_STATE=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --store) STORE="$2"; shift 2;;

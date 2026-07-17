@@ -570,6 +570,25 @@ else
       || { violation V13 "health-loop ships but the autopilot host adapter (skills/autopilot/scripts/host.sh) is absent — the merge step's PR surface is unresolvable"; v13_bad=1; }
     [ -f "$ZT/scripts/marshal.sh" ] \
       || { violation V13 "health-loop ships but the marshal (scripts/marshal.sh) is absent — no merge executor for the campaign"; v13_bad=1; }
+    # Default-path resolution — the scripts that DEFAULT to the autopilot
+    # adapter must point at the consolidated skills/ path. Self-tests always
+    # inject MARSHAL_HOST/TRIAGE_HOST/TRIAGE_SECRET_GET, so only this pin
+    # covers the bare-invocation class (2026-07-17 simplification review §1:
+    # seven defaults survived Wave 1 pointing at the deleted plugins/autopilot).
+    [ -f "$ZT/skills/autopilot/scripts/secret_get.sh" ] \
+      || { violation V13 "the credential resolver (skills/autopilot/scripts/secret_get.sh) is absent — the telemetry backends' secret default is unresolvable"; v13_bad=1; }
+    for f in scripts/marshal.sh scripts/outcome_capture.sh scripts/outcome_digest.sh; do
+      grep -Eq 'MARSHAL_HOST:-[^}]*skills/autopilot/scripts/host\.sh' "$ZT/$f" 2>/dev/null \
+        || { violation V13 "$f: MARSHAL_HOST default does not resolve to skills/autopilot/scripts/host.sh (stale pre-consolidation path)"; v13_bad=1; }
+    done
+    grep -Eq 'TRIAGE_HOST:-[^}]*skills/autopilot/scripts/host\.sh' "$ZT/scripts/resume_handoff.sh" 2>/dev/null \
+      || { violation V13 "scripts/resume_handoff.sh: TRIAGE_HOST default does not resolve to skills/autopilot/scripts/host.sh (stale pre-consolidation path)"; v13_bad=1; }
+    for f in scripts/backends/cloudwatch.sh scripts/backends/dynatrace.sh; do
+      grep -Eq 'TRIAGE_SECRET_GET:-[^}]*skills/autopilot/scripts/secret_get\.sh' "$ZT/$f" 2>/dev/null \
+        || { violation V13 "$f: TRIAGE_SECRET_GET default does not resolve to skills/autopilot/scripts/secret_get.sh (stale pre-consolidation path)"; v13_bad=1; }
+    done
+    grep -Fq '"skills" / "autopilot" / "scripts" / "host.sh"' "$ZT/scripts/loop_guard.py" 2>/dev/null \
+      || { violation V13 "scripts/loop_guard.py: _DEFAULT_HOST does not resolve to skills/autopilot/scripts/host.sh (stale pre-consolidation path)"; v13_bad=1; }
   fi
   [ "$v13_bad" -eq 0 ] && ok V13 "health-loop: presence coupling + config vocabulary + gate-status-subset + read-only pin hold (ADR 0024)"
 fi
