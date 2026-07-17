@@ -54,14 +54,8 @@ DT_FX="$PLUGIN/fixtures/dynatrace/incident.json"
 SINCE="2026-07-06T00:00:00Z"; UNTIL="2026-07-06T23:59:59Z"
 SINCE_E=1783296000; OVER_E=1783468800   # 07-06 00:00 .. 07-08 00:00 (2 days > 24h)
 
-PASS=0; FAIL=0
-fail() { printf 'FAIL [%s] %s\n' "$1" "$2" >&2; FAIL=$((FAIL+1)); }
-pass() { printf 'ok   [%s] %s\n' "$1" "$2"; PASS=$((PASS+1)); }
-assert_eq()           { if [ "$3" = "$4" ]; then pass "$1" "$2"; else fail "$1" "$2 — expected [$3] got [$4]"; fi; }
-assert_contains()     { if printf '%s' "$4" | grep -qF -- "$3"; then pass "$1" "$2"; else fail "$1" "$2 — missing [$3]"; fi; }
-assert_not_contains() { if printf '%s' "$4" | grep -qF -- "$3"; then fail "$1" "$2 — found forbidden [$3]"; else pass "$1" "$2"; fi; }
-assert_rc()           { if [ "$3" -eq "$4" ]; then pass "$1" "$2"; else fail "$1" "$2 — expected rc $3 got $4"; fi; }
-assert_rc_nonzero()   { if [ "$3" -ne 0 ]; then pass "$1" "$2"; else fail "$1" "$2 — expected non-zero rc, got 0"; fi; }
+. "$ROOT/scripts/test_harness.sh"   # the ONE assertion library (ADR 0025 Wave 4)
+th_init A banner "triage self-test: "
 
 if ! command -v python3 >/dev/null 2>&1; then echo "self_test: python3 required (ADR 0015)" >&2; exit 69; fi
 if ! command -v uv >/dev/null 2>&1; then echo "self_test: uv required (ADR 0015)" >&2; exit 69; fi
@@ -459,8 +453,4 @@ fi
 # =============================================================================
 # Summary
 # =============================================================================
-echo
-echo "==============================="
-echo "triage self-test: PASS=$PASS FAIL=$FAIL"
-echo "==============================="
-[ "$FAIL" -eq 0 ]
+th_summary
