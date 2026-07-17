@@ -176,17 +176,36 @@ def correlate(window: list[dict], manifest_path: Path) -> dict:
     return result
 
 
+def _cap_ids(ids, cap=10):
+    """Bounded id list for a note string (the schema has no maxLength guard)."""
+    ids = list(ids)
+    if len(ids) <= cap:
+        return ", ".join(ids)
+    return ", ".join(ids[:cap]) + f", +{len(ids) - cap} more"
+
+
 def _apply_backref_check(result: dict, journeys_arg) -> None:
     """The [det-cond] audit-backref agreement check (ADR 0029). Mutates ONLY
     result['backref_cross_check'] and keeps it {status, note} — the schema is
-    additionalProperties:false there, so mismatch detail rides in the note.
+    additionalProperties:false there, so all detail rides in the note.
 
-    --journeys absent  -> status stays 'skipped' (the honest default note).
-    present+parseable  -> each DERIVED journey id must be backref-confirmed by a
-                          v2 record whose manifest_journey_id equals it: all
-                          confirmed = 'agreed'; else 'disagreed' naming the ids.
-    present+malformed  -> 'skipped', note names the parse failure (loud degrade,
-                          the MT-06 precedent — never a crash)."""
+    The backref is v2-OPTIONAL (MS §12 row 1): a record without
+    manifest_journey_id is spec-legal, so ABSENCE IS NEVER A DISAGREEMENT.
+    A v2 record is TIED to a derived journey id J when its manifest_journey_id
+    equals J, or one of its steps' event_name is an event this correlation
+    derived J from — the only tie this module can honor honestly, because the
+    journey WAS derived from exactly those events. Per derived id:
+      tied record with backref == J   -> confirmed
+      tied record with backref != J   -> CONTRADICTION (an active mismatch)
+      no backref-bearing tied record  -> unconfirmed (absent != mismatch)
+    Status: any contradiction -> 'disagreed' (contradicted ids named, capped);
+    >=1 confirmed and none contradicted -> 'agreed' (confirmed/unconfirmed
+    counts noted); no backref-bearing tied record at all (incl. an empty
+    journeys array or a file with zero manifest_journey_id fields) ->
+    'skipped' with the honest v2-optional note.
+    --journeys absent -> the 'skipped' default note stands; unreadable,
+    malformed, or wrong-shaped input -> 'skipped' naming the problem (loud
+    degrade, the MT-06 precedent — never a crash)."""
     if not journeys_arg:
         return
     try:
@@ -198,9 +217,15 @@ def _apply_backref_check(result: dict, journeys_arg) -> None:
                     "backref check not run; fix the artifact (loud degrade, never a crash).",
         }
         return
-    backrefs = {j.get("manifest_journey_id")
-                for j in (jdoc.get("journeys") or []) if isinstance(j, dict)}
-    backrefs.discard(None)
+    if not isinstance(jdoc, dict) or not isinstance(jdoc.get("journeys"), list):
+        result["backref_cross_check"] = {
+            "status": "skipped",
+            "note": f"journeys.json provided but wrong-shaped ({journeys_arg}: expected a "
+                    "top-level object with a 'journeys' list) — backref check not run "
+                    "(loud degrade, never a crash).",
+        }
+        return
+    records = [j for j in jdoc["journeys"] if isinstance(j, dict)]
     derived = sorted({e["journey_id"] for e in result["correlated"]})
     if not derived:
         result["backref_cross_check"] = {
@@ -209,19 +234,56 @@ def _apply_backref_check(result: dict, journeys_arg) -> None:
                     "nothing to cross-check.",
         }
         return
-    missing = [jid for jid in derived if jid not in backrefs]
-    if missing:
+
+    def _backref(rec):
+        b = rec.get("manifest_journey_id")
+        return b if isinstance(b, str) and b else None
+
+    def _events(rec):
+        steps = rec.get("steps")
+        if not isinstance(steps, list):
+            return set()
+        return {s.get("event_name") for s in steps
+                if isinstance(s, dict) and isinstance(s.get("event_name"), str)}
+
+    events_by_jid: dict = {}
+    for e in result["correlated"]:
+        events_by_jid.setdefault(e["journey_id"], set()).add(e["event_name"])
+
+    confirmed, contradicted, unconfirmed = [], [], []
+    for jid in derived:
+        tied_backrefs = {_backref(r) for r in records
+                         if _backref(r) == jid or (_events(r) & events_by_jid.get(jid, set()))}
+        tied_backrefs.discard(None)
+        if tied_backrefs - {jid}:
+            contradicted.append(jid)   # a tied record actively claims a different id
+        elif jid in tied_backrefs:
+            confirmed.append(jid)
+        else:
+            unconfirmed.append(jid)    # no backref-bearing tied record: absent != mismatch
+
+    if contradicted:
         result["backref_cross_check"] = {
             "status": "disagreed",
-            "note": "derived journey id(s) not backref-confirmed by the provided "
-                    f"journeys.json v2 manifest_journey_id set: {', '.join(missing)}.",
+            "note": "backref contradiction: journeys.json record(s) tied to derived journey "
+                    f"id(s) {_cap_ids(contradicted)} carry a DIFFERENT manifest_journey_id — "
+                    "an active mismatch (a spec-legal absent backref never lands here).",
         }
-    else:
+    elif confirmed:
         result["backref_cross_check"] = {
             "status": "agreed",
-            "note": "every derived journey id is backref-confirmed by the provided "
-                    f"journeys.json v2 (manifest_journey_id): {', '.join(derived)}.",
+            "note": f"{len(confirmed)} derived journey id(s) backref-confirmed "
+                    f"({_cap_ids(confirmed)}); {len(unconfirmed)} unconfirmed-absent "
+                    "(the backref is v2-optional — absent is not a mismatch).",
         }
+    else:
+        if any(_backref(r) for r in records):
+            note = ("journeys.json carries no manifest_journey_id backrefs tied to a "
+                    "derived journey (v2-optional) — nothing to cross-check.")
+        else:
+            note = ("journeys.json carries no manifest_journey_id backrefs (v2-optional) "
+                    "— nothing to cross-check.")
+        result["backref_cross_check"] = {"status": "skipped", "note": note}
 
 
 def main(argv) -> int:

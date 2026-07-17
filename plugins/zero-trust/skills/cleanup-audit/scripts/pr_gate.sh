@@ -15,9 +15,10 @@
 #   check_manifest_history.sh   CH-09 spec_hash / monotonicity / ID-reuse
 #
 # Manifest-coverage (§12 join, ADR 0029): a present manifest is ingested through
-# CH-01 (MODE token) and, on COMPLETE/INCOMPLETE plus a parseable prior
+# CH-01 (MODE token) and, on MODE=COMPLETE plus a well-shaped prior
 # journeys.json, dispatched to the CH-03 comparator (manifest_join.sh — a
-# reporter). Every non-dispatch branch prints an honest [not-covered] line.
+# reporter). INCOMPLETE never dispatches (MS §11: treated as absent for facet
+# purposes). Every non-dispatch branch prints an honest [not-covered] line.
 #
 # Whole-repo-only facets (journey walk + journeys.json write, vitals/tx/complexity,
 # jscpd, size ladder, coverage ingestion) are NOT re-run per diff — they belong to
@@ -148,7 +149,9 @@ elif [ -x "$SCRIPT_DIR/ingest_manifest.sh" ] && [ -x "$SCRIPT_DIR/manifest_join.
   # ── §12 join dispatch (ADR 0029): CH-01's MODE token gates the CH-03 join. ──
   # CH-01 is the schema gate (manifest_join.py never validates — MS §11's
   # schema-invalid-is-a-DEFECT row lives in the ingest); the join fires only on
-  # a COMPLETE/INCOMPLETE manifest AND a present, parseable journeys.json. Every
+  # MODE=COMPLETE AND a present, well-shaped journeys.json — MS §11 treats an
+  # incomplete manifest as ABSENT for facet purposes, so INCOMPLETE never
+  # dispatches (CH-01's own not-covered line is the honest record). Every
   # non-dispatch branch says so loudly ([not-covered], invariant 6). The join is
   # a reporter (always exit 0), so the gate's warn-only posture is untouched.
   echo "--> ingest_manifest.sh (CH-01 manifest MODE gate for the §12 join — ADR 0029)"
@@ -156,14 +159,15 @@ elif [ -x "$SCRIPT_DIR/ingest_manifest.sh" ] && [ -x "$SCRIPT_DIR/manifest_join.
   printf '%s\n' "$ING_OUT"
   MODE="$(printf '%s\n' "$ING_OUT" | sed -n 's/^MODE=//p' | head -1)"
   case "$MODE" in
-    COMPLETE|INCOMPLETE)
+    COMPLETE)
       if [ -n "$JOURNEYS" ] && [ -f "$JOURNEYS" ]; then
         if command -v python3 >/dev/null 2>&1 \
-           && ! python3 -c 'import json,sys; json.load(open(sys.argv[1]))' "$JOURNEYS" >/dev/null 2>&1; then
-          # Malformed journeys.json DEGRADES LOUDLY, never crashes the gate
-          # (the MT-06 precedent: a broken artifact is a fact to report, not a
-          # traceback) — manifest_join.py would raise on unparseable JSON.
-          echo "[not-covered] manifest-coverage (§12 join): malformed journeys.json ('$JOURNEYS' is not parseable JSON) — join not run; fix the artifact (loud degrade, MT-06 precedent)"
+           && ! python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); raise SystemExit(0 if isinstance(d,dict) and isinstance(d.get("journeys"),list) else 1)' "$JOURNEYS" >/dev/null 2>&1; then
+          # Malformed OR wrong-shaped journeys.json DEGRADES LOUDLY, never
+          # crashes the gate (the MT-06 precedent: a broken artifact is a fact
+          # to report, not a traceback) — manifest_join.py would raise on bad
+          # JSON and on a shape without a top-level 'journeys' list.
+          echo "[not-covered] manifest-coverage (§12 join): malformed journeys.json ('$JOURNEYS' is not a JSON object with a 'journeys' list) — join not run; fix the artifact (loud degrade, MT-06 precedent)"
         else
           join_args=("$MANIFEST" "$JOURNEYS")
           [ -n "$ENVSEL" ] && join_args+=("--env=$ENVSEL")
@@ -174,10 +178,15 @@ elif [ -x "$SCRIPT_DIR/ingest_manifest.sh" ] && [ -x "$SCRIPT_DIR/manifest_join.
         echo "[not-covered] manifest-coverage (§12 join): manifest present (MODE=$MODE) but no prior journeys.json — the join needs both sides (degrade, invariant 4)"
       fi
       ;;
-    *)
-      # SCHEMA-INVALID / UNSUPPORTED / ABSENT-tooling: CH-01's own output above
-      # already carries the honest [not-covered]/defect lines — nothing to add.
+    INCOMPLETE|SCHEMA-INVALID|UNSUPPORTED|ABSENT)
+      # CH-01's own output above already carries the honest [not-covered] lines
+      # (MS §11: incomplete/unsupported degrade as-absent; schema-invalid is a
+      # DEFECT to fix; ABSENT here means the validator tooling is missing) —
+      # nothing to add, and nothing is dispatched.
       : ;;
+    *)
+      echo "[not-covered] manifest-coverage (§12 join): manifest ingest produced no MODE token — join not dispatched (loud degrade, invariant 4)"
+      ;;
   esac
 else
   echo "[not-covered] manifest-coverage (§12 join): ingest_manifest.sh/manifest_join.sh not colocated — join tooling absent (loud degrade, invariant 4)"

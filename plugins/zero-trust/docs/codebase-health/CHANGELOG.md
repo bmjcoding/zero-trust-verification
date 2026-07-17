@@ -3,9 +3,11 @@
 ## Unreleased — §12 join wired into the PR Gate (2026-07-17, ADR 0029)
 
 `pr_gate.sh` now dispatches CH-01 → CH-03 when a manifest is present: the
-CH-01 MODE token gates the dispatch (COMPLETE/INCOMPLETE with a parseable prior
-journeys.json → `manifest_join.sh` runs; schema-invalid/unsupported/no-journeys/
-malformed-journeys → honest `[not-covered]` lines, MT-06-style loud degrade).
+CH-01 MODE token gates the dispatch (MODE=COMPLETE with a well-shaped prior
+journeys.json → `manifest_join.sh` runs; incomplete is treated as absent for
+facet purposes per MS §11, so it never dispatches — CH-01's not-covered line
+is the honest record; schema-invalid/unsupported/no-journeys/malformed-or-
+wrong-shaped-journeys → honest `[not-covered]` lines, MT-06-style loud degrade).
 Warn-only exit-0 posture unchanged; retires the "CH-02 unbuilt" claim (false
 since 2026-07-05) across triage/docs. First `pr_gate --manifest` self-test
 coverage (section 18b).

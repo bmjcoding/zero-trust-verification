@@ -266,7 +266,9 @@ bref="$(cat "$SANDBOX/corr_backref.json")"
 assert_eq       TR-03 "[det-cond] --journeys with matching backref -> status agreed" "agreed" "$(printf '%s' "$bref" | jget 'd["backref_cross_check"]["status"]')"
 assert_contains TR-03 "[det-cond] agreed note names the confirmed derived journey" "J-pay-001" "$(printf '%s' "$bref" | jget 'd["backref_cross_check"]["note"]')"
 assert_eq       TR-03 "[det-cond] agreed correlation still validates against the schema" "VALID" "$(schema_one "$CORR_SCHEMA" < "$SANDBOX/corr_backref.json")"
-# provided + mismatching backref: the derived id is NOT backref-confirmed -> disagreed, id named.
+# provided + CONTRADICTING backref: a record tied to the derived journey (via its
+# pay.captured event) carries a DIFFERENT manifest_journey_id -> disagreed, id named.
+# (A spec-legal ABSENT backref must NEVER land here — asserted separately below.)
 python3 - "$PLUGIN/fixtures/journeys/journeys-v2.json" "$SANDBOX/journeys-mismatch.json" <<'PY'
 import json, sys
 d = json.load(open(sys.argv[1]))
@@ -275,8 +277,8 @@ json.dump(d, open(sys.argv[2], "w"))
 PY
 tri_py "$CORRELATE" --window "$SANDBOX/filtered.ndjson" --manifest "$JOIN_MANIFEST" --journeys "$SANDBOX/journeys-mismatch.json" --out "$SANDBOX/corr_mismatch.json"
 mis="$(cat "$SANDBOX/corr_mismatch.json")"
-assert_eq       TR-03 "[det-cond] --journeys with mismatching backref -> status disagreed" "disagreed" "$(printf '%s' "$mis" | jget 'd["backref_cross_check"]["status"]')"
-assert_contains TR-03 "[det-cond] disagreed note names the unconfirmed derived id" "J-pay-001" "$(printf '%s' "$mis" | jget 'd["backref_cross_check"]["note"]')"
+assert_eq       TR-03 "[det-cond] --journeys with contradicting backref -> status disagreed" "disagreed" "$(printf '%s' "$mis" | jget 'd["backref_cross_check"]["status"]')"
+assert_contains TR-03 "[det-cond] disagreed note names the contradicted derived id" "J-pay-001" "$(printf '%s' "$mis" | jget 'd["backref_cross_check"]["note"]')"
 assert_eq       TR-03 "[det-cond] disagreed correlation still validates against the schema" "VALID" "$(schema_one "$CORR_SCHEMA" < "$SANDBOX/corr_mismatch.json")"
 # provided + malformed: loud degrade to skipped naming the parse failure — never a crash.
 printf 'this is not json {' > "$SANDBOX/journeys-garbage.json"
@@ -285,6 +287,31 @@ gar="$(cat "$SANDBOX/corr_garbage.json")"
 assert_rc       TR-03 "[det-cond] malformed --journeys never crashes the correlation (exit 0)" 0 "$grc"
 assert_eq       TR-03 "[det-cond] malformed --journeys -> status skipped (loud degrade)" "skipped" "$(printf '%s' "$gar" | jget 'd["backref_cross_check"]["status"]')"
 assert_contains TR-03 "[det-cond] malformed-journeys note names the unusable artifact" "journeys.json provided but unusable" "$gar"
+# provided + spec-legal ABSENT backref (MS §12 row 1: v2-optional): NEVER a disagreement.
+python3 - "$PLUGIN/fixtures/journeys/journeys-v2.json" "$SANDBOX/journeys-nobackref.json" <<'PY'
+import json, sys
+d = json.load(open(sys.argv[1]))
+for j in d["journeys"]:
+    j.pop("manifest_journey_id", None)
+json.dump(d, open(sys.argv[2], "w"))
+PY
+tri_py "$CORRELATE" --window "$SANDBOX/filtered.ndjson" --manifest "$JOIN_MANIFEST" --journeys "$SANDBOX/journeys-nobackref.json" --out "$SANDBOX/corr_nobackref.json"
+nbr="$(cat "$SANDBOX/corr_nobackref.json")"
+assert_eq       TR-03 "[det-cond] backref-field-absent journeys (v2-optional) -> skipped, NOT disagreed" "skipped" "$(printf '%s' "$nbr" | jget 'd["backref_cross_check"]["status"]')"
+assert_contains TR-03 "[det-cond] absent-backref note says v2-optional, nothing to cross-check" "carries no manifest_journey_id backrefs (v2-optional)" "$nbr"
+# provided + EMPTY journeys array: zero backref-bearing records -> skipped (absent != mismatch).
+printf '{"schema_version":2,"journeys":[]}\n' > "$SANDBOX/journeys-empty.json"
+tri_py "$CORRELATE" --window "$SANDBOX/filtered.ndjson" --manifest "$JOIN_MANIFEST" --journeys "$SANDBOX/journeys-empty.json" --out "$SANDBOX/corr_emptyj.json"
+emj="$(cat "$SANDBOX/corr_emptyj.json")"
+assert_eq       TR-03 "[det-cond] empty journeys array -> skipped, NOT disagreed" "skipped" "$(printf '%s' "$emj" | jget 'd["backref_cross_check"]["status"]')"
+# provided + valid JSON but WRONG SHAPE (top-level array): skipped naming the shape, no crash.
+printf '[]\n' > "$SANDBOX/journeys-wrongshape.json"
+tri_py "$CORRELATE" --window "$SANDBOX/filtered.ndjson" --manifest "$JOIN_MANIFEST" --journeys "$SANDBOX/journeys-wrongshape.json" --out "$SANDBOX/corr_wrongshape.json" 2> "$SANDBOX/wrongshape.err"; wrc=$?
+wsh="$(cat "$SANDBOX/corr_wrongshape.json")"
+assert_rc       TR-03 "[det-cond] wrong-shaped --journeys (top-level array) never crashes (exit 0)" 0 "$wrc"
+assert_eq       TR-03 "[det-cond] wrong-shaped --journeys -> status skipped" "skipped" "$(printf '%s' "$wsh" | jget 'd["backref_cross_check"]["status"]')"
+assert_contains     TR-03 "[det-cond] wrong-shape note names the expected shape" "wrong-shaped" "$wsh"
+assert_not_contains TR-03 "[det-cond] wrong-shaped --journeys emits no traceback" "Traceback" "$(cat "$SANDBOX/wrongshape.err")"
 
 # =============================================================================
 # TR-04 — config-profile resume (reuse; floor-not-ceiling severity)
