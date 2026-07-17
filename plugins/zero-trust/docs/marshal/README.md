@@ -8,7 +8,7 @@ zero Bazel, zero autonomous drain, zero spec tier.
 
 ## Status
 
-v0.1.0 (2026-07-05), beta. The deterministic substrate (`scripts/`) is covered by
+First shipped 2026-07-05 (beta); versioned with the zero-trust plugin since ADR 0025. The deterministic substrate (`scripts/`) is covered by
 an executed hermetic self-test (`scripts/self_test_marshal.sh` — its `PASS=` line
 reports the current assertion count) that drives the whole loop through a mock
 host backend. The `pr-list-ready` host primitive is implemented in both real

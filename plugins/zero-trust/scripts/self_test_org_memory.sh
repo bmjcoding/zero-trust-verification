@@ -12,7 +12,7 @@
 #   - Non-vacuous: a real seeded SQLite index backs every query; the MCP tool truly
 #     shells out to query.sh (byte-identical output proven); the manifest class truly
 #     routes through the canonical validator (exit 4/5 -> unparseable, not dropped).
-#   - Python (jsonschema/ruamel via the repo pyproject) runs through `uv run`; the
+#   - Python (jsonschema/ruamel via the plugin pyproject) runs through `uv run`; the
 #     dependency-free logic (MCP stdio server, JSON parsing) runs on plain python3.
 #
 # Usage: bash plugins/zero-trust/scripts/self_test_org_memory.sh

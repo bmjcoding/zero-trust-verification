@@ -26,7 +26,7 @@ Subcommands:
   coverage --db D                                       -> OWM-08
 
 Portability: pure stdlib (json, sqlite3, re, glob) + the canonical validator's
-ruamel.yaml/jsonschema (available via `uv run` against the repo pyproject; ADR 0015).
+ruamel.yaml/jsonschema (available via `uv run` against the plugin pyproject; ADR 0015).
 """
 from __future__ import annotations
 
