@@ -131,12 +131,18 @@ seed_plugins() {
   mkdir -p "$d/plugins/zero-trust/.claude-plugin"
   cp "$ZT/.claude-plugin/plugin.json" "$d/plugins/zero-trust/.claude-plugin/"
 }
-# seed the two triage telemetry-contract copies (canonical + vendored) for the V9 red-test.
+# seed the canonical telemetry contract + a SYNTHESIZED carrier that re-vendors
+# its marker block for the V9 red-test. The live tree is copy-free (ADR 0030);
+# V9 stays as a tripwire, so the red test manufactures the copy it drifts INSIDE
+# the sandbox — no live-tree file is ever mutated.
 seed_tel() {
   local d="$1"
   mkdir -p "$d/plugins/zero-trust/references"
   cp "$ZT/references/telemetry-contract.md" "$d/plugins/zero-trust/references/"
-  cp "$ZT/references/backends.md"           "$d/plugins/zero-trust/references/"
+  { printf '# Synthesized carrier re-vendoring the telemetry-contract block (red-test fixture)\n\n'
+    awk '/vendored:telemetry-contract:begin/{f=1} f{print} /vendored:telemetry-contract:end/{f=0}' \
+      "$ZT/references/telemetry-contract.md"
+  } > "$d/plugins/zero-trust/references/revendored-carrier.md"
 }
 
 # seed what lint V10 (remediation loop) needs: the cleanup-audit skill
@@ -150,8 +156,10 @@ seed_rl() {
 }
 
 # seed what lint V11 (outcome-store pins) needs: the canonical outcome schema +
-# a second copy, the canonical outcome-store-contract doc + a vendored block copy,
-# and the register (for the H1 anti-laundering guard). ADR 0023 / register OM-09.
+# a second copy, the canonical outcome-store-contract doc + a SYNTHESIZED carrier
+# re-vendoring its marker block (the live tree is copy-free, ADR 0030 — same
+# tripwire pattern as seed_tel), and the register (for the H1 anti-laundering
+# guard). ADR 0023 / register OM-09.
 seed_om() {
   local d="$1"
   mkdir -p "$d/plugins/zero-trust/schema/outcome" "$d/plugins/extra/schema/outcome" \
@@ -159,7 +167,10 @@ seed_om() {
   cp "$ZT/schema/outcome/v1.schema.json" "$d/plugins/zero-trust/schema/outcome/"
   cp "$ZT/schema/outcome/v1.schema.json" "$d/plugins/extra/schema/outcome/"
   cp "$ROOT/docs/specs/outcome-store-contract.md" "$d/docs/specs/"
-  cp "$ZT/references/outcome-measurement.md" "$d/plugins/zero-trust/references/"
+  { printf '# Synthesized carrier re-vendoring the outcome-store-contract block (red-test fixture)\n\n'
+    awk '/vendored:outcome-store-contract:begin/{f=1} f{print} /vendored:outcome-store-contract:end/{f=0}' \
+      "$ROOT/docs/specs/outcome-store-contract.md"
+  } > "$d/plugins/zero-trust/references/revendored-carrier.md"
   cp "$ROOT/docs/specs/outcome-measurement-register.md" "$d/docs/specs/"
 }
 
@@ -227,18 +238,18 @@ else
   echo "  [note] python3 absent — V6 structural red-tests (name-drift / compact) skipped"
 fi
 
-# V9 (register TR-08) — the triage telemetry-adapter observable contract must not
-# drift between the single source (references/telemetry-contract.md) and a vendored
-# backend-contract copy (references/backends.md). Plant a drift in the copy's
-# block -> V9 fires; a benign out-of-block append stays green (no false positive).
+# V9 (register TR-08) — the telemetry contract has ONE copy on the live tree
+# (references/telemetry-contract.md; ADR 0030) and V9 stays as a re-vendoring
+# tripwire. seed_tel synthesizes a carrier re-vendoring the block IN THE SANDBOX;
+# drift it -> V9 fires; a benign out-of-block append stays green (no false positive).
 dr="$SANDBOX/v9"; seed_tel "$dr"
-sed 's/Never a whole-fleet scan./Never a whole-fleet scan. DRIFTED./' "$dr/plugins/zero-trust/references/backends.md" > "$dr/t.tmp" \
-  && mv "$dr/t.tmp" "$dr/plugins/zero-trust/references/backends.md"
-expect_fail V9 "$dr" "drifted vendored telemetry-contract block"
+sed 's/Never a whole-fleet scan./Never a whole-fleet scan. DRIFTED./' "$dr/plugins/zero-trust/references/revendored-carrier.md" > "$dr/t.tmp" \
+  && mv "$dr/t.tmp" "$dr/plugins/zero-trust/references/revendored-carrier.md"
+expect_fail V9 "$dr" "drifted re-vendored telemetry-contract block (synthesized carrier)"
 
 dr="$SANDBOX/v9p"; seed_tel "$dr"
-printf '\nSome extra prose AFTER the vendored telemetry-contract block.\n' >> "$dr/plugins/zero-trust/references/backends.md"
-expect_no_fail V9 "$dr" "prose appended outside the telemetry-contract markers"
+printf '\nSome extra prose AFTER the re-vendored telemetry-contract block.\n' >> "$dr/plugins/zero-trust/references/revendored-carrier.md"
+expect_no_fail V9 "$dr" "prose appended outside the telemetry-contract markers (synthesized carrier)"
 
 # V9 resume-helper re-vendor pin (ADR 0001 §18, post-0025 shape): the resume
 # helpers live exactly once under plugins/zero-trust/scripts/; a SECOND copy that
@@ -293,22 +304,25 @@ dr="$SANDBOX/v10p"; seed_rl "$dr"
 printf '# benign trailing note: provenance table unchanged\n' >> "$dr/$RL_PROV_REL"
 expect_no_fail V10 "$dr" "benign trailing comment appended to slug_provenance.tsv"
 
-# V11 (ADR 0023 / register OM-09) — the outcome-store schema + contract block must
-# not drift between the two producers, and the register must not launder an
-# agent-graded number as [det]. Plant a drift per guarantee and assert V11 fires; two
-# false-positive guards (identical reformat, prose outside the block) stay green.
+# V11 (ADR 0023 / register OM-09) — the outcome-store contract has ONE prose copy
+# (docs/specs/outcome-store-contract.md; ADR 0030); V11's copy scans stay as
+# re-vendoring tripwires, and the register must not launder an agent-graded number
+# as [det]. Plant a drift per guarantee (block drifts go into seed_om's
+# sandbox-synthesized carrier) and assert V11 fires; two false-positive guards
+# (identical reformat, prose outside the block) stay green.
 OM_SCHEMA_REL="plugins/extra/schema/outcome/v1.schema.json"
-OM_BLOCK_REL="plugins/zero-trust/references/outcome-measurement.md"
+OM_BLOCK_REL="plugins/zero-trust/references/revendored-carrier.md"
 OM_REG_REL="docs/specs/outcome-measurement-register.md"
 
 # V11-a — a second outcome-store schema copy drifts from the canonical.
 dr="$SANDBOX/v11a"; seed_om "$dr"; printf '\n' >> "$dr/$OM_SCHEMA_REL"
 expect_fail V11 "$dr" "drifted second outcome-store schema copy"
 
-# V11-b — the vendored outcome-store-contract block drifts from the canonical.
+# V11-b — a re-vendored outcome-store-contract block (synthesized carrier) drifts
+# from the canonical.
 dr="$SANDBOX/v11b"; seed_om "$dr"
 sed 's/append-only/APPEND-ONLY-DRIFTED/' "$dr/$OM_BLOCK_REL" > "$dr/om.tmp" && mv "$dr/om.tmp" "$dr/$OM_BLOCK_REL"
-expect_fail V11 "$dr" "drifted vendored outcome-store-contract block"
+expect_fail V11 "$dr" "drifted re-vendored outcome-store-contract block (synthesized carrier)"
 
 # V11-c — the H1 anti-laundering guard: a [det] acceptance claims a real-repo
 # agent-graded number in the register.
@@ -323,10 +337,11 @@ dr="$SANDBOX/v11p1"; seed_om "$dr"
 printf '\n' >> "$dr/plugins/zero-trust/schema/outcome/v1.schema.json"; printf '\n' >> "$dr/$OM_SCHEMA_REL"
 expect_no_fail V11 "$dr" "canonical + second schema copy reformatted identically (no drift)"
 
-# V11 false-positive guard #2 — prose appended OUTSIDE the contract-block markers.
+# V11 false-positive guard #2 — prose appended OUTSIDE the contract-block markers
+# (on the synthesized carrier).
 dr="$SANDBOX/v11p2"; seed_om "$dr"
-printf '\nSome extra prose after the vendored outcome-store-contract block.\n' >> "$dr/$OM_BLOCK_REL"
-expect_no_fail V11 "$dr" "prose appended outside the outcome-store-contract markers"
+printf '\nSome extra prose after the re-vendored outcome-store-contract block.\n' >> "$dr/$OM_BLOCK_REL"
+expect_no_fail V11 "$dr" "prose appended outside the outcome-store-contract markers (synthesized carrier)"
 
 # V12 (ADR 0021/0022 / register SD-12) — the System-Design Coverage tier's two
 # structural guards. Plant a violation per guard and assert V12 fires; a prose
