@@ -252,12 +252,39 @@ printf 'schema_version: 1\nmanifest_revision: not-an-int\nspec:\n  title: 5\n' >
 brk="$(tri_py "$CORRELATE" --window "$SANDBOX/filtered.ndjson" --manifest "$SANDBOX/broken.yaml" 2>&1)"; brc=$?
 assert_rc_nonzero TR-03 "schema-invalid manifest -> REFUSE (exit non-zero)" "$brc"
 assert_contains   TR-03 "schema-invalid REFUSE names the exit-4 refusal" "schema-invalid" "$brk"
-# [det-cond] audit-backref cross-check SKIPPED (CH-02 unbuilt) — NOT end-to-end suite proof.
+# [det-cond] audit-backref cross-check (ADR 0029) — runs only when --journeys supplies the
+# audit-produced v2 artifact; asserted here against the TRIAGE-OWNED fixture copy.
 echo "  [det-cond banner] the audit-backref cross-check below is asserted against the TRIAGE-OWNED"
 echo "  fixture $PLUGIN/fixtures/journeys/journeys-v2.json — this is NOT end-to-end suite proof;"
-echo "  codebase-health CH-02 is UNBUILT, so the cross-check is a deterministic SKIP, never assumed."
-assert_eq       TR-03 "[det-cond] backref cross-check status is skipped-by-design" "skipped" "$(printf '%s' "$corr" | jget 'd["backref_cross_check"]["status"]')"
-assert_contains TR-03 "[det-cond] skip note names CH-02 unbuilt" "backref-unavailable (CH-02 unbuilt)" "$corr"
+echo "  a real cross-check consumes the artifact an actual audit run produced (ADR 0029)."
+# absent --journeys (the common prod-triage case): status stays skipped with the honest note.
+assert_eq       TR-03 "[det-cond] no --journeys -> backref cross-check status skipped-by-reason" "skipped" "$(printf '%s' "$corr" | jget 'd["backref_cross_check"]["status"]')"
+assert_contains TR-03 "[det-cond] absent-journeys note names the missing audit artifact" "no journeys.json provided (a prod-triage run has no audit artifact)" "$corr"
+# provided + agreeing backref: every derived journey id is backref-confirmed -> agreed.
+tri_py "$CORRELATE" --window "$SANDBOX/filtered.ndjson" --manifest "$JOIN_MANIFEST" --journeys "$PLUGIN/fixtures/journeys/journeys-v2.json" --out "$SANDBOX/corr_backref.json"
+bref="$(cat "$SANDBOX/corr_backref.json")"
+assert_eq       TR-03 "[det-cond] --journeys with matching backref -> status agreed" "agreed" "$(printf '%s' "$bref" | jget 'd["backref_cross_check"]["status"]')"
+assert_contains TR-03 "[det-cond] agreed note names the confirmed derived journey" "J-pay-001" "$(printf '%s' "$bref" | jget 'd["backref_cross_check"]["note"]')"
+assert_eq       TR-03 "[det-cond] agreed correlation still validates against the schema" "VALID" "$(schema_one "$CORR_SCHEMA" < "$SANDBOX/corr_backref.json")"
+# provided + mismatching backref: the derived id is NOT backref-confirmed -> disagreed, id named.
+python3 - "$PLUGIN/fixtures/journeys/journeys-v2.json" "$SANDBOX/journeys-mismatch.json" <<'PY'
+import json, sys
+d = json.load(open(sys.argv[1]))
+d["journeys"][0]["manifest_journey_id"] = "J-other-999"
+json.dump(d, open(sys.argv[2], "w"))
+PY
+tri_py "$CORRELATE" --window "$SANDBOX/filtered.ndjson" --manifest "$JOIN_MANIFEST" --journeys "$SANDBOX/journeys-mismatch.json" --out "$SANDBOX/corr_mismatch.json"
+mis="$(cat "$SANDBOX/corr_mismatch.json")"
+assert_eq       TR-03 "[det-cond] --journeys with mismatching backref -> status disagreed" "disagreed" "$(printf '%s' "$mis" | jget 'd["backref_cross_check"]["status"]')"
+assert_contains TR-03 "[det-cond] disagreed note names the unconfirmed derived id" "J-pay-001" "$(printf '%s' "$mis" | jget 'd["backref_cross_check"]["note"]')"
+assert_eq       TR-03 "[det-cond] disagreed correlation still validates against the schema" "VALID" "$(schema_one "$CORR_SCHEMA" < "$SANDBOX/corr_mismatch.json")"
+# provided + malformed: loud degrade to skipped naming the parse failure — never a crash.
+printf 'this is not json {' > "$SANDBOX/journeys-garbage.json"
+tri_py "$CORRELATE" --window "$SANDBOX/filtered.ndjson" --manifest "$JOIN_MANIFEST" --journeys "$SANDBOX/journeys-garbage.json" --out "$SANDBOX/corr_garbage.json"; grc=$?
+gar="$(cat "$SANDBOX/corr_garbage.json")"
+assert_rc       TR-03 "[det-cond] malformed --journeys never crashes the correlation (exit 0)" 0 "$grc"
+assert_eq       TR-03 "[det-cond] malformed --journeys -> status skipped (loud degrade)" "skipped" "$(printf '%s' "$gar" | jget 'd["backref_cross_check"]["status"]')"
+assert_contains TR-03 "[det-cond] malformed-journeys note names the unusable artifact" "journeys.json provided but unusable" "$gar"
 
 # =============================================================================
 # TR-04 — config-profile resume (reuse; floor-not-ceiling severity)
