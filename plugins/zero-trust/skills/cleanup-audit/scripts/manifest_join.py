@@ -132,11 +132,16 @@ def load_manifest(path: Path):
     # same Norway guard as the validator: `no`/`on` stay strings). Fix loader
     # bugs there first, then mirror here.
     from ruamel.yaml import YAML
+    from ruamel.yaml.error import YAMLError
 
     yaml = YAML(typ="safe", pure=True)
     yaml.version = (1, 2)  # 1.2 core schema — same Norway guard as the validator
-    with path.open("r", encoding="utf-8") as fh:
-        return yaml.load(fh)
+    try:
+        with path.open("r", encoding="utf-8") as fh:
+            return yaml.load(fh)
+    except YAMLError as exc:
+        # same error shape as the located branch (load_manifest -> ValueError)
+        raise ValueError(f"{path}: YAML parse error: {exc}") from exc
 
 
 # ── comparison lattices (§12) ─────────────────────────────────────────────────

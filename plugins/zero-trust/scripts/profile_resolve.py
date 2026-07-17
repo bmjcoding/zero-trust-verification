@@ -53,7 +53,8 @@ def _load(path: Path):
     """
     data, err = _VM.load_manifest(path)
     if err is not None:
-        raise ValueError(f"{path}: {err}")
+        # read-errors already embed the path; only parse-errors need the prefix
+        raise ValueError(err if str(path) in err else f"{path}: {err}")
     return data
 
 
