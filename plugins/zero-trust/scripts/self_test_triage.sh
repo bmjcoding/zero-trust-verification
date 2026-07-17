@@ -28,7 +28,7 @@ export LC_ALL=C
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PLUGIN="$(cd "$HERE/.." && pwd)"
-ROOT="$(cd "$PLUGIN/../.." && pwd)"          # repo root (has pyproject.toml)
+ROOT="$(cd "$PLUGIN/../.." && pwd)"          # repo root (fixtures + root lint); $PLUGIN is the ONE uv project (ADR 0031)
 
 TELEMETRY="$HERE/telemetry.sh"
 LOOP_GUARD="$HERE/loop_guard.py"
@@ -39,7 +39,7 @@ HANDOFF="$HERE/resume_handoff.sh"
 RESOLVER="$HERE/profile_resolve.py"
 WIN_SCHEMA="$PLUGIN/schema/triage/incident-window.schema.json"
 CORR_SCHEMA="$PLUGIN/schema/triage/correlation.schema.json"
-MOCK_HOST="$PLUGIN/fixtures/host/mock_host.sh"
+MOCK_HOST="$PLUGIN/fixtures/host/mock_pr_host.sh"
 JOIN_MANIFEST="$ROOT/tests/fixtures/join/manifest.yaml"
 CANON_SKILL="$ROOT/plugins/zero-trust/skills/spec/SKILL.md"
 TRI_SKILL="$PLUGIN/skills/triage/SKILL.md"
@@ -69,7 +69,7 @@ if ! command -v uv >/dev/null 2>&1; then echo "self_test: uv required (ADR 0015)
 SANDBOX="$(mktemp -d)"
 trap 'rm -rf "$SANDBOX"' EXIT INT TERM
 
-tri_py() { uv run --project "$ROOT" python "$@"; }
+tri_py() { uv run --project "$PLUGIN" python "$@"; }
 # validate an NDJSON stream against a schema; prints "OK=<valid> BAD=<invalid>".
 schema_ndjson() {  # <schema> <ndjson-file>
   tri_py -c '
@@ -345,7 +345,7 @@ MAN="$(ls "$INC"/*.manifest.yaml 2>/dev/null | head -1)"
 MD="$(ls "$INC"/*.md 2>/dev/null | head -1)"
 assert_eq TR-05 "emitter wrote an incident manifest" "1" "$([ -f "$MAN" ] && echo 1 || echo 0)"
 # validate through the VENDORED validate_manifest.sh -> exit 3 (incomplete, resumable).
-uv run --project "$ROOT" bash "$HERE/validate_manifest.sh" "$MAN" >/dev/null 2>&1; vrc=$?
+uv run --project "$PLUGIN" bash "$HERE/validate_manifest.sh" "$MAN" >/dev/null 2>&1; vrc=$?
 assert_rc TR-05 "emitted manifest is schema-valid + completeness:incomplete (validator exit 3)" 3 "$vrc"
 manbody="$(cat "$MAN")"
 assert_contains TR-05 "incident manifest references EXISTING journey J-pay-001" "J-pay-001" "$manbody"
@@ -392,7 +392,7 @@ assert_contains TR-06 "SKILL is agent-first (no dashboard in path)" "no dashboar
 echo "== TR-07 spec-gen resume handoff =="
 
 # the emitted manifest is accepted as resumable input by the VENDORED resume projector.
-proj="$(uv run --project "$ROOT" python "$HERE/resume_projection.py" "$MAN")"
+proj="$(uv run --project "$PLUGIN" python "$HERE/resume_projection.py" "$MAN")"
 assert_eq TR-07 "vendored resume projector accepts the manifest (validator_exit 3)" "3" "$(printf '%s' "$proj" | jget 'd["validator_exit"]')"
 assert_eq TR-07 "resume projector yields escalate-class question slots" "1" "$([ "$(printf '%s' "$proj" | jget 'len(d["escalate"])')" -ge 1 ] && echo 1 || echo 0)"
 # the handoff opens a DRAFT PR through the host adapter + records the ledger.

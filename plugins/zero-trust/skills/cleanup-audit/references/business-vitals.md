@@ -95,19 +95,11 @@ probe, it is an incident. Read the code; quote the guard or its absence.
 ## Severity mapping (per the 1.4.0 absence-finding gate)
 
 Uninstrumented-vital findings are absence findings — there is no repro of
-nothing; the trace is the only confirmation (`severity-rubric.md`, 1.4.0
-amendment):
-
-- **HIGH** only for DARK on a **traced CORE money-movement or auth path**, with
-  the `journeys.json` trace attached as evidence.
-- **Everything else hard-caps at MED**, no judgment escape above the cap. This
-  list mirrors the rubric's 1.4.0 absence-gate list — change them together:
-  LOG-ONLY = MED, even on a traced CORE money/auth path (HIGH is DARK-only);
-  DARK or LOG-ONLY off a traced CORE money/auth path = MED. The
-  **needs-verification** mark rides on untraced/unconfirmed reachability; a
-  capped vital on a traced path is confirmed MED, no mark.
-- No trace (`journeys.json` missing/corrupt) → cap MED needs-verification per
-  `journey-trace.md`'s degrade rules — never guess criticality.
+nothing; the trace is the only confirmation. The HIGH/MED cap logic (HIGH is
+DARK-only on a traced CORE money/auth path; everything else hard-caps at MED;
+no trace → MED needs-verification) is owned by `severity-rubric.md`'s 1.4.0
+absence-finding amendment — apply it from there; it is not restated here
+(ADR 0031 dedup).
 
 Category `journey/uninstrumented`; canonical slugs like `dark-money-movement`,
 `log-only-refund`.

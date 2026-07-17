@@ -23,7 +23,8 @@ set -u
 export LC_ALL=C
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ROOT="$(cd "$HERE/../../.." && pwd)"   # repo root (has pyproject.toml)
+ROOT="$(cd "$HERE/../../.." && pwd)"   # repo root
+PLUGIN="$(cd "$HERE/.." && pwd)"        # the ONE uv project (ADR 0031)
 MARSHAL="$HERE/marshal.sh"
 CLAIM="$HERE/../skills/autopilot/scripts/claim_overlap.sh"   # the ONE canonical copy (ADR 0009/0025)
 WATCH="$HERE/branch_age_watcher.sh"
@@ -195,13 +196,13 @@ edit_main() {  # <file=content>...  -- advances LOCAL main and pushes
 run_marshal() {  # extra "VAR=val" env args ; echoes marshal stdout+stderr
   ( cd "$WC" && env "$@" \
       MARSHAL_HOST="$MOCK" MARSHAL_MOCK_STATE="$STATE" MARSHAL_MOCK_REPO="$ORIGIN" \
-      MARSHAL_UV_PROJECT="$ROOT" \
+      MARSHAL_UV_PROJECT="$PLUGIN" \
       MARSHAL_BUILD_POLL_MAX=1 MARSHAL_BUILD_POLL_INTERVAL=0 \
       bash "$MARSHAL" 2>&1 )
 }
 state_list() {  # <key: merges|comments> -> comma-joined nums (tolerant of an
   # untouched seed file the mock never re-saved: default the key to []).
-  uv run --project "$ROOT" python -c 'import json,sys
+  uv run --project "$PLUGIN" python -c 'import json,sys
 s=json.load(open(sys.argv[1]))
 print(",".join(str(x["num"]) for x in s.get(sys.argv[2], [])))' "$STATE" "$1"
 }

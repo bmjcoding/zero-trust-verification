@@ -343,5 +343,5 @@ rc, out, err = run_cli("id_alloc.py", ["alloc"], stdin='{"prefix":"J","slug":"pa
 check("id_alloc.py alloc CLI returns the next id", rc == 0 and '"J-pay-002"' in out, f"(rc={rc}, out={out[:80]})")
 
 
-print(f"\n== spec-gen run_cases: {passed} passed, {failed} failed ==")
+print(f"\n== spec-gen run_spec_gen_cases: {passed} passed, {failed} failed ==")
 sys.exit(1 if failed else 0)
