@@ -15,8 +15,9 @@
 # Interrogation-log IDs (DL-###) are per-manifest scope (MS §6) and are NOT
 # unioned — a DL-001 in each manifest is legal.
 #
-# Single-file schema/completeness validation is the spec tier's `validate_manifest.sh`
-# (vendored per ADR 0001); this autopilot copy owns ONLY the union checks.
+# Single-file schema/completeness validation is the canonical plugin validator
+# (`plugins/zero-trust/scripts/validate_manifest.sh` — the single copy, ADR 0025);
+# this script owns ONLY the union checks.
 #
 # Usage:  validate_manifest.sh --union <a.yaml> <b.yaml> [<c.yaml> ...]
 # Exit:   0 union-coherent (prints OK) · 1 GENERATE-FAILED (first violation) · 64 usage.
@@ -27,7 +28,7 @@ set -u
 
 usage() {
   echo "usage: validate_manifest.sh --union <a.yaml> <b.yaml> [<c.yaml> ...]" >&2
-  echo "  (single-file schema validation is the spec-tier validator, vendored per ADR 0001)" >&2
+  echo "  (single-file schema validation is the canonical plugin validator — single copy, ADR 0025)" >&2
   exit 64
 }
 

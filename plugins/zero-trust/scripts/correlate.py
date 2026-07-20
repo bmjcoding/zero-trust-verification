@@ -2,7 +2,7 @@
 """TR-03 — incident<->manifest correlation via the §12 event_name key (runtime source).
 
 Consumes (a) the incident window (TR-02 NDJSON, POST loop-guard) and (b) the
-Verification Manifest, validated through the VENDORED validate_manifest (exit
+Verification Manifest, validated through the CANONICAL validate_manifest (exit
 0/3/4/5, §11 — reused verbatim, never reimplemented). It joins runtime emission to
 design-time intent on `event_name` (the §12 key) and DERIVES the journey from that
 match — NOT from a backref: journeys.json's v2 `manifest_journey_id` backref lives
@@ -30,7 +30,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-import validate_manifest as V  # vendored, byte-identical to repo root (V1/V3 pinned)
+import validate_manifest as V  # the canonical validator (single copy, ADR 0025)
 
 SCHEMA_VERSION = 1
 

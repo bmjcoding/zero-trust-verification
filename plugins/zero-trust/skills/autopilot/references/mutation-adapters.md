@@ -8,14 +8,12 @@ tool's survivors to `file:line` it calls the CANONICAL resolver
 old byte-identical vendored sibling and its V7 lint are retired; MT-09/MT-10
 sole source). The map itself lives with the resolver:
 
-<!-- vendored:mutation-adapter-map:begin -->
 **Mutation adapter map (ADR 0016/0025 — the ONE copy).** Load the canonical map
 from `skills/cleanup-audit/references/cross-language-tooling.md` (section
 "Mutation adapter map") at the zero-trust plugin root — per tool it gives the
 changed-FILES invocation, the survivor→`file:line` resolver, the honest
 tool-scoping capability, and the executable resolver
 `skills/cleanup-audit/scripts/mutation_adapter.sh` that D6.5 calls.
-<!-- vendored:mutation-adapter-map:end -->
 
 See `references/lifecycle.md` §D6.5 for how D6.5 consumes this map, and
 `docs/adr/0016-mutation-testing-first-class-gate.md` for the rationale.

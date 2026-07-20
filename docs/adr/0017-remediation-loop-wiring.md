@@ -1,4 +1,4 @@
-# ADR 0018 — The remediation loop is wiring, not a fifth checker; findings drain only when the FIX is deterministically-scored AND agent-decidable
+# ADR 0017 — The remediation loop is wiring, not a fifth checker; findings drain only when the FIX is deterministically-scored AND agent-decidable
 
 ---
 status: agent-decided

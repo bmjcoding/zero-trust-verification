@@ -3,10 +3,11 @@
 # path and land it as a DRAFT PR Claim. NO new spec-gen code, NO new host code.
 #
 #   1. Prove the emitted <incident>.manifest.yaml is RESUMABLE-INCOMPLETE by running
-#      the VENDORED resume_projection.py (which runs the vendored validator): it must
+#      the CANONICAL resume_projection.py (which runs the canonical validator —
+#      single copies since ADR 0025): it must
 #      report validator_exit == 3 (§10 — an incomplete manifest is consumable only by
 #      a resumed spec-tier session). Not 3 -> REFUSE.
-#   2. Open a DRAFT PR through the VENDORED host adapter (host.sh pr-open --draft):
+#   2. Open a DRAFT PR through the CANONICAL host adapter (host.sh pr-open --draft):
 #      report-only first (ADR 0020) — the Spec is a PROPOSAL for human review, never
 #      merge-blocking, never auto-merged. $TRIAGE_HOST defaults to the sibling
 #      autopilot host.sh; a deployment/standalone install or the self-test overrides it.
@@ -26,7 +27,7 @@ set -u
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$HERE/_triage_run.sh"
 PLUGIN_ROOT="$(cd "$HERE/.." && pwd)"
-PROJECTOR="$HERE/resume_projection.py"   # vendored byte-identical from spec-gen
+PROJECTOR="$HERE/resume_projection.py"   # the canonical sibling copy (ADR 0025)
 HOST="${TRIAGE_HOST:-$PLUGIN_ROOT/skills/autopilot/scripts/host.sh}"
 
 die() { echo "resume_handoff.sh: REFUSE: $*" >&2; exit 1; }
@@ -63,7 +64,7 @@ if [ -z "$LEDGER" ]; then
   [ -n "$LEDGER" ] || LEDGER="triage/open-incidents.tsv"
 fi
 
-# ── 1. RESUMABLE-INCOMPLETE proof via the vendored resume projector (exit 3) ──
+# ── 1. RESUMABLE-INCOMPLETE proof via the canonical resume projector (exit 3) ──
 PROJ="$(triage_py "$PROJECTOR" "$MANIFEST")" || die "resume_projection.py failed"
 VEXIT="$(printf '%s' "$PROJ" | python3 -c 'import sys,json; print(json.load(sys.stdin).get("validator_exit"))' 2>/dev/null || true)"
 [ "$VEXIT" = "3" ] || die "incident manifest is not resumable-incomplete (resume_projection validator_exit=$VEXIT, expected 3); spec-gen resume accepts ONLY an incomplete manifest (§10)"
@@ -74,7 +75,7 @@ if [ "$NO_OPEN" -eq 1 ]; then
   exit 0
 fi
 
-# ── 2. DRAFT PR via the vendored host adapter (report-only first, ADR 0020) ──
+# ── 2. DRAFT PR via the canonical host adapter (report-only first, ADR 0020) ──
 [ -n "$BRANCH" ] || die "--branch required to open the incident-Spec PR"
 # --key is REQUIRED to open a PR: without it the loop-guard ledger cannot record the
 # open incident, and a re-fire would emit a DUPLICATE incident-Spec (TR-loop-guard).

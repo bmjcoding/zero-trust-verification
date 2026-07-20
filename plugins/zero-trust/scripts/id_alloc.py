@@ -7,7 +7,7 @@ self-tested (spec-gen §7.3). The LLM interrogation proposes journeys/behaviors;
 this module hands it the next legal ID and refuses any that is already reserved.
 
 §6 grammar (schema-enforced elsewhere; re-pinned here so allocation never emits
-an ID the vendored schema would reject):
+an ID the canonical schema would reject):
 
   - Journey:  ^J-[a-z0-9]+(-[a-z0-9]+)*-[0-9]{3}$
   - Behavior: ^B-[a-z0-9]+(-[a-z0-9]+)*-[0-9]{3}$
@@ -38,7 +38,7 @@ import re
 import sys
 
 # Full §6 grammars (kept in lockstep with schema/verification-manifest/v1.schema.json
-# $defs.journeyId / behaviorId; the byte-identity lint guards the schema copy, and
+# $defs.journeyId / behaviorId — the canonical single schema copy since ADR 0025;
 # id_alloc self-tests assert every emitted ID matches these).
 _GRAMMAR = {
     "J": re.compile(r"^J-[a-z0-9]+(-[a-z0-9]+)*-[0-9]{3}$"),

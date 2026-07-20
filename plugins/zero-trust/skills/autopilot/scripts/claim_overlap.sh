@@ -2,10 +2,11 @@
 # claim_overlap.sh
 #
 # ============================================================================
-# VENDORED PRIMITIVE (ADR 0009 / AV3-09). This file is vendored byte-identical
-# across the tiers that consult claim overlap (autopilot here; the Marshal plugin
-# once built). A repo packaging lint will enforce byte-parity of the copies — do
-# NOT edit one copy without the others.
+# SHARED PRIMITIVE (ADR 0009 / AV3-09) — the ONE canonical copy (ADR 0025).
+# Every consumer that consults claim overlap (autopilot G4/D2, the marshal
+# staleness sweep, the remediation loop's depth guard) resolves to THIS file;
+# the Marshal-plugin-era byte-identical vendoring and its byte-parity lint are
+# retired.
 # ============================================================================
 #
 # Open-PR file-surface intersection: given the files a Subtask wants to own,
