@@ -284,7 +284,7 @@ Single-file, hermetic; history checks belong to the PR Gate.
 
 | Manifest (intent) | `journeys.json` (discovered) | Join / comparison rule |
 |---|---|---|
-| `journeys[].id` | *(v2 backref)* `manifest_journey_id` | Exact; backref is an induced audit requirement (§13). Until it ships: exact `name` match, fuzzy = no join, say so. |
+| `journeys[].id` | *(v2 backref)* `manifest_journey_id` | Exact; backref is an induced audit requirement (§13, shipped as CH-02 — ADR 0029). The backref is v2-optional: when absent, exact `name` match, fuzzy = no join, say so. |
 | `steps[].event_name` | emitted event name in the step's `emission_grade` evidence | Exact string; this is why `event_name` is required on vital steps. |
 | `required_emission: OBSERVED` | `emission_grade` | Satisfied by OBSERVED only. |
 | `required_emission: LOG-ONLY` | `emission_grade` | Satisfied by OBSERVED or LOG-ONLY. DARK never satisfies. |

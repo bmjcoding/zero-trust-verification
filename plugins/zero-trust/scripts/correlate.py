@@ -5,9 +5,12 @@ Consumes (a) the incident window (TR-02 NDJSON, POST loop-guard) and (b) the
 Verification Manifest, validated through the CANONICAL validate_manifest (exit
 0/3/4/5, §11 — reused verbatim, never reimplemented). It joins runtime emission to
 design-time intent on `event_name` (the §12 key) and DERIVES the journey from that
-match — NOT from a backref: journeys.json's v2 `manifest_journey_id` backref lives
-in codebase-health CH-02, which is UNBUILT, so any cross-check against it is a
-[det-cond] SKIP, never a silent assumption.
+match — NOT from a backref: telemetry carries no design-time IDs. When an
+audit-produced journeys.json v2 (codebase-health CH-02) is provided via
+`--journeys`, the derived journeys are cross-checked against its
+`manifest_journey_id` backrefs (agreed/disagreed, ADR 0029); absent that artifact
+— the common prod-triage case — the cross-check reports `skipped` with the honest
+reason, never a silent assumption.
 
 Honesty invariants:
   - schema-invalid(4)/unsupported(5) manifest -> REFUSE (degrade §11 never to
@@ -20,7 +23,8 @@ Honesty invariants:
     absence-in-a-bounded-window is not absence-in-prod, never a violation)
   - correlation.json is schema-versioned + idempotent (sorted keys; detection never mutates).
 
-  correlate.py --window <ndjson|-> --manifest <yaml> [--out <correlation.json>]
+  correlate.py --window <ndjson|-> --manifest <yaml> [--journeys <journeys.json>]
+               [--out <correlation.json>]
 """
 from __future__ import annotations
 
@@ -88,9 +92,9 @@ def correlate(window: list[dict], manifest_path: Path) -> dict:
         "core_steps_absent_in_window": [],
         "backref_cross_check": {
             "status": "skipped",
-            "note": "backref-unavailable (CH-02 unbuilt): the journeys.json v2 manifest_journey_id "
-                    "backref does not exist in the built suite; journey is DERIVED from the event_name "
-                    "match. Cross-check is a triage-owned fixture check, NOT end-to-end suite proof.",
+            "note": "no journeys.json provided (a prod-triage run has no audit artifact); the "
+                    "backref check needs the audit-produced journeys.json v2 (manifest_journey_id "
+                    "backref, codebase-health CH-02). Journey is DERIVED from the event_name match.",
         },
         "notes": [],
     }
@@ -172,15 +176,128 @@ def correlate(window: list[dict], manifest_path: Path) -> dict:
     return result
 
 
+def _cap_ids(ids, cap=10):
+    """Bounded id list for a note string (the schema has no maxLength guard)."""
+    ids = list(ids)
+    if len(ids) <= cap:
+        return ", ".join(ids)
+    return ", ".join(ids[:cap]) + f", +{len(ids) - cap} more"
+
+
+def _apply_backref_check(result: dict, journeys_arg) -> None:
+    """The [det-cond] audit-backref agreement check (ADR 0029). Mutates ONLY
+    result['backref_cross_check'] and keeps it {status, note} — the schema is
+    additionalProperties:false there, so all detail rides in the note.
+
+    The backref is v2-OPTIONAL (MS §12 row 1): a record without
+    manifest_journey_id is spec-legal, so ABSENCE IS NEVER A DISAGREEMENT.
+    A v2 record is TIED to a derived journey id J when its manifest_journey_id
+    equals J, or one of its steps' event_name is an event this correlation
+    derived J from — the only tie this module can honor honestly, because the
+    journey WAS derived from exactly those events. Per derived id:
+      tied record with backref == J   -> confirmed
+      tied record with backref != J   -> CONTRADICTION (an active mismatch)
+      no backref-bearing tied record  -> unconfirmed (absent != mismatch)
+    Status: any contradiction -> 'disagreed' (contradicted ids named, capped);
+    >=1 confirmed and none contradicted -> 'agreed' (confirmed/unconfirmed
+    counts noted); no backref-bearing tied record at all (incl. an empty
+    journeys array or a file with zero manifest_journey_id fields) ->
+    'skipped' with the honest v2-optional note.
+    --journeys absent -> the 'skipped' default note stands; unreadable,
+    malformed, or wrong-shaped input -> 'skipped' naming the problem (loud
+    degrade, the MT-06 precedent — never a crash)."""
+    if not journeys_arg:
+        return
+    try:
+        jdoc = json.loads(Path(journeys_arg).read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        result["backref_cross_check"] = {
+            "status": "skipped",
+            "note": f"journeys.json provided but unusable ({journeys_arg}: {exc}) — "
+                    "backref check not run; fix the artifact (loud degrade, never a crash).",
+        }
+        return
+    if not isinstance(jdoc, dict) or not isinstance(jdoc.get("journeys"), list):
+        result["backref_cross_check"] = {
+            "status": "skipped",
+            "note": f"journeys.json provided but wrong-shaped ({journeys_arg}: expected a "
+                    "top-level object with a 'journeys' list) — backref check not run "
+                    "(loud degrade, never a crash).",
+        }
+        return
+    records = [j for j in jdoc["journeys"] if isinstance(j, dict)]
+    derived = sorted({e["journey_id"] for e in result["correlated"]})
+    if not derived:
+        result["backref_cross_check"] = {
+            "status": "skipped",
+            "note": "journeys.json provided but the correlation derived no journeys — "
+                    "nothing to cross-check.",
+        }
+        return
+
+    def _backref(rec):
+        b = rec.get("manifest_journey_id")
+        return b if isinstance(b, str) and b else None
+
+    def _events(rec):
+        steps = rec.get("steps")
+        if not isinstance(steps, list):
+            return set()
+        return {s.get("event_name") for s in steps
+                if isinstance(s, dict) and isinstance(s.get("event_name"), str)}
+
+    events_by_jid: dict = {}
+    for e in result["correlated"]:
+        events_by_jid.setdefault(e["journey_id"], set()).add(e["event_name"])
+
+    confirmed, contradicted, unconfirmed = [], [], []
+    for jid in derived:
+        tied_backrefs = {_backref(r) for r in records
+                         if _backref(r) == jid or (_events(r) & events_by_jid.get(jid, set()))}
+        tied_backrefs.discard(None)
+        if tied_backrefs - {jid}:
+            contradicted.append(jid)   # a tied record actively claims a different id
+        elif jid in tied_backrefs:
+            confirmed.append(jid)
+        else:
+            unconfirmed.append(jid)    # no backref-bearing tied record: absent != mismatch
+
+    if contradicted:
+        result["backref_cross_check"] = {
+            "status": "disagreed",
+            "note": "backref contradiction: journeys.json record(s) tied to derived journey "
+                    f"id(s) {_cap_ids(contradicted)} carry a DIFFERENT manifest_journey_id — "
+                    "an active mismatch (a spec-legal absent backref never lands here).",
+        }
+    elif confirmed:
+        result["backref_cross_check"] = {
+            "status": "agreed",
+            "note": f"{len(confirmed)} derived journey id(s) backref-confirmed "
+                    f"({_cap_ids(confirmed)}); {len(unconfirmed)} unconfirmed-absent "
+                    "(the backref is v2-optional — absent is not a mismatch).",
+        }
+    else:
+        if any(_backref(r) for r in records):
+            note = ("journeys.json carries no manifest_journey_id backrefs tied to a "
+                    "derived journey (v2-optional) — nothing to cross-check.")
+        else:
+            note = ("journeys.json carries no manifest_journey_id backrefs (v2-optional) "
+                    "— nothing to cross-check.")
+        result["backref_cross_check"] = {"status": "skipped", "note": note}
+
+
 def main(argv) -> int:
     ap = argparse.ArgumentParser(prog="correlate.py")
     ap.add_argument("--window", required=True)
     ap.add_argument("--manifest", required=True)
+    ap.add_argument("--journeys", default=None,
+                    help="audit-produced journeys.json v2 for the backref cross-check (ADR 0029)")
     ap.add_argument("--out", default=None)
     args = ap.parse_args(argv[1:])
 
     window = _load_window(args.window)
     result = correlate(window, Path(args.manifest))
+    _apply_backref_check(result, args.journeys)
     blob = json.dumps(result, indent=2, sort_keys=True) + "\n"
     if args.out:
         Path(args.out).write_text(blob, encoding="utf-8")

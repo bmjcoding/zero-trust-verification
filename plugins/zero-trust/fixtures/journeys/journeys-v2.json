@@ -1,6 +1,6 @@
 {
   "schema_version": 2,
-  "_triage_note": "TRIAGE-OWNED FIXTURE — NOT end-to-end suite proof. This is a hand-authored copy of the shape codebase-health CH-02 WOULD emit (journeys.json v2 with a manifest_journey_id backref). CH-02 is UNBUILT, so the triage correlation NEVER reads a real audit v2 artifact; the backref cross-check is a [det-cond] SKIP with `[note] backref-unavailable (CH-02 unbuilt)`. This fixture exists only to make that skip banner concrete.",
+  "_triage_note": "TRIAGE-OWNED FIXTURE — NOT end-to-end suite proof. This is a hand-authored copy of the journeys.json v2 shape codebase-health CH-02 emits (manifest_journey_id backref; CH-02 shipped 2026-07-05, ADR 0029). The triage correlation consumes such an artifact only when --journeys supplies one — a prod-triage run typically has none, and then the backref cross-check reports status=skipped with the honest reason. This fixture exercises the provided-journeys paths hermetically; a real cross-check reads the artifact an actual audit run produced.",
   "source_run": { "kind": "audit", "date": "2026-07-06", "git_sha": "fixturedeadbeef" },
   "journeys": [
     {

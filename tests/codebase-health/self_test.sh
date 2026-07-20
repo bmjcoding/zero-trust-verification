@@ -732,6 +732,59 @@ else
   fail "CH-04: --diff must be swallowed as BASE and fail to resolve (no --diff flag added) [rc=$rc]"
 fi
 
+echo "== 18b. CH-04 pr_gate WITH a manifest: CH-01 MODE gate -> CH-03 §12 join dispatch (ADR 0029) =="
+# The class of gap that let the missing dispatch go unnoticed: no section ran
+# pr_gate.sh --manifest. Reuses the section-18 git fixture ($PRG/$BASECOMMIT)
+# and the §13.4 join pair. Manifest-reading, so it [skip]s loudly without the
+# vendored validator (the section-14/16 pattern).
+if have_validator; then
+  # (a) COMPLETE manifest + journeys -> the join is dispatched and its rows are
+  #     visible in the gate output; the gate stays warn-only (exit 0).
+  ( cd "$PRG" && bash "$SKILL_SCRIPTS/pr_gate.sh" "$BASECOMMIT" --manifest "$JOIN_FIX/manifest.yaml" --journeys "$JOIN_FIX/journeys.json" ) > "$WORK/prg_join.out" 2>&1; rc=$?
+  if [ "$rc" -eq 0 ]; then ok "CH-04/ADR-0029: gate stays warn-only (exit 0) with the §12 join composed in"; else fail "CH-04/ADR-0029: gate must stay warn-only [rc=$rc]"; fi
+  assert_grep "$WORK/prg_join.out" 'ingest_manifest.sh .CH-01 manifest MODE gate'        "CH-04/ADR-0029: a present manifest is ingested through CH-01 (MODE gate announced)"
+  assert_grep "$WORK/prg_join.out" '^MODE=COMPLETE$'                                      "CH-04/ADR-0029: CH-01 MODE token surfaces in the gate output"
+  assert_grep "$WORK/prg_join.out" 'manifest_join.sh .CH-03 §12 intended.*discovered join' "CH-04/ADR-0029: MODE=COMPLETE + journeys -> the §12 join IS dispatched"
+  assert_grep "$WORK/prg_join.out" '^ROW journey-backref PASS'                            "CH-04/ADR-0029: join output (backref row) visible in the gate output"
+  assert_grep "$WORK/prg_join.out" '^ROW emission PASS'                                   "CH-04/ADR-0029: join output (emission row) visible in the gate output"
+  assert_not_grep "$WORK/prg_join.out" '\[not-covered\] manifest-coverage'                "CH-04/ADR-0029: a dispatched join leaves NO manifest-coverage not-covered line"
+  # (a2) INCOMPLETE manifest + journeys -> NOT dispatched (MS §11: incomplete is
+  #      treated as absent for facet purposes; CH-01's own not-covered line is
+  #      the honest non-dispatch record — ADR 0029 as amended).
+  ( cd "$PRG" && bash "$SKILL_SCRIPTS/pr_gate.sh" "$BASECOMMIT" --manifest "$MANIFEST_FIX/incomplete.yaml" --journeys "$JOIN_FIX/journeys.json" ) > "$WORK/prg_join_inc.out" 2>&1; rc=$?
+  if [ "$rc" -eq 0 ]; then ok "CH-04/ADR-0029: incomplete-manifest gate run stays exit 0"; else fail "CH-04/ADR-0029: incomplete-manifest gate run must exit 0 [rc=$rc]"; fi
+  assert_grep "$WORK/prg_join_inc.out" '^MODE=INCOMPLETE$'                                "CH-04/ADR-0029: incomplete manifest -> MODE=INCOMPLETE surfaced"
+  assert_grep "$WORK/prg_join_inc.out" '\[not-covered\] manifest-coverage .§12 join.: manifest completeness: incomplete — treated as absent' "CH-04/ADR-0029: incomplete -> CH-01's honest as-absent not-covered line present (MS §11 incomplete row)"
+  assert_not_grep "$WORK/prg_join_inc.out" 'manifest_join.sh .CH-03'                      "CH-04/ADR-0029: MODE=INCOMPLETE -> the join is NOT dispatched (MS §11: as-absent for facet purposes)"
+  assert_not_grep "$WORK/prg_join_inc.out" '^ROW '                                        "CH-04/ADR-0029: MODE=INCOMPLETE -> zero join ROW lines in the gate output"
+  # (b) manifest present but NO journeys -> honest not-covered, no dispatch.
+  ( cd "$PRG" && bash "$SKILL_SCRIPTS/pr_gate.sh" "$BASECOMMIT" --manifest "$JOIN_FIX/manifest.yaml" ) > "$WORK/prg_nojour.out" 2>&1; rc=$?
+  if [ "$rc" -eq 0 ]; then ok "CH-04/ADR-0029: manifest-without-journeys gate run stays exit 0"; else fail "CH-04/ADR-0029: manifest-without-journeys gate run must exit 0 [rc=$rc]"; fi
+  assert_grep     "$WORK/prg_nojour.out" '\[not-covered\] manifest-coverage .§12 join.: manifest present .MODE=COMPLETE. but no prior journeys.json' "CH-04/ADR-0029 degrade: manifest but no journeys -> honest not-covered (the join needs both sides)"
+  assert_not_grep "$WORK/prg_nojour.out" 'manifest_join.sh .CH-03'                        "CH-04/ADR-0029 degrade: no journeys -> the join is NOT dispatched"
+  # (c) schema-invalid manifest -> CH-01's DEFECT framing, honest non-dispatch.
+  ( cd "$PRG" && bash "$SKILL_SCRIPTS/pr_gate.sh" "$BASECOMMIT" --manifest "$MANIFEST_FIX/norway-enum.yaml" --journeys "$JOIN_FIX/journeys.json" ) > "$WORK/prg_invalid.out" 2>&1; rc=$?
+  if [ "$rc" -eq 0 ]; then ok "CH-04/ADR-0029: schema-invalid manifest never blocks the gate (exit 0)"; else fail "CH-04/ADR-0029: schema-invalid manifest must not block [rc=$rc]"; fi
+  assert_grep "$WORK/prg_invalid.out" '^MODE=SCHEMA-INVALID$'                             "CH-04/ADR-0029: schema-invalid manifest -> MODE=SCHEMA-INVALID surfaced"
+  assert_grep "$WORK/prg_invalid.out" '\[not-covered\] manifest-coverage .§12 join.: manifest schema-invalid .defect. — comparator not run until fixed' "CH-04/ADR-0029: schema-invalid -> honest non-dispatch line (defect, not absence)"
+  assert_not_grep "$WORK/prg_invalid.out" '^ROW '                                         "CH-04/ADR-0029: schema-invalid -> no join rows emitted"
+  # (d) malformed journeys.json -> LOUD degrade (MT-06 precedent), never a crash.
+  printf 'this is not json {' > "$WORK/journeys-garbage.json"
+  ( cd "$PRG" && bash "$SKILL_SCRIPTS/pr_gate.sh" "$BASECOMMIT" --manifest "$JOIN_FIX/manifest.yaml" --journeys "$WORK/journeys-garbage.json" ) > "$WORK/prg_garbage.out" 2>&1; rc=$?
+  if [ "$rc" -eq 0 ]; then ok "CH-04/ADR-0029: malformed journeys.json degrades — gate still exits 0"; else fail "CH-04/ADR-0029: malformed journeys must degrade, not break the gate [rc=$rc]"; fi
+  assert_grep     "$WORK/prg_garbage.out" '\[not-covered\] manifest-coverage .§12 join.: malformed journeys.json' "CH-04/ADR-0029: malformed journeys -> loud not-covered degrade (MT-06 precedent)"
+  assert_not_grep "$WORK/prg_garbage.out" 'Traceback'                                     "CH-04/ADR-0029: malformed journeys never surfaces a Python traceback in the gate"
+  # (d2) valid JSON but WRONG SHAPE (top-level array, no 'journeys' list) -> the
+  #      same loud degrade: manifest_join.py must never see a wrong-shaped file.
+  printf '[]' > "$WORK/journeys-wrongshape.json"
+  ( cd "$PRG" && bash "$SKILL_SCRIPTS/pr_gate.sh" "$BASECOMMIT" --manifest "$JOIN_FIX/manifest.yaml" --journeys "$WORK/journeys-wrongshape.json" ) > "$WORK/prg_wrongshape.out" 2>&1; rc=$?
+  if [ "$rc" -eq 0 ]; then ok "CH-04/ADR-0029: wrong-shaped journeys.json degrades — gate still exits 0"; else fail "CH-04/ADR-0029: wrong-shaped journeys must degrade, not break the gate [rc=$rc]"; fi
+  assert_grep     "$WORK/prg_wrongshape.out" '\[not-covered\] manifest-coverage .§12 join.: malformed journeys.json' "CH-04/ADR-0029: wrong-shaped journeys (valid JSON, no journeys list) -> loud not-covered degrade"
+  assert_not_grep "$WORK/prg_wrongshape.out" 'Traceback'                                  "CH-04/ADR-0029: wrong-shaped journeys never surfaces a Python traceback in the gate"
+else
+  echo "  [skip] validate_manifest.sh absent — CH-04 §12-join-dispatch checks skipped (blocked-on the spec-gen validator drain)"
+fi
+
 echo "== 19. CH-05 memory-rot facet — deterministic layer (ADR 0003 point 1; ADR 0004) =="
 # git fixture: a base defining symbols that memory (ADR + journeys + manifest)
 # references, then a diff deleting/moving them. The deterministic layer flags a
