@@ -25,7 +25,7 @@ drain would.
 | Build the single-file SQLite + FTS5 index | `scripts/index_build.sh <records.jsonl> <db>` | OWM-05 |
 | Query: `lookup` / `search` / `resolve` / `decisions` | `scripts/query.sh <sub> <arg> --db <db>` | OWM-06 / 07 |
 | Coverage — "what do we NOT know" | `scripts/coverage.sh --db <db>` | OWM-08 |
-| Optional host org-enumeration (gh / Bitbucket DC) | `scripts/host_repo_list.sh repo-list --org <org>` | OWM-09 |
+| Optional host org-enumeration (gh / Bitbucket DC) | `skills/autopilot/scripts/host.sh repo-list --org <org>` (ADR 0028) | OWM-09 |
 | MCP server (thin adapter over `query.sh`) | `mcp/mcp_server.py` | OWM-11 |
 
 ```
@@ -62,8 +62,11 @@ the same kebab name in two repos is two records disambiguated by `repo`, never a
   `validate_manifest` toolchain (byte-identical vendored copy; lint V8) honoring its
   0/3/4/5 exit contract — exit 4/5 manifests index as `unparseable` carrying the
   error + code, never dropped.
-- **No runtime dependency on a sibling plugin.** Config-first is the default; the
-  optional host-enumeration path is vendored, never an install-time coupling.
+- **One transport, config-first.** The explicit repo list is the default; the
+  optional host-enumeration path is the shared host adapter (`host.sh repo-list`,
+  ADR 0028 — same plugin since ADR 0025), never a parallel transport. An
+  enumeration failure is loud (`die_state`); the config list stays the source
+  of truth.
 - **Read-only.** No findings, no remediation loop, no re-plan, no write path — so
   infinite-regress / self-remediation is structurally absent, not merely guarded.
 
@@ -81,7 +84,8 @@ the same kebab name in two repos is two records disambiguated by `repo`, never a
 - Real per-repo crawl **latency** on a large corpus (the ceiling prevents runaway;
   actual timing is measured).
 - FTS ranking **quality** ("does the right ADR come first") — never a `[det]` claim.
-- Real org enumeration + the live credential path behind `host_repo_list.sh`.
+- Real org enumeration + the live credential path behind `host.sh repo-list`
+  (ADR 0028).
 - An agent actually reaching for the MCP tool mid-session in a foreign repo.
 
 ## Self-test
