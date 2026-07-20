@@ -427,17 +427,29 @@ assert_contains   TR-07 "no-key refusal names the ledger dedupe reason" "cannot 
 echo "== TR-08 lint V9 teeth (telemetry-contract byte-identity) =="
 
 if [ -f "$LINT" ] && grep -q 'V9' "$LINT"; then
+  # The live tree is copy-free (ADR 0030): the sandbox seeds the canonical
+  # telemetry-contract.md and SYNTHESIZES a carrier re-vendoring its marker
+  # block, then drifts the carrier -> the V9 tripwire must fire. (The sandbox
+  # carries no plugin.json, so V6 also reds — the assertions are V9-specific,
+  # tolerating that noise, exactly as before.)
   DR="$SANDBOX/v9drift"
   mkdir -p "$DR/plugins/zero-trust/references"
   cp "$PLUGIN/references/telemetry-contract.md" "$DR/plugins/zero-trust/references/"
-  # drift the vendored backend-contract copy's block -> V9 must fire.
-  sed 's/Never a whole-fleet scan./Never a whole-fleet scan. DRIFTED./' "$PLUGIN/references/backends.md" > "$DR/plugins/zero-trust/references/backends.md"
+  { printf '# Synthesized carrier re-vendoring the telemetry-contract block (TR-08 fixture)\n\n'
+    awk '/vendored:telemetry-contract:begin/{f=1} f{print} /vendored:telemetry-contract:end/{f=0}' \
+      "$PLUGIN/references/telemetry-contract.md"
+  } | sed 's/Never a whole-fleet scan./Never a whole-fleet scan. DRIFTED./' \
+    > "$DR/plugins/zero-trust/references/revendored-carrier.md"
   v9out="$(LINT_ROOT="$DR" bash "$LINT" 2>&1)"; v9rc=$?
   assert_rc_nonzero TR-08 "planted telemetry-contract drift -> lint fails" "$v9rc"
   assert_contains   TR-08 "the failure is on rule V9" "LINT-FAIL [V9]" "$v9out"
-  # false-positive guard: byte-identical copies stay green under V9.
+  # false-positive guard: a byte-identical re-vendored copy stays green under V9.
   DR2="$SANDBOX/v9ok"; mkdir -p "$DR2/plugins/zero-trust/references"
-  cp "$PLUGIN/references/telemetry-contract.md" "$PLUGIN/references/backends.md" "$DR2/plugins/zero-trust/references/"
+  cp "$PLUGIN/references/telemetry-contract.md" "$DR2/plugins/zero-trust/references/"
+  { printf '# Synthesized carrier re-vendoring the telemetry-contract block (TR-08 fixture)\n\n'
+    awk '/vendored:telemetry-contract:begin/{f=1} f{print} /vendored:telemetry-contract:end/{f=0}' \
+      "$PLUGIN/references/telemetry-contract.md"
+  } > "$DR2/plugins/zero-trust/references/revendored-carrier.md"
   v9ok="$(LINT_ROOT="$DR2" bash "$LINT" 2>&1)"
   assert_not_contains TR-08 "V9 does not false-fire on byte-identical copies" "LINT-FAIL [V9]" "$v9ok"
 else
