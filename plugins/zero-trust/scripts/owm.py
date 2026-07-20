@@ -234,7 +234,13 @@ def extract_manifest(path: Path, repo, commit, relpath):
     NEVER dropped. Exit 0/3 -> harvest spec/journeys/behaviors + interrogation.log."""
     import validate_manifest as vm  # the canonical validator (single copy, ADR 0025)
 
-    code, lines = vm.validate_file(path)
+    # ONE parse (ADR 0032): load through the public API, validate the mapping in
+    # memory — same 0/3/4/5 contract as validate_file, no second read of the file.
+    data, err = vm.load_manifest(path)
+    if err is not None:
+        code, lines = vm.EXIT_SCHEMA_INVALID, [err]
+    else:
+        code, lines = vm.validate_mapping(data)
     if code in (vm.EXIT_SCHEMA_INVALID, vm.EXIT_UNSUPPORTED):
         ec = "manifest-schema-invalid" if code == vm.EXIT_SCHEMA_INVALID else "manifest-unsupported-version"
         name = _kebab(re.sub(r"\.ya?ml$", "", relpath.rsplit("/", 1)[-1]))
@@ -245,17 +251,7 @@ def extract_manifest(path: Path, repo, commit, relpath):
                 name=name, status=ec, error_code=ec,
             )
         ]
-
-    data, err = vm._load_yaml_12(path)
-    if err is not None or not isinstance(data, dict):
-        name = _kebab(re.sub(r"\.ya?ml$", "", relpath.rsplit("/", 1)[-1]))
-        return [
-            _record(
-                "unparseable", name, repo, commit, relpath,
-                relpath.rsplit("/", 1)[-1], err or "manifest is not a mapping",
-                name=name, status="manifest-unparseable", error_code="manifest-unparseable",
-            )
-        ]
+    # exit 0/3 guarantees a mapping (validate_mapping returns 4 for non-dicts).
 
     recs = []
     spec = data.get("spec", {}) or {}
@@ -333,8 +329,8 @@ def _load_config(path):
     try:
         return json.loads(raw)
     except json.JSONDecodeError:
-        import validate_manifest as vm  # reuse the YAML 1.2 loader (no forked parser)
-        data, err = vm._load_yaml_12(Path(path))
+        import validate_manifest as vm  # the public YAML 1.2 load API (ADR 0032)
+        data, err = vm.load_manifest(Path(path))
         if err:
             raise SystemExit(f"owm crawl: cannot parse config {path}: {err}")
         return data

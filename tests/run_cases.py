@@ -21,10 +21,7 @@ ROOT = HERE.parent
 sys.path.insert(0, str(ROOT / "plugins" / "zero-trust" / "scripts"))
 
 import validate_manifest as V  # noqa: E402
-from ruamel.yaml import YAML  # noqa: E402
-
-_yaml = YAML(typ="safe", pure=True)
-_yaml.version = (1, 2)
+from ruamel.yaml import YAML  # noqa: E402  (dump-side only; loads go through V.load_manifest)
 
 FIX = HERE / "fixtures" / "manifest"
 passed = 0
@@ -42,8 +39,9 @@ def check(name, cond, detail=""):
 
 
 def load(path):
-    with open(path) as fh:
-        return _yaml.load(fh)
+    data, err = V.load_manifest(Path(path))  # the public load API (ADR 0032)
+    assert err is None, err
+    return data
 
 
 def code_of(data):
