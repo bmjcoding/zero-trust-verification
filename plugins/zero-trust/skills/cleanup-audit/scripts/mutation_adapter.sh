@@ -50,14 +50,13 @@ usage() {
 }
 
 # uv-first (ADR 0015: `uv run --no-project`), python3 fallback. stdlib-only, so
-# the fallback interpreter needs no packages. Code in $1, extra argv after.
+# the fallback interpreter needs no packages. Code in $1, extra argv after. The
+# bootstrap is the plugin's shared _py_run.sh (ADR 0025 Wave 4); pwd -P so a
+# skills-dir symlinked install (ADR 0027) still resolves into the clone.
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/../../../scripts/_py_run.sh"
 _mut_py() {
   local code="$1"; shift
-  if command -v uv >/dev/null 2>&1; then
-    uv run --no-project --quiet python -c "$code" "$@"
-  else
-    python3 -c "$code" "$@"
-  fi
+  py_run_noproj -c "$code" "$@"
 }
 
 # ── normalizers: raw tool output (stdin) -> `<path>:<line>` / `<path>:-` ───────

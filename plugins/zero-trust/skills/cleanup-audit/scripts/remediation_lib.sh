@@ -16,14 +16,11 @@ RL_PROVENANCE_TSV="$RL_SCRIPTS_DIR/slug_provenance.tsv"
 
 # uv-first Python, ADR 0015 build discipline: `uv run --no-project` gives a
 # hermetic interpreter WITHOUT syncing any project's deps (the backend is
-# stdlib-only). Fall back to an ambient python3 where uv is absent.
-rl_pyrun() {
-  if command -v uv >/dev/null 2>&1; then
-    uv run --no-project --quiet python "$@"
-  else
-    python3 "$@"
-  fi
-}
+# stdlib-only). Fall back to an ambient python3 where uv is absent. The
+# bootstrap is the plugin's shared _py_run.sh (ADR 0025 Wave 4); pwd -P so a
+# skills-dir symlinked install (ADR 0027) still resolves into the clone.
+. "$(cd "$RL_SCRIPTS_DIR" && pwd -P)/../../../scripts/_py_run.sh"
+rl_pyrun() { py_run_noproj "$@"; }
 
 # Read the severity floor from a remediation.config.yaml (`severity_floor:`),
 # defaulting to HIGH. Deliberately a one-line grep, not a YAML parser: the loop

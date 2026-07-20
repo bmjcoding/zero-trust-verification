@@ -18,20 +18,14 @@ set -u
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-find_project_root() {
-  if [[ -n "${MARSHAL_UV_PROJECT:-}" ]]; then
-    printf '%s' "$MARSHAL_UV_PROJECT"; return 0
-  fi
-  local d="$HERE"
-  while [[ "$d" != "/" ]]; do
-    [[ -f "$d/pyproject.toml" ]] && { printf '%s' "$d"; return 0; }
-    d="$(dirname "$d")"
-  done
-  return 1
-}
+. "$HERE/_py_run.sh"   # the ONE uv bootstrap (ADR 0025 Wave 4) — walker only:
+                       # the mock is uv-REQUIRED (no python3 fallback; a test
+                       # host must run the locked toolchain, never an ambient
+                       # interpreter), so the exec below stays uv-direct.
 
 command -v uv >/dev/null 2>&1 || { echo "mock_host.sh: uv not found (ADR 0015)" >&2; exit 69; }
 
-ROOT="$(find_project_root)" || { echo "mock_host.sh: no pyproject.toml ancestor (set MARSHAL_UV_PROJECT)" >&2; exit 78; }
+ROOT="${MARSHAL_UV_PROJECT:-$(py_run_find_project "$HERE" || true)}"
+[ -n "$ROOT" ] || { echo "mock_host.sh: no pyproject.toml ancestor (set MARSHAL_UV_PROJECT)" >&2; exit 78; }
 
 exec uv run --project "$ROOT" python "$HERE/mock_host.py" "$@"

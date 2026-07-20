@@ -39,19 +39,18 @@ set -u
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$HERE/.." && pwd)"
 
-PASS=0
-FAIL=0
-fail() { echo "FAIL [$1] $2" >&2; FAIL=$((FAIL+1)); }
-pass() { echo "ok   [$1] $2"; PASS=$((PASS+1)); }
+# The ONE assertion library at the repo root (ADR 0025 Wave 4). pwd -P so a
+# skills-dir symlinked install (ADR 0027) still resolves into the full clone.
+. "$(cd "$HERE" && pwd -P)/../../../../../scripts/test_harness.sh"
+th_init A worded-skip
 
-assert_eq() {  # id desc expected actual
-  if [[ "$3" == "$4" ]]; then pass "$1" "$2"; else fail "$1" "$2 — expected [$3], got [$4]"; fi
-}
-assert_contains() {  # id desc needle haystack
-  if grep -qF -- "$3" <<<"$4"; then pass "$1" "$2"; else fail "$1" "$2 — missing [$3] in output"; fi
-}
-assert_not_contains() {  # id desc needle haystack
-  if grep -qF -- "$3" <<<"$4"; then fail "$1" "$2 — found forbidden [$3]"; else pass "$1" "$2"; fi
+# mk_repo <dir> — git init + selftest identity + signing off (the fixture
+# gpgsign pin, PR #39: a 1Password signing agent must never red a fixture).
+mk_repo() {
+  git init -q "$1"
+  git -C "$1" config user.email selftest@local
+  git -C "$1" config user.name selftest
+  git -C "$1" config commit.gpgsign false
 }
 
 SANDBOX="$(mktemp -d)"
@@ -314,7 +313,7 @@ fi
 
 # Fixture repo with a Bitbucket-shaped origin URL (repo-coord parsing).
 API_REPO="$SANDBOX/api-repo"
-git init -q "$API_REPO"
+mk_repo "$API_REPO"
 git -C "$API_REPO" remote add origin "https://bb.example.com/scm/PROJ/myrepo.git"
 
 # Env for sidecar-routed calls. PLATFORMS uses the CONTRACT-canonical id
@@ -341,9 +340,6 @@ hostbb() {
     IDENTITY_PROXY_URL="$BASE" IDENTITY_PROXY_PLATFORMS="bitbucketdc,jira" \
     bash "$HERE/host.sh" "$@" )
 }
-
-SKIP=0
-skip() { echo "skip [$1] $2"; SKIP=$((SKIP+1)); }
 
 # The byte-identical PR/build contract, exercised THROUGH host.sh so the same
 # assertion set proves both backends (ADR 0013). <invoker-fn> runs the host
@@ -613,10 +609,7 @@ make_remote_and_clone() {  # name -> sets REMOTE, CLONE
   REMOTE="$SANDBOX/${name}.git"
   CLONE="$SANDBOX/${name}-clone"
   git init -q --bare "$REMOTE"
-  git init -q "$CLONE"
-  git -C "$CLONE" config user.email selftest@local
-  git -C "$CLONE" config user.name selftest
-  git -C "$CLONE" config commit.gpgsign false
+  mk_repo "$CLONE"
   ( cd "$CLONE" && echo hello > f.txt && git add f.txt && git commit -qm init && git branch -M main \
     && git remote add origin "$REMOTE" && git push -q origin main && git remote set-head origin main )
 }
@@ -983,10 +976,7 @@ echo "== audit_commit_shape.sh (AV3-06 D6.2 Story-range audit) =="
 
 ACS="$HERE/audit_commit_shape.sh"
 CS_REPO="$SANDBOX/cs-repo"
-git init -q "$CS_REPO"
-git -C "$CS_REPO" config user.email selftest@local
-git -C "$CS_REPO" config user.name selftest
-git -C "$CS_REPO" config commit.gpgsign false
+mk_repo "$CS_REPO"
 csc() { git -C "$CS_REPO" "$@"; }
 csci() { csc commit -q --allow-empty -m "$1"; }
 echo base > "$CS_REPO/f"; csc add f; csci "chore: base"; csc branch -M main
@@ -1489,10 +1479,7 @@ assert_eq "AV3-08.2" "no body arg is usage error 64" "64" "$rc"
 # autopilot/<slug>/runbook and carries the canonical "Tracker deltas folded in:"
 # body block.
 RB_REPO="$SANDBOX/rb-repo"
-git init -q "$RB_REPO"
-git -C "$RB_REPO" config user.email selftest@local
-git -C "$RB_REPO" config user.name selftest
-git -C "$RB_REPO" config commit.gpgsign false
+mk_repo "$RB_REPO"
 ( cd "$RB_REPO" && echo base > f && git add f && git commit -qm "chore: base" && git branch -M main \
   && git checkout -qb autopilot/demo/runbook \
   && printf 'tracker\n' > t.md && git add t.md \
@@ -1606,10 +1593,7 @@ echo "== audit_behavior_binding.sh (AV3-05 behavior->test binding) =="
 
 ABB="$HERE/audit_behavior_binding.sh"
 BIND_REPO="$SANDBOX/bind-repo"
-git init -q "$BIND_REPO"
-git -C "$BIND_REPO" config user.email selftest@local
-git -C "$BIND_REPO" config user.name selftest
-git -C "$BIND_REPO" config commit.gpgsign false
+mk_repo "$BIND_REPO"
 bindc() { git -C "$BIND_REPO" "$@"; }
 echo base > "$BIND_REPO/f"; bindc add f; bindc commit -qm "chore: base"
 BIND_BASE=$(bindc rev-parse HEAD)
@@ -1750,10 +1734,10 @@ out=$(printf '10 mutants tested, 2 missed\n' | bash "$MADP" count cargo-mutants)
 assert_eq "MT-01.c" "canonical adapter counts total mutants (budget input)" "10" "$out"
 
 # A hermetic git repo whose HEAD adds line 3 (BASE..HEAD changed line = mod.py:3).
-mk_mut_repo() {  # $1 = dir -> prints BASE sha on fd 3? no: echoes BASE
+mk_mut_repo() {  # $1 = dir -> echoes BASE sha
   local d="$1"
-  mkdir -p "$d"; ( cd "$d"
-    git init -q && git config commit.gpgsign false
+  mk_repo "$d"
+  ( cd "$d"
     printf 'def f():\n    return 1\n' > mod.py
     git add mod.py; git commit -qm base
     printf 'def f():\n    return 1\n    g(2)\n' > mod.py   # line 3 added
@@ -2127,7 +2111,7 @@ SHIMEOF
 chmod +x "$GHSHIM/gh"
 
 GH_REPO_DIR="$SANDBOX/gh-repo"
-git init -q "$GH_REPO_DIR"
+mk_repo "$GH_REPO_DIR"
 git -C "$GH_REPO_DIR" remote add origin "https://github.com/acme/widget.git"
 GH_STATE="$SANDBOX/ghstate"; mkdir -p "$GH_STATE"
 
@@ -2231,13 +2215,13 @@ det() { ( cd "$1" && bash "$HERE/host.sh" backend 2>/dev/null ); }
 assert_eq H50 "DC /scm/ https origin -> BITBUCKET_DC" "BITBUCKET_DC" "$(det "$API_REPO")"
 assert_eq H50 "github.com https origin -> GITHUB" "GITHUB" "$(det "$GH_REPO_DIR")"
 # H50 — an ssh github origin also resolves to GITHUB.
-SSHGH="$SANDBOX/sshgh"; git init -q "$SSHGH"
+SSHGH="$SANDBOX/sshgh"; mk_repo "$SSHGH"
 git -C "$SSHGH" remote add origin "git@github.com:acme/widget.git"
 assert_eq H50 "git@github.com ssh origin -> GITHUB" "GITHUB" "$(det "$SSHGH")"
 # H50 — a trailing-slash github origin: host.sh routes GITHUB AND github.sh
 # parses it (it strips the trailing slash), so a PR op actually succeeds rather
 # than dying origin-parse.
-TSGH="$SANDBOX/tsgh"; git init -q "$TSGH"
+TSGH="$SANDBOX/tsgh"; mk_repo "$TSGH"
 git -C "$TSGH" remote add origin "https://github.com/acme/widget/"
 assert_eq H50 "trailing-slash github origin -> GITHUB" "GITHUB" "$(det "$TSGH")"
 out=$( cd "$TSGH" && PATH="$GHSHIM:$PATH" GH_SHIM_STATE="$GH_STATE" bash "$HERE/github.sh" pr-state --num 42 2>/dev/null )
@@ -2249,7 +2233,7 @@ assert_eq H50 "override wins over origin heuristic" "GITHUB" "$out"
 ( cd "$API_REPO" && AUTOPILOT_HOST_BACKEND=BOGUS bash "$HERE/host.sh" backend >/dev/null 2>&1 ); rc=$?
 assert_eq H50 "invalid override errors" "1" "$rc"
 # H50 — an unrecognised origin refuses with actionable guidance.
-UNK="$SANDBOX/unk-repo"; git init -q "$UNK"
+UNK="$SANDBOX/unk-repo"; mk_repo "$UNK"
 git -C "$UNK" remote add origin "https://gitlab.example.com/group/proj.git"
 out=$( cd "$UNK" && bash "$HERE/host.sh" backend 2>&1 >/dev/null || true )
 assert_contains H50 "unrecognised origin names the override knob" "AUTOPILOT_HOST_BACKEND" "$out"
@@ -2266,20 +2250,20 @@ echo "== bitbucket.sh repo-coords / BB_HOST derivation (W345-BB) =="
 # repo-coords is offline (no HTTP).
 coords() { ( cd "$1" && bash "$HERE/bitbucket.sh" repo-coords 2>/dev/null ); }
 
-SSH_REPO="$SANDBOX/sshhost-repo"; git init -q "$SSH_REPO"
+SSH_REPO="$SANDBOX/sshhost-repo"; mk_repo "$SSH_REPO"
 git -C "$SSH_REPO" remote add origin "ssh://git@bb-ssh.example.com:7999/PROJ/myrepo.git"
 out="$(coords "$SSH_REPO")"
 assert_contains W345-BB1 "ssh origin: -ssh suffix stripped from BB_HOST" "BB_HOST=bb.example.com" "$out"
 assert_contains W345-BB1 "ssh origin: project key parsed" "PROJECT_KEY=PROJ" "$out"
 assert_contains W345-BB1 "ssh origin: repo slug parsed" "REPO_SLUG=myrepo" "$out"
 
-SCP_REPO="$SANDBOX/scphost-repo"; git init -q "$SCP_REPO"
+SCP_REPO="$SANDBOX/scphost-repo"; mk_repo "$SCP_REPO"
 git -C "$SCP_REPO" remote add origin "git@bb-ssh.example.com:PROJ/myrepo.git"
 assert_contains W345-BB2 "scp-form origin: -ssh suffix stripped" "BB_HOST=bb.example.com" "$(coords "$SCP_REPO")"
 
 assert_contains W345-BB3 "https origin: host verbatim (already the REST host)" "BB_HOST=bb.example.com" "$(coords "$API_REPO")"
 
-HTTPS_SSHNAME="$SANDBOX/httpssshname-repo"; git init -q "$HTTPS_SSHNAME"
+HTTPS_SSHNAME="$SANDBOX/httpssshname-repo"; mk_repo "$HTTPS_SSHNAME"
 git -C "$HTTPS_SSHNAME" remote add origin "https://bb-ssh.example.com/scm/PROJ/myrepo.git"
 assert_contains W345-BB4 "https origin is NEVER stripped (strip is ssh-branch-only)" "BB_HOST=bb-ssh.example.com" "$(coords "$HTTPS_SSHNAME")"
 
@@ -2291,7 +2275,7 @@ assert_contains W345-BB5 "AUTOPILOT_BITBUCKET_HOST override wins over derivation
 # dot (`bitbucket-ssh` -> `bitbucket`). assert_eq on the extracted value — a
 # substring check on "BB_HOST=bitbucket" would vacuously match the UNstripped
 # "BB_HOST=bitbucket-ssh".
-DOTLESS_REPO="$SANDBOX/dotless-repo"; git init -q "$DOTLESS_REPO"
+DOTLESS_REPO="$SANDBOX/dotless-repo"; mk_repo "$DOTLESS_REPO"
 git -C "$DOTLESS_REPO" remote add origin "git@bitbucket-ssh:PROJ/myrepo.git"
 out="$(coords "$DOTLESS_REPO")"
 val=$(sed -n 's/^BB_HOST=//p' <<<"$out")
@@ -2364,119 +2348,77 @@ else
   fail LINT "lint_consistency.sh reports violations (run it directly for detail)"
 fi
 
-# L16 must actually red the retired single-host framing (planted-drift pin):
-# copy the skill into the sandbox, plant the forbidden line, run the copied lint.
-planted_dir="$SANDBOX/planted-lint"
-cp -R "$ROOT" "$planted_dir"
-printf '\nBitbucket Data Center is the source-of-truth host.\n' >> "$planted_dir/references/loop-safety.md"
-if bash "$planted_dir/scripts/lint_consistency.sh" >/dev/null 2>&1; then
-  fail L16 "L16 did NOT red a planted 'source-of-truth host' line"
-else
-  pass L16 "L16 reds planted 'source-of-truth host' framing"
-fi
+# Planted-lint red-tests. plant_and_expect_red copies the skill into a FRESH
+# sandbox dir (no plant masks another), runs the given plant command with the
+# copy dir appended, then expects the COPIED lint to red. Three plant
+# mechanisms: printf-append, line-scrub (grep -v + mv), sed rewrite. Every
+# pre-existing plant is preserved verbatim; each block is exactly one assertion.
+PLANT_N=0
+plant_and_expect_red() {  # <lint-id> <what> <plant-cmd...>
+  local id="$1" what="$2"; shift 2
+  PLANT_N=$((PLANT_N+1))
+  local d="$SANDBOX/planted-lint-$PLANT_N"
+  cp -R "$ROOT" "$d"
+  "$@" "$d"
+  if bash "$d/scripts/lint_consistency.sh" >/dev/null 2>&1; then
+    fail "$id" "$id did NOT red $what"
+  else
+    pass "$id" "$id reds $what"
+  fi
+}
+plant_append() {  # <rel-file> <line> <copy-dir>
+  printf '\n%s\n' "$2" >> "$3/$1"
+}
+plant_scrub() {   # <rel-file> <grep-v-pattern> <copy-dir>
+  grep -v "$2" "$3/$1" > "$3/$1.tmp"
+  mv "$3/$1.tmp" "$3/$1"
+}
+plant_sed() {     # <rel-file> <sed-expr> <copy-dir>
+  sed "$2" "$3/$1" > "$3/$1.tmp"
+  mv "$3/$1.tmp" "$3/$1"
+}
+# L18b's plant: scrub ONLY the line-anchored allow-list entry
+# (`  invalidated_seams: [...]`) and self-check the fixture — NO-GO rule 9's
+# "`invalidated_seams: []` is a legal explicit declaration" prose must survive,
+# the stale-template drift shape a whole-file scrub cannot distinguish from an
+# entry drop (invalidated_seams pinned in planner schema AND allow-list —
+# audit-w345 F3).
+plant_l18b() {  # <copy-dir>
+  plant_scrub references/plan-reviewer-projection.md '^[[:space:]]*invalidated_seams: \[' "$1"
+  grep -q 'invalidated_seams' "$1/references/plan-reviewer-projection.md" \
+    || fail L18 "L18b fixture self-check: prose mention should survive the entry-only scrub"
+}
 
-# L17 must red a planted one-PR-per-Subtask framing (AV3-06 / AV3-16a acceptance):
-# fresh clean copy so the L16 plant above doesn't mask the result.
-planted17="$SANDBOX/planted-lint-17"
-cp -R "$ROOT" "$planted17"
-printf '\nAutopilot opens one PR per Subtask against the host.\n' >> "$planted17/references/loop-safety.md"
-if bash "$planted17/scripts/lint_consistency.sh" >/dev/null 2>&1; then
-  fail L17 "L17 did NOT red a planted 'one PR per Subtask' line"
-else
-  pass L17 "L17 reds planted 'one PR per Subtask' framing"
-fi
-
-# L18 must red an AP-3 allow-list that drops a pinned planner-schema field:
-# fresh copy, strip behavior_ids from the projection, expect the copied lint to red.
-planted18="$SANDBOX/planted-lint-18"
-cp -R "$ROOT" "$planted18"
-grep -v 'behavior_ids:' "$planted18/references/plan-reviewer-projection.md" > "$planted18/references/proj.tmp"
-mv "$planted18/references/proj.tmp" "$planted18/references/plan-reviewer-projection.md"
-if bash "$planted18/scripts/lint_consistency.sh" >/dev/null 2>&1; then
-  fail L18 "L18 did NOT red an AP-3 allow-list missing behavior_ids"
-else
-  pass L18 "L18 reds an AP-3 allow-list that drops behavior_ids"
-fi
-
-# L18 must also red a projection whose ALLOW-LIST ENTRY drops the v3.1.0
-# seam-inventory field while prose mentions survive (invalidated_seams pinned
-# in planner schema AND allow-list — audit-w345 F3). The scrub removes ONLY the
-# line-anchored allow-list entry (`  invalidated_seams: [...]`); NO-GO rule 9's
-# "`invalidated_seams: []` is a legal explicit declaration" prose stays — the
-# stale-template drift shape a whole-file scrub cannot distinguish from an
-# entry drop.
-planted18b="$SANDBOX/planted-lint-18b"
-cp -R "$ROOT" "$planted18b"
-grep -v '^[[:space:]]*invalidated_seams: \[' "$planted18b/references/plan-reviewer-projection.md" > "$planted18b/references/proj18b.tmp"
-mv "$planted18b/references/proj18b.tmp" "$planted18b/references/plan-reviewer-projection.md"
-grep -q 'invalidated_seams' "$planted18b/references/plan-reviewer-projection.md" \
-  || fail L18 "L18b fixture self-check: prose mention should survive the entry-only scrub"
-if bash "$planted18b/scripts/lint_consistency.sh" >/dev/null 2>&1; then
-  fail L18 "L18 did NOT red an AP-3 allow-list ENTRY drop of invalidated_seams (prose mention still present)"
-else
-  pass L18 "L18 reds an AP-3 allow-list entry drop of invalidated_seams (prose mentions don't satisfy the pin)"
-fi
-
-# L19 must red a doc that reasserts the retired rolling-tracker-PR framing:
-# fresh copy, plant an active mention, expect the copied lint to red.
-planted19="$SANDBOX/planted-lint-19"
-cp -R "$ROOT" "$planted19"
-printf '\nBookkeeping lands on the rolling tracker PR every fire.\n' >> "$planted19/references/loop-safety.md"
-if bash "$planted19/scripts/lint_consistency.sh" >/dev/null 2>&1; then
-  fail L19 "L19 did NOT red a planted active 'rolling tracker PR' line"
-else
-  pass L19 "L19 reds a planted active 'rolling tracker PR' framing"
-fi
-
-# L20 must red a lifecycle.md whose Behavior-coverage marker was dropped.
-planted20="$SANDBOX/planted-lint-20"
-cp -R "$ROOT" "$planted20"
-grep -v 'autopilot:behavior-coverage' "$planted20/references/lifecycle.md" > "$planted20/references/dlc.tmp"
-mv "$planted20/references/dlc.tmp" "$planted20/references/lifecycle.md"
-if bash "$planted20/scripts/lint_consistency.sh" >/dev/null 2>&1; then
-  fail L20 "L20 did NOT red a dropped Behavior-coverage marker"
-else
-  pass L20 "L20 reds a dropped Behavior-coverage marker"
-fi
-
-# L21 must red an implementer prompt that drops an anti-flakiness rule.
-planted21="$SANDBOX/planted-lint-21"
-cp -R "$ROOT" "$planted21"
-grep -v 'Faked transport' "$planted21/references/implementer-prompt.md" > "$planted21/references/imp.tmp"
-mv "$planted21/references/imp.tmp" "$planted21/references/implementer-prompt.md"
-if bash "$planted21/scripts/lint_consistency.sh" >/dev/null 2>&1; then
-  fail L21 "L21 did NOT red a dropped anti-flakiness rule"
-else
-  pass L21 "L21 reds a dropped anti-flakiness rule"
-fi
-
-# L22 must red drift between the two vendored ADR-0002 escalation POINTER blocks
+# L16 — the retired single-host framing (planted-drift pin).
+plant_and_expect_red L16 "a planted 'source-of-truth host' framing" \
+  plant_append references/loop-safety.md 'Bitbucket Data Center is the source-of-truth host.'
+# L17 — a planted one-PR-per-Subtask framing (AV3-06 / AV3-16a acceptance).
+plant_and_expect_red L17 "a planted 'one PR per Subtask' framing" \
+  plant_append references/loop-safety.md 'Autopilot opens one PR per Subtask against the host.'
+# L18 — an AP-3 allow-list that drops a pinned planner-schema field.
+plant_and_expect_red L18 "an AP-3 allow-list that drops behavior_ids" \
+  plant_scrub references/plan-reviewer-projection.md 'behavior_ids:'
+# L18b — an allow-list ENTRY drop of the v3.1.0 seam-inventory field while
+# prose mentions survive (see plant_l18b above).
+plant_and_expect_red L18 "an AP-3 allow-list ENTRY drop of invalidated_seams (prose mention still present)" \
+  plant_l18b
+# L19 — a doc that reasserts the retired rolling-tracker-PR framing.
+plant_and_expect_red L19 "a planted active 'rolling tracker PR' framing" \
+  plant_append references/loop-safety.md 'Bookkeeping lands on the rolling tracker PR every fire.'
+# L20 — a lifecycle.md whose Behavior-coverage marker was dropped.
+plant_and_expect_red L20 "a dropped Behavior-coverage marker" \
+  plant_scrub references/lifecycle.md 'autopilot:behavior-coverage'
+# L21 — an implementer prompt that drops an anti-flakiness rule.
+plant_and_expect_red L21 "a dropped anti-flakiness rule" \
+  plant_scrub references/implementer-prompt.md 'Faked transport'
+# L22 — drift between the two vendored ADR-0002 escalation POINTER blocks
 # (since ADR 0025 the criterion text lives in the canonical
 # references/escalation-criterion.md; the prompts carry an identical pointer —
-# a reworded pointer in ONE prompt is the same silent-policy-fork drift):
-# fresh copy, mutate a word inside the implementer's pointer, expect the lint to red.
-planted22="$SANDBOX/planted-lint-22"
-cp -R "$ROOT" "$planted22"
-sed 's#references/escalation-criterion.md#references/REWORDED-DRIFT.md#' "$planted22/references/implementer-prompt.md" > "$planted22/references/imp22.tmp"
-mv "$planted22/references/imp22.tmp" "$planted22/references/implementer-prompt.md"
-if bash "$planted22/scripts/lint_consistency.sh" >/dev/null 2>&1; then
-  fail L22 "L22 did NOT red a drifted vendored escalation copy"
-else
-  pass L22 "L22 reds a drifted vendored escalation copy"
-fi
+# a reworded pointer in ONE prompt is the same silent-policy-fork drift).
+plant_and_expect_red L22 "a drifted vendored escalation copy" \
+  plant_sed references/implementer-prompt.md 's#references/escalation-criterion.md#references/REWORDED-DRIFT.md#'
+# L23 — an integration validator that drops the as-built docs rule.
+plant_and_expect_red L23 "a dropped as-built docs validator rule" \
+  plant_scrub references/validator-prompts.md 'As-built docs are Story deliverables'
 
-# L23 must red an integration validator that drops the as-built docs rule.
-planted23="$SANDBOX/planted-lint-23"
-cp -R "$ROOT" "$planted23"
-grep -v 'As-built docs are Story deliverables' "$planted23/references/validator-prompts.md" > "$planted23/references/val23.tmp"
-mv "$planted23/references/val23.tmp" "$planted23/references/validator-prompts.md"
-if bash "$planted23/scripts/lint_consistency.sh" >/dev/null 2>&1; then
-  fail L23 "L23 did NOT red a dropped as-built docs validator rule"
-else
-  pass L23 "L23 reds a dropped as-built docs validator rule"
-fi
-
-echo
-echo "self_test: ${PASS} passed, ${FAIL} failed, ${SKIP} skipped"
-(( FAIL == 0 )) || exit 1
-exit 0
+th_summary
