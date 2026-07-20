@@ -17,6 +17,18 @@
 #     field MUST land here as a failing assertion before (or with) its fix.
 #   - Run after ANY change under scripts/ or references/.
 #
+# Assertion-id legend (family -> what it covers):
+#   Txx      core substrate + bitbucket.sh/DC backend (T01-T38; T03 = credential
+#            never on curl argv)
+#   HDxx     Bitbucket DC draft-PR handling (native draft / [DRAFT] title modes)
+#   HGxx     github.sh backend via the gh argv shim (HG01-HG33)
+#   H50      host.sh backend detection from the origin URL
+#   AV3-x.n  v3 register assertions (the standalone register doc was retired;
+#            these ids live only here now)
+#   MT-x     D6.5 mutation gate (adapter, isolation, budget, verdicts)
+#   W345-*   audit-w345 field-retro regressions (CHANGELOG 3.1.0)
+#   Lxx      lint red-tests: planted violations that must turn lint rule Lxx red
+#
 # Usage: bash scripts/self_test.sh
 # Exit 0 = all assertions pass; non-zero = at least one failure.
 
@@ -1693,11 +1705,11 @@ MADP="$HERE/../../cleanup-audit/scripts/mutation_adapter.sh"   # the ONE canonic
 # The canonical adapter (single copy since ADR 0025) resolves +
 # counts — inline canned tool output, no external fixture dependency (hermetic).
 out=$(printf '3 mutants tested, 1 missed\nsrc/pay.rs:42:9: replace calc with 0\n' | bash "$MADP" normalize cargo-mutants)
-assert_eq "MT-01.a" "vendored adapter normalizes cargo survivor to file:line" "src/pay.rs:42" "$out"
+assert_eq "MT-01.a" "canonical adapter normalizes cargo survivor to file:line" "src/pay.rs:42" "$out"
 out=$(printf 'PASS "a.go.0" x\nFAIL "a.go.1" x\ntotal is 2\n' | bash "$MADP" normalize go-mutesting)
-assert_eq "MT-01.b" "vendored adapter degrades go-mutesting survivor to file granularity" "a.go:-" "$out"
+assert_eq "MT-01.b" "canonical adapter degrades go-mutesting survivor to file granularity" "a.go:-" "$out"
 out=$(printf '10 mutants tested, 2 missed\n' | bash "$MADP" count cargo-mutants)
-assert_eq "MT-01.c" "vendored adapter counts total mutants (budget input)" "10" "$out"
+assert_eq "MT-01.c" "canonical adapter counts total mutants (budget input)" "10" "$out"
 
 # A hermetic git repo whose HEAD adds line 3 (BASE..HEAD changed line = mod.py:3).
 mk_mut_repo() {  # $1 = dir -> prints BASE sha on fd 3? no: echoes BASE
@@ -1936,7 +1948,7 @@ assert_eq T27 "owner session passes the guard" "0" "$rc"
 CLAUDE_SESSION_ID=sess-INTRUDER bash "$DCD" "$CHAIN_TRK" >/dev/null 2>&1; rc=$?
 assert_eq T27 "second session is refused" "2" "$rc"
 
-echo "== github.sh backend via gh argv shim (H-GH, HG01-HG28) =="
+echo "== github.sh backend via gh argv shim (H-GH, HG01-HG33) =="
 
 # A fake `gh` that answers exactly the argv github.sh drives. This is the
 # GitHub counterpart to the DC mock server (ADR 0013: the same T01-class

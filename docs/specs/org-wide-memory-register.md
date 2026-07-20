@@ -9,6 +9,14 @@
 >   `[drain]` = agent-behavior / real-multi-repo residual, measured only against a live corpus + honest Drift Notes (the autopilot v2.4.0 / codebase-health 1.4.0 honest-residual convention). NEVER presented as automated coverage.
 > Sources: ADR OWM (this stream), ADR 0001 (marketplace + vendoring lint), ADR 0002 (escalation), ADR 0003 (rot points / ambient-audit cron cadence), ADR 0011 (independent installability, permission-surface separation), ADR 0013 (host adapter — PR/build-scoped, NOT org-enumeration-scoped), ADR 0014 (validator toolchain), ADR 0015 (shell + Python-on-uv). CONTEXT.md (Decision Log, Memory Rot, Verification Manifest, Journey — normative memory-class vocabulary). Prior art: spec-gen-tier-v1.md non-goals explicitly RESERVE `org-memory aggregation (formats already comply)` — this register is that reserved item, made buildable.
 > Baseline: GREENFIELD plugin, NO pre-existing internal substrate. FIFTH plugin under the ONE root marketplace. It reuses (never re-implements): scripts/validate_manifest.py + schema/verification-manifest/v1.schema.json (manifest parse — the SOLE structural source of truth, exit-code contract 0/3/4/5), scripts/lint_consistency.sh (vendoring + single-source rules), scripts/suite_self_test.sh + SUITE_STRICT (green-run + planted-drift RED-tests + skip honesty), uv (ADR 0015), bash 3.2 + BSD portability.
+>
+> Consolidation note (2026-07-17): "FIFTH plugin under the ONE root marketplace" is historical —
+> ADR 0025 consolidated the six plugins into the single `zero-trust` plugin and ADR 0027 retired
+> the marketplace; the ADR 0001 byte-identity vendoring rules retired with the copies (ADR 0025).
+> OWM-09's parallel enumeration transport is superseded by ADR 0028 (`repo-list` becomes a
+> `host.sh` backend method riding the hardened adapter path; `host_repo_list.sh` is retired when
+> that lands, and the entry's fallback exit-3 fixture acceptance is superseded by adapter
+> `die_state` semantics). Entries below stand as written (append-only).
 
 ## 0. Position and posture (read first)
 

@@ -6,9 +6,10 @@ The index is a DERIVED VIEW over repo-resident memory, never a store of truth
 (ADR 0019). Every record carries a {repo, commit_sha, path, source_line} back-
 pointer. This module NEVER edits a repo file and NEVER writes back a fact.
 
-Reuse discipline (OWM-01 / V8 lint): the `manifest` memory-class is parsed by the
-CANONICAL validator toolchain — `import validate_manifest` (the byte-identical
-vendored copy of scripts/validate_manifest.py) — honoring its 0/3/4/5 exit
+Reuse discipline (OWM-01): the `manifest` memory-class is parsed by the
+CANONICAL validator toolchain — `import validate_manifest` (the sibling
+validate_manifest.py, the single canonical copy since ADR 0025; the V8
+byte-identity lint retired with the vendored copies) — honoring its 0/3/4/5 exit
 contract VERBATIM. Exit 4 (schema-invalid) / 5 (unsupported version) manifests are
 indexed as `unparseable` carrying the validator's error + exit code, NEVER dropped
 and NEVER re-parsed by a forked YAML reader. There is no second manifest parser in
@@ -24,7 +25,7 @@ Subcommands:
         [--allow s,s] [--head SHAMAP]                   -> OWM-06 / 07 / 11 ACL
   coverage --db D                                       -> OWM-08
 
-Portability: pure stdlib (json, sqlite3, re, glob) + the vendored validator's
+Portability: pure stdlib (json, sqlite3, re, glob) + the canonical validator's
 ruamel.yaml/jsonschema (available via `uv run` against the repo pyproject; ADR 0015).
 """
 from __future__ import annotations
@@ -65,7 +66,7 @@ DEFAULT_MAX_BYTES = 5_000_000
 
 BODY_EXCERPT_MAX = 600
 
-# import the CANONICAL (vendored byte-identical) manifest validator — never a fork.
+# import the CANONICAL manifest validator (single copy since ADR 0025) — never a fork.
 _HERE = Path(__file__).resolve().parent
 if str(_HERE) not in sys.path:
     sys.path.insert(0, str(_HERE))
@@ -231,7 +232,7 @@ def extract_manifest(path: Path, repo, commit, relpath):
     (never a forked parser). Honors the 0/3/4/5 exit contract verbatim: exit 4/5
     -> the file is indexed as `unparseable` carrying the validator error + code,
     NEVER dropped. Exit 0/3 -> harvest spec/journeys/behaviors + interrogation.log."""
-    import validate_manifest as vm  # the vendored, byte-identical canonical validator
+    import validate_manifest as vm  # the canonical validator (single copy, ADR 0025)
 
     code, lines = vm.validate_file(path)
     if code in (vm.EXIT_SCHEMA_INVALID, vm.EXIT_UNSUPPORTED):

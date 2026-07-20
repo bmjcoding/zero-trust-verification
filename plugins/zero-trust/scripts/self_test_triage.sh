@@ -14,7 +14,8 @@
 #   - Non-vacuous (the Marshal-P0 lesson): the CloudWatch/Dynatrace backends are
 #     jsonschema-asserted from REAL canned responses (not mock-only); the loop-guard
 #     dedupe truly shells to a host adapter; the emitted manifest truly round-trips
-#     the VENDORED validator (exit 3) and the VENDORED spec-gen resume projector.
+#     the CANONICAL validator (exit 3) and the CANONICAL spec-gen resume projector
+#     (single copies since ADR 0025).
 #   - Python needing ruamel/jsonschema runs through `uv run`; stdlib logic (ingest,
 #     JSON) runs on bare python3.
 #

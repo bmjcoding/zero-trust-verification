@@ -1,6 +1,6 @@
 # Zero-Trust Verification Suite
 
-The three-tier software-quality suite: spec generation (shift-left), autopilot implementation drain, and codebase-health audit. Tiers run independently but integrate through a shared machine-readable contract.
+The zero-trust software-quality suite — one `zero-trust` plugin (ADR 0025) carrying three verification tiers: spec generation (shift-left), autopilot implementation drain, and codebase-health audit — plus the capabilities woven around them (merge marshal, production triage, org-wide memory, health-loop, outcome measurement). Tiers run independently but integrate through a shared machine-readable contract.
 
 ## Language
 
@@ -77,5 +77,25 @@ Two branches merge cleanly but the composed HEAD is broken — each green agains
 _Avoid_: semantic conflict, logical conflict, evil merge
 
 **Tier**:
-One of the three independently runnable stages of the suite: Spec Generation, Autopilot, Audit. Together they cover the ADLC left-to-right.
+One of the three verification stages of the suite: Spec Generation, Autopilot, Audit. Together they cover the ADLC left-to-right. A workflow stage, not a packaging unit — since ADR 0025 all three ship inside the single `zero-trust` plugin; each still runs standalone.
 _Avoid_: phase, stage, layer
+
+**Triage**:
+The production-telemetry capability (ADR 0020; a capability, not a fourth Tier): a read-only, bounded-window source that turns an emitted production incident into a resumable incident-Spec feeding Spec Generation's resume path. Report-only and DRAFT-PR-only by default — never a patch, never an auto-merge.
+_Avoid_: incident bot, fourth tier
+
+**Org-Wide Memory**:
+The read-only, memory-glob-bounded index/crawler over repo-resident memory (glossaries, ADRs, manifests, decision logs), exposed via a refuse-by-default MCP query surface (ADR 0019). A derived view — every record carries a `{repo, commit_sha, path, line}` back-pointer to the authoritative bytes; never a second store of truth.
+_Avoid_: knowledge base, memory store (it is an index over the repos' own files)
+
+**Health-Loop**:
+The attended wave-drain campaign (`/health-loop`, ADR 0024): from one operator prompt, drain audit wave N → merge wave N → `/verify --strict` → gate → wave N+1. Merge-before-verify is a correctness rule (the verifier grades the checkout), not review ceremony; merges are operator-approved or narrowly delegated.
+_Avoid_: auto-remediation (it is operator-attended)
+
+**Honesty Class**:
+The mandatory label on every outcome-measurement metric row (ADR 0023): `deterministic`, `agent-graded`, or `human-annotated`. The schema binds each metric name to its class, so an unlabeled or mislabeled (laundered) row is schema-invalid, and the renderer's badge (`[det]` / `[agent-graded]` / `[annotated]`) is never droppable.
+_Avoid_: confidence level, quality score
+
+**Locus**:
+The Verification Manifest's declared home of a control (`locus: app | gateway | mesh | sidecar | db-config | vault | kms | ops | none-declared`; ADR 0021). The Audit verifies only `locus: app` — the sole locus whose evidence is in the repo — and reports every other locus as out-of-scope-by-declaration, never as a raw "missing X" finding.
+_Avoid_: control location, scope tag

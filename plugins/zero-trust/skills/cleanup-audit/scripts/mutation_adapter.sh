@@ -8,10 +8,10 @@
 #     report scoped to the diff,
 #   * run_audit.sh ingestion — CONSUMES the whole-repo report.
 # To keep one tool family / one map / no drift (MT-10; single copy since ADR 0025),
-# the survivor->location RESOLVER lives HERE and is vendored BYTE-IDENTICAL into
-# autopilot (skills/autopilot/scripts/mutation_gate.sh — ADR 0025: single copy). Both consumers
-# normalize identically; the doc form of this map is the vendored block in
-# references/cross-language-tooling.md.
+# the survivor->location RESOLVER lives HERE and ONLY here — autopilot's
+# mutation_gate.sh path-resolves this file at runtime; nothing is vendored. Both
+# consumers normalize identically; the doc form of this map is the marked block
+# in references/cross-language-tooling.md.
 #
 # This is a REPORTER (codebase-health invariant 1 / autopilot loop-safety
 # invariant 1): it reads tool output on stdin and PRINTS a normalized survivor

@@ -24,6 +24,12 @@
 > loop over pr-list-ready, wiring not a checker, the FUTURE home of the not-yet-built
 > long-running PR-event agent), 0013 (host.sh adapter contract), 0014 (validator
 > 0/3/4/5/64 exit codes + jsonschema single-source-of-truth), 0015 (shell+python+uv).
+>
+> Consolidation note (2026-07-17): the "V1-V10 (V11 is the next free rule)" reuse line below is
+> historical — V11 was indeed allocated to this register's outcome rules, and ADR 0025 later
+> retired the byte-identity vendoring rules V1/V3/V4/V5/V7/V8 along with the vendored copies
+> (surviving root rules: V2, V6, V9–V13). The six plugins are one `zero-trust` plugin (ADR 0025)
+> and the root marketplace is retired (ADR 0027). Entries below stand as written (append-only).
 > Machinery REUSED (verified present in-tree, not assumed): scripts/host.sh subcommand
 > set INCLUDING pr-list-ready (host.sh:93), autopilot mock host (T01-class), audit
 > journeys.json (agent-written by journey-walker) + state.json append-only degrade-

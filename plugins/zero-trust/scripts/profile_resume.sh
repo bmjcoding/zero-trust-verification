@@ -2,16 +2,17 @@
 # profile_resume.sh — TR-04: resume the Config Profile the way spec-gen does, with
 # ZERO new resolver code (ADR 0006). The incident's manifest carries
 # `observability.profile` (copied from the source manifest by TR-05), so there is
-# no re-escalation — this reuses the VENDORED profile_resolve.py verbatim.
+# no re-escalation — this reuses the CANONICAL profile_resolve.py verbatim
+# (single copy since ADR 0025).
 #
 # Per codebase-health CH-08 the profile PAYLOAD (taxonomy/vocabulary/seams) is NOT
-# vendored today: the deterministic layer reads the bare NAME and degrades on
+# shipped in-tree today: the deterministic layer reads the bare NAME and degrades on
 # unknown -> `default` + a loud note. The profile decides WHICH vitals matter
 # (steers severity as a FLOOR), never HOW severe past the ladder cap (a ceiling).
 #
 # Subcommands:
 #   resolve --manifest <incident.manifest.yaml>
-#       -> the vendored resolver's JSON ({profile,source,escalate,...}); a manifest
+#       -> the canonical resolver's JSON ({profile,source,escalate,...}); a manifest
 #          missing observability.profile is malformed resume input (resolver exit 3).
 #   severity --base <lvl> [--floor <lvl>] --cap <lvl>
 #       -> the effective severity = min(max(base, profile-floor), ladder-cap). The
@@ -23,7 +24,7 @@ set -u
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$HERE/_triage_run.sh"
-RESOLVER="$HERE/profile_resolve.py"   # vendored byte-identical from spec-gen
+RESOLVER="$HERE/profile_resolve.py"   # the canonical sibling copy (ADR 0025)
 
 die() { echo "profile_resume.sh: REFUSE: $*" >&2; exit 1; }
 

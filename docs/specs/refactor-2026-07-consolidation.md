@@ -12,6 +12,12 @@ Line-count targets below are goals that direct effort, not merge gates.
 The merge gates are: suite self-test green zero-skip, no validator/gate
 semantic change (waves 1–2 byte-identical behavior), no assertion-count loss.
 
+**Status (2026-07-17).** Waves 1, 2, and 3a–3d executed as PRs #42–#46 and #48
+(2026-07-12; #47 is the separate, still-open L24 lint PR). One divergence from the Wave 1 text: the marketplace was not
+re-registered as one entry — it was retired entirely (ADR 0027, skills-dir
+distribution). Waves 4–5 have not yet executed; they are sanctioned to proceed
+per the 2026-07-17 review adjudication (ADRs 0028–0032 extend the campaign).
+
 ---
 
 ## Wave 1 — Consolidation (structural, no prose edits)

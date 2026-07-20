@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# RL-03 — Escalate-class routing table (ADR 0017 / ADR 0002, vendored + lint-pinned).
+# RL-03 — Escalate-class routing table (ADR 0017 / ADR 0002; single copy, lint-pinned).
 #
 # Maps an ELIGIBLE finding's slug → DRAIN | ESCALATE. This classifies the FIX, not
 # the finding: a deterministic finding names a real defect, but its *remediation*
@@ -43,7 +43,10 @@ case "$SLUG" in
   # Category-TX (audit-state-and-verify.md, byte-verbatim; superset per V10):
   non-idempotent-handler|missing-dedup-guard|unsafe-retry|double-submit-window|missing-compensation|missing-audit-trail)
     echo ESCALATE; exit 0 ;;
-  # deterministically-scored money slugs that DO route to the loop's S5:
+  # dark-money-movement is deterministically scored (slug_provenance.tsv) and DOES
+  # route to the loop's S5. log-only-refund is AGENT-provenance (§12 J5 — see the
+  # slug_provenance.tsv reconciliation note), so RL-02 filters it INELIGIBLE and it
+  # never reaches this classifier; its row here is the fail-safe superset only:
   dark-money-movement|log-only-refund)
     echo ESCALATE; exit 0 ;;
   # any security/* slug, and outward-facing wire/API/alert-seam shapes:
