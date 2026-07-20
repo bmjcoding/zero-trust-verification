@@ -51,7 +51,7 @@ the retired `tracker` branch name but not the current `runbook` branch.
 ## 2. Waves 4 & 5 never ran (the big sanctioned lever)
 
 Git history: Waves 1, 2, 3a–3d merged as PRs #42–#48 (2026-07-12); campaign then
-pivoted to ADR 0026 (grill-first) and the product-platform-spec spec. No wave-4/wave-5
+pivoted to ADR 0026 (grill-first) and a product spec since moved to its own repo. No wave-4/wave-5
 commits; no `tests/lib/`. `docs/specs/refactor-2026-07-consolidation.md` was never
 updated — it reads as if all five waves are pending. **Add a status block** (Waves 1–3
 executed, with the ADR 0027 divergence: marketplace retired rather than re-registered;
@@ -194,9 +194,8 @@ maintenance, not correctness. Skippable per the original spec.
      vendoring, behavior-coverage-format, outcome-store-contract) / frozen build record
      (codebase-health-spec-1.4.0 — live V10 grep-input, banner must not touch §12;
      refactor-2026-07-consolidation — needs status block) / registers (append-only) /
-     product-spec-in-flight (product-platform-spec.md + 1305-line manifest + 2 DRAFT
-     ADRs — a product spec awaiting a build, candidate for `docs/specs/gateway/`
-     subtree so suite contracts stand out).
+     product-spec-in-flight (a product spec awaiting a build; since moved to its
+     own repo).
 5. **Stale "vendored" prose sweep (~40 sites, comment-only).** Each should say
    "canonical single copy (ADR 0025)" or nothing: `owm.py:9-15,68,234`,
    `extract_memory.sh:5`, `correlate.py:33`, `resume_projection.py:115`,

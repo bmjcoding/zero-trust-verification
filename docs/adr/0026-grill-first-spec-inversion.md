@@ -10,10 +10,9 @@
 
 ## Context
 
-An operator field session (field-session-v1, 60+ minutes on a real feature — the
-payment-processing workflow platform) rejected the current /spec interaction shape. The
-evidence, from the session's own committed artifacts
-(`spec/field-session-v1:docs/specs/field-session-v1.manifest.yaml` interrogation.log):
+An operator field session (60+ minutes on a real product feature) rejected the
+current /spec interaction shape. The evidence, from the session's own committed
+artifacts (the session manifest's interrogation.log):
 
 1. **~50 minutes of agent work before the FIRST human question.** S2 domain pass,
    S3 skeleton (7 journeys, 15 behaviors), S4 two-attacker round — 33 findings

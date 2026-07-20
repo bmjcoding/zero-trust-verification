@@ -40,5 +40,3 @@ status lines — do not "fix" either to match the other.
 | [0030](0030-single-copy-contracts-h1-pins-survive.md) | Contract prose is single-copy; the H1 anti-laundering pins outlive the copies | agent-decided | |
 | [0031](0031-post-consolidation-residue-one-project-one-version.md) | Post-consolidation residue: outcome family in the plugin; one uv project; one version surface | agent-decided | |
 | [0032](0032-manifest-module-owns-parsing.md) | The manifest module owns parsing end-to-end | agent-decided | |
-| [DRAFT](DRAFT-product-platform-spec-bitbucket-single-source-of-truth.md) | Bitbucket is the single source of truth for Spec lifecycle state | draft | Part of the in-flight product-platform-spec product spec. |
-| [DRAFT](DRAFT-product-platform-spec-non-human-credential-approval.md) | Approval/merge through a non-human credential with recorded human attribution | draft | Part of the in-flight product-platform-spec product spec. |

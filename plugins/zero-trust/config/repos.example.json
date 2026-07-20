@@ -2,8 +2,8 @@
   "//": "OWM-03 CONFIG-FIRST repo list — the DEFAULT source. OWM installs and runs standalone from this file; no host org-enumeration capability is required. Each repo is crawled at a pinned ref, reading ONLY the closed memory-glob allow-list (OWM-03a), never the code tree.",
   "repos": [
     {
-      "slug": "payment-processing",
-      "path": "/abs/or/relative/checkout/payment-processing",
+      "slug": "order-service",
+      "path": "/abs/or/relative/checkout/order-service",
       "//ref": "optional: pin the crawl to a sha; else read from a .owm-sha marker or `git rev-parse HEAD`",
       "//head_sha": "optional: the current head, used ONLY to disclose possibly_stale (OWM-07); never guessed"
     },
@@ -13,7 +13,7 @@
     }
   ],
   "//allow": "OWM-11 refuse-by-default ACL: the repo slugs the query surface (CLI + MCP) may serve. A record from a repo NOT in this list is refused, never returned. Defaults to nothing when omitted at the MCP layer (safe). Populate with the repos the caller is already entitled to read at their source.",
-  "allow": ["payment-processing", "pricing-engine"],
+  "allow": ["order-service", "pricing-engine"],
   "//self_exclude": "Extra path globs to exclude from the crawl on top of the automatic owm:self-emitted marker exclusion (OWM-11b). OWM never re-ingests its own derived output.",
   "self_exclude": ["docs/decisions/owm-*.md"]
 }

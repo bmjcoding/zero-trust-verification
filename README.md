@@ -10,7 +10,7 @@ One Claude Code plugin — **`zero-trust`** — whose six domains cover the ADLC
 
 ## Why this exists
 
-100% test coverage is a lie if 30–40% of those tests assert nothing. A spec that never forces the idempotency question ships a loan-wiring flow with no idempotency key. Docs describe code that was deleted three PRs ago. And the agent that "verified" the work was often the same agent that wrote it — *who checks the checker?*
+100% test coverage is a lie if 30–40% of those tests assert nothing. A spec that never forces the idempotency question ships a money-movement flow with no idempotency key. Docs describe code that was deleted three PRs ago. And the agent that "verified" the work was often the same agent that wrote it — *who checks the checker?*
 
 This suite answers that with a single discipline: **verify against the spec's declared ground truth, not the implementer's self-report** — and prove it with evidence a skeptic can reproduce. It raises the floor rather than the ceiling.
 

@@ -34,7 +34,7 @@ server; update = `git pull` in the clone).
 ### Changed — /spec grill-first inversion (ADR 0026)
 
 Minor bump: breaking only in *interaction shape* — no artifact, gate, schema,
-script, or door changes. Field evidence: the field-session-v1 operator session
+script, or door changes. Field evidence: an operator field session
 (~50 min of agent runtime before the first human question; 33 pre-adjudicated
 findings; dissent-as-dialogue questions) rejected the pipeline-first flow.
 
