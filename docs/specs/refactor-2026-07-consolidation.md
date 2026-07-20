@@ -15,8 +15,20 @@ semantic change (waves 1–2 byte-identical behavior), no assertion-count loss.
 **Status (2026-07-17).** Waves 1, 2, and 3a–3d executed as PRs #42–#46 and #48
 (2026-07-12; #47 is the separate, still-open L24 lint PR). One divergence from the Wave 1 text: the marketplace was not
 re-registered as one entry — it was retired entirely (ADR 0027, skills-dir
-distribution). Waves 4–5 have not yet executed; they are sanctioned to proceed
-per the 2026-07-17 review adjudication (ADRs 0028–0032 extend the campaign).
+distribution). Wave 4 executed 2026-07-17 (this campaign's harness PR): one
+sourced assertion library (`scripts/test_harness.sh`, both output dialects
+behind `th_init`) adopted by all seven self-tests with per-harness assertion
+counts provably unchanged (floors held: 94/76/113/75/72/470/405); one sourced
+uv bootstrap (`plugins/zero-trust/scripts/_py_run.sh`) adopted by
+`_owm_run.sh`, `_triage_run.sh`, `mock_host.sh`, `validate_manifest.sh`, and
+the three `--no-project` runners in cleanup-audit (the plugin-pinned
+`py_run.sh` stays separate by design); autopilot's nine planted-lint blocks
+collapsed into `plant_and_expect_red` and its git-fixture boilerplate into
+`mk_repo`. Divergence from the Wave 4 text above: no `tests/lib/` fixture tree
+— the shared surface that actually repeated was assertions + uv bootstrap, and
+`suite_self_test.sh` was already thin orchestration. Wave 5 remains open, with
+appetite, per the 2026-07-17 review adjudication (ADRs 0028–0032 extend the
+campaign).
 
 ---
 

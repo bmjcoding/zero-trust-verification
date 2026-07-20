@@ -33,13 +33,8 @@ HOST_SH="$HERE/../skills/autopilot/scripts/host.sh"   # repo-list backend method
 OWM_SCHEMA="$HERE/../schema/org-memory/v1.schema.json"
 MCP="$HERE/../mcp/mcp_server.py"
 
-PASS=0
-FAIL=0
-fail() { printf 'FAIL [%s] %s\n' "$1" "$2" >&2; FAIL=$((FAIL+1)); }
-pass() { printf 'ok   [%s] %s\n' "$1" "$2"; PASS=$((PASS+1)); }
-assert_eq()           { if [ "$3" = "$4" ]; then pass "$1" "$2"; else fail "$1" "$2 — expected [$3], got [$4]"; fi; }
-assert_contains()     { if printf '%s' "$4" | grep -qF -- "$3"; then pass "$1" "$2"; else fail "$1" "$2 — missing [$3]"; fi; }
-assert_not_contains() { if printf '%s' "$4" | grep -qF -- "$3"; then fail "$1" "$2 — found forbidden [$3]"; else pass "$1" "$2"; fi; }
+. "$HERE/../../../scripts/test_harness.sh"   # the ONE assertion library (ADR 0025 Wave 4)
+th_init A banner "org-memory self-test: "
 
 SANDBOX="$(mktemp -d)"
 trap 'rm -rf "$SANDBOX"' EXIT INT TERM
@@ -584,8 +579,4 @@ fi
 # =============================================================================
 # Summary
 # =============================================================================
-echo
-echo "==============================="
-echo "org-memory self-test: PASS=$PASS FAIL=$FAIL"
-echo "==============================="
-[ "$FAIL" -eq 0 ]
+th_summary
