@@ -19,17 +19,18 @@ export LC_ALL=C
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$HERE/.." && pwd)"
-STORE_SH="$HERE/outcome_store.sh"
-BASELINE_SH="$HERE/outcome_baseline.sh"
-EXTERNAL_SH="$HERE/outcome_external.sh"
-ANNOTATE_SH="$HERE/outcome_annotate.sh"
-REPORT_SH="$HERE/outcome_report.sh"
-CAPTURE_SH="$ROOT/plugins/zero-trust/scripts/outcome_capture.sh"
-EMIT_SH="$ROOT/plugins/zero-trust/skills/cleanup-audit/scripts/outcome_emit.sh"
-DIGEST_SH="$ROOT/plugins/zero-trust/scripts/outcome_digest.sh"
-MOCK="$ROOT/plugins/zero-trust/scripts/mock_host.sh"
+ZT="$ROOT/plugins/zero-trust"   # the outcome family lives in the plugin (ADR 0031)
+STORE_SH="$ZT/scripts/outcome_store.sh"
+BASELINE_SH="$ZT/scripts/outcome_baseline.sh"
+EXTERNAL_SH="$ZT/scripts/outcome_external.sh"
+ANNOTATE_SH="$ZT/scripts/outcome_annotate.sh"
+REPORT_SH="$ZT/scripts/outcome_report.sh"
+CAPTURE_SH="$ZT/scripts/outcome_capture.sh"
+EMIT_SH="$ZT/skills/cleanup-audit/scripts/outcome_emit.sh"
+DIGEST_SH="$ZT/scripts/outcome_digest.sh"
+MOCK="$ZT/scripts/mock_host.sh"
 
-py() { if command -v uv >/dev/null 2>&1 && [ -f "$ROOT/pyproject.toml" ]; then uv run --no-project python "$@"; else python3 "$@"; fi; }
+py() { if command -v uv >/dev/null 2>&1 && [ -f "$ZT/pyproject.toml" ]; then uv run --no-project python "$@"; else python3 "$@"; fi; }
 jget() { py - "$@"; }  # convenience: run inline python reading argv
 
 PASS=0; FAIL=0
@@ -148,17 +149,17 @@ print(json.dumps({m["name"]:m["value"] for m in d["metrics"]},sort_keys=True))
 PY
 }
 # no-host slice is pure git and hermetic (always runs)
-DNOHOST="$(py "$HERE/outcome_dora.py" --repo "$FIX" --trunk main --since $SINCE --until $UNTIL)"
+DNOHOST="$(py "$ZT/scripts/outcome_dora.py" --repo "$FIX" --trunk main --since $SINCE --until $UNTIL)"
 assert_eq DR01 "deploy_frequency = 4/8wk = 0.5 (pure git)" "0.5" "$(dora_val "$DNOHOST" deploy_frequency)"
 assert_eq DR01 "lead_time median hours (pure git)" "0.0" "$(dora_val "$DNOHOST" lead_time)"
 assert_eq DR02 "change_failure_rate revert-only = 1/4 = 0.25 (no host)" "0.25" "$(dora_val "$DNOHOST" change_failure_rate)"
 # zero-merge window
-DZ="$(py "$HERE/outcome_dora.py" --repo "$FIX" --trunk main --since $((UNTIL+1)) --until $((UNTIL+8*7*86400)))"
+DZ="$(py "$ZT/scripts/outcome_dora.py" --repo "$FIX" --trunk main --since $((UNTIL+1)) --until $((UNTIL+8*7*86400)))"
 assert_eq DR03 "zero-merge window: deploy_freq 0" "0.0" "$(dora_val "$DZ" deploy_frequency)"
 assert_eq DR03 "zero-merge window: lead_time null" "None" "$(dora_val "$DZ" lead_time)"
 
 if [ "$UV_OK" = "1" ]; then
-  DHOST="$(py "$HERE/outcome_dora.py" --repo "$FIX" --trunk main --since $SINCE --until $UNTIL --host "$MOCK" --host-repo "$FIX/.git" --host-state "$STATE")"
+  DHOST="$(py "$ZT/scripts/outcome_dora.py" --repo "$FIX" --trunk main --since $SINCE --until $UNTIL --host "$MOCK" --host-repo "$FIX/.git" --host-state "$STATE")"
   assert_eq DR04 "with host: change_failure_rate = (D1 revert + D2 build) 2/4 = 0.5" "0.5" "$(dora_val "$DHOST" change_failure_rate)"
   assert_eq DR04 "with host: mttr_build = D2 red -> D3 green = 24.0h" "24.0" "$(dora_val "$DHOST" mttr_build)"
   # both-backends byte-identical contract: a SECOND adapter (a build-status table shim)
@@ -178,7 +179,7 @@ sha=""; while [ \$# -gt 0 ]; do [ "\$1" = "--sha" ] && sha="\$2"; shift; done
 grep -F "\$sha" "$MAP" | cut -f2 | head -1
 SHIMEOF
   chmod +x "$SHIM"
-  DSHIM="$(py "$HERE/outcome_dora.py" --repo "$FIX" --trunk main --since $SINCE --until $UNTIL --host "$SHIM")"
+  DSHIM="$(py "$ZT/scripts/outcome_dora.py" --repo "$FIX" --trunk main --since $SINCE --until $UNTIL --host "$SHIM")"
   DHOSTN="$(dora_norm "$DHOST")"; DSHIMN="$(dora_norm "$DSHIM")"
   # non-vacuity precondition: both derivations must be NON-EMPTY and carry the
   # host-derived mttr_build (else DR05 would pass on mutual emptiness).

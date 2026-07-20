@@ -40,8 +40,8 @@ depend on severities meaning the same thing everywhere.
     above: it rides on every capped absence whose path is untraced or
     unconfirmed (module-level absences and anything lacking the trace); a
     capped absence on a traced path is confirmed MED, no mark.
-    `business-vitals.md`'s severity mapping mirrors this list — change them
-    together.
+    `business-vitals.md`'s severity mapping cites this list rather than
+    restating it (ADR 0031) — this is the single copy.
 - **`journey/path-complexity`** weights severity by journey criticality, never
   by raw metric value. HIGH requires a CORE step in `audit/journeys.json` AND
   an attached deterministic metric line (e.g. C901) or quoted structural

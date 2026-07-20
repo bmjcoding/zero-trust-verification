@@ -1217,9 +1217,9 @@ assert_eq "AV3-01.7" "manifest without validator-exit is usage error 64" "64" "$
 dim --intent bogus >/dev/null 2>&1; rc=$?
 assert_eq "AV3-01.7" "unknown intent is usage error 64" "64" "$rc"
 
-echo "== validate_manifest.sh --union (AV3-03 multi-doc union) =="
+echo "== validate_manifest_union.sh --union (AV3-03 multi-doc union) =="
 
-VMU="$HERE/validate_manifest.sh"
+VMU="$HERE/validate_manifest_union.sh"
 # write a minimal manifest: <path> <profile> <environments-inline> <journey-id> <behavior-id>
 write_manifest() {
   cat > "$1" <<Y

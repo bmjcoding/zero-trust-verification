@@ -25,12 +25,12 @@ set -uo pipefail
 export LC_ALL=C
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SUITE_ROOT="$(cd "$HERE/../../../../.." && pwd)"  # .../cleanup-audit/scripts -> repo root
-PYEMIT="$SUITE_ROOT/scripts/outcome_emission.py"
-PYASM="$SUITE_ROOT/scripts/outcome_assemble.py"
-STORE_SH="$SUITE_ROOT/scripts/outcome_store.sh"
+PLUGIN_ROOT="$(cd "$HERE/../../.." && pwd)"  # .../cleanup-audit/scripts -> plugins/zero-trust
+PYEMIT="$PLUGIN_ROOT/scripts/outcome_emission.py"
+PYASM="$PLUGIN_ROOT/scripts/outcome_assemble.py"
+STORE_SH="$PLUGIN_ROOT/scripts/outcome_store.sh"
 
-py() { if command -v uv >/dev/null 2>&1 && [ -f "$SUITE_ROOT/pyproject.toml" ]; then uv run --no-project python "$@"; else python3 "$@"; fi; }
+py() { if command -v uv >/dev/null 2>&1 && [ -f "$PLUGIN_ROOT/pyproject.toml" ]; then uv run --no-project python "$@"; else python3 "$@"; fi; }
 iso_utc() { local e="$1"; if [ "$e" = "-" ]; then date -u +%Y-%m-%dT%H:%M:%SZ; return; fi
   date -u -r "$e" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -d "@$e" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || echo "$e"; }
 

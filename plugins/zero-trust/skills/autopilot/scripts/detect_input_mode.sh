@@ -5,7 +5,7 @@
 # pure decision function so the mode table is deterministically self-tested.
 #
 # The orchestrator does the I/O: it discovers the input's companion manifest
-# (`<spec-basename>.manifest.yaml`), runs `scripts/validate_manifest.sh` on it,
+# (`<spec-basename>.manifest.yaml`), runs the canonical plugin validator (plugins/zero-trust/scripts/validate_manifest.sh) on it,
 # and passes THIS script the manifest path (or none) plus that validator's exit
 # code. This script maps (intent, manifest presence, validator exit, --yolo) to a
 # single MODE token — no file reads, no network.

@@ -183,8 +183,10 @@ grep -rEn "${GREP_EXCLUDES[@]}" "$LOGGING_RE" \
 
 # Business-vital / transactional-integrity SEEDS — priority inputs, not debt:
 # never counted, never ratcheted, and the prevention hook must never fire on
-# legitimate new business code, so these regexes live HERE (single consumer),
-# not in debt_patterns.sh. Change together with references/business-vitals.md
+# legitimate new business code, so these regexes live HERE, not in
+# debt_patterns.sh. sd_seeds.sh consumes the SAME copies via exported env —
+# single source, no byte-duplicates (2026-07-17 simplification review §3.6).
+# Change together with references/business-vitals.md
 # (VITAL_RE, TELEMETRY_RE) and the incomplete-logic taxonomy Category TX
 # (TX_GUARD_RE, TX_RETRY_RE). The tx priority queue downstream is
 # vital_candidates ∩ tx_retries − tx_guards.
@@ -222,7 +224,10 @@ grep -rEn "${GREP_EXCLUDES[@]}" "$TX_RETRY_RE" \
 # layer (money-path reasoning, DST/date-boundary, reversibility, isolation) stays agent.
 if [ -x "$SCRIPT_DIR/sd_seeds.sh" ]; then
   echo "-> grep system-design seeds (candidates, not counted): money-float/tz/timeout/jitter/queue/migration"
-  bash "$SCRIPT_DIR/sd_seeds.sh" "$TARGET" "$OUT" || true
+  # the seeds reuse THIS file's VITAL_RE/TX_RETRY_RE and debt_patterns.sh's
+  # TEST_PATH_RE via env — the single copies, never re-declared (simp §3.6).
+  TEST_PATH_RE="$TEST_PATH_RE" VITAL_RE="$VITAL_RE" TX_RETRY_RE="$TX_RETRY_RE" \
+    bash "$SCRIPT_DIR/sd_seeds.sh" "$TARGET" "$OUT" || true
 fi
 # Alerting seam: alert/monitor/prometheus/SLO-named config files (minus
 # EXCLUDE_DIRS). Empty = honest "unknown — no alert config in repo".

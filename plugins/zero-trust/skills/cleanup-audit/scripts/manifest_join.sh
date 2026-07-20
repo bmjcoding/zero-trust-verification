@@ -7,7 +7,7 @@
 # Usage:  manifest_join.sh <manifest.yaml> <journeys.json> [--env=NAME]
 #
 # Python routes through uv (ADR 0015 "everything uv"): the manifest is YAML 1.2,
-# so the join reuses the repo-root pyproject's ruamel.yaml (same dep the
+# so the join reuses the plugin pyproject's ruamel.yaml (same dep the
 # vendored validator uses — no second resolution). Falls back to an ambient
 # python3 that already has ruamel (the validate_manifest.sh precedent).
 set -uo pipefail
