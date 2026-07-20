@@ -7,10 +7,10 @@ ADR 0006 vendor-neutral / ADR 0013 host-adapter precedent). Every backend —
 backend (GCP Cloud Logging, Grafana Loki, …) is a new backend passing this same
 contract, never a new caller path.
 
-This file is the CANONICAL copy of that contract. Any vendored backend-contract
-copy (e.g. `references/backends.md`) MUST carry the delimited block below
-byte-for-byte — the host-contract precedent (`references/host-contract.md`),
-pinned by lint **V9** so a producer/consumer drift is impossible.
+This file is the SINGLE copy of that contract (ADR 0030). Carriers (e.g.
+`references/backends.md`) cite it instead of vendoring it; the lint **V9**
+tripwire catches any re-vendored delimited-block copy (byte-identity or red), so
+a producer/consumer drift stays impossible.
 
 <!-- vendored:telemetry-contract:begin (ADR 0006/0013 — byte-identical across every telemetry backend contract copy; do NOT edit one copy) -->
 ## Subcommand surface (every backend implements it identically)
