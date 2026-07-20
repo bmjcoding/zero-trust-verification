@@ -6,6 +6,19 @@ All notable changes to the autopilot skill. Format follows Keep a Changelog; ver
 
 **ID note.** `AV3-x.n` ids cited below resolve to `scripts/self_test.sh` assertions (the standalone autopilot-v3 register doc was retired); `GAPS-xx` / M-x references in older entries are historical — `docs/GAPS_SPEC.md` was deleted in the ADR 0025 Wave 2 sediment deletion.
 
+## Unreleased
+
+### Added
+- `host.sh repo-list --org <org>` — org repo enumeration as a backend method
+  (ADR 0028), retiring `host_repo_list.sh`'s parallel transport. Bitbucket DC
+  rides `bb_curl` + `secret_get.sh` `-H @file` (token never on argv — HR01) with
+  `has()`-guarded pagination (HD14, contract-matrix repo-list rows); GitHub uses
+  `gh api --paginate` (HG34) with surfaced failures (HG35) and empty-org ≠
+  failure (HG36). Repo coords derive lazily per subcommand; existing verbs still
+  die no-origin (HR04); outside-repo enumeration via `AUTOPILOT_HOST_BACKEND`
+  (HR02); no host source → `LAST_STATE=no-host-source` (HR03). Verbs list pinned
+  by L16.
+
 ## [3.1.0] - 2026-07-10
 
 **audit-w345 e2e retro absorption.** Every fix/pattern from the two field retros
