@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -109,12 +110,38 @@ def strip_line(source: str) -> str:
 
 
 def load_manifest(path: Path):
+    """Manifest parse, routed through the canonical `validate_manifest.load_manifest`
+    (ADR 0032) when the shell wrapper located the validator dir and exported it as
+    CHPR_VALIDATOR_DIR (this script is NOT co-located with the validator, so the
+    import is a sys.path import of that dir)."""
+    vdir = os.environ.get("CHPR_VALIDATOR_DIR", "")
+    if vdir and (Path(vdir) / "validate_manifest.py").is_file():
+        if vdir not in sys.path:
+            sys.path.insert(0, vdir)
+        import validate_manifest as _vm
+
+        data, err = _vm.load_manifest(path)
+        if err is not None:
+            raise ValueError(err)
+        return data
+
+    # GUARDED LOCAL FALLBACK — the ONE deliberate exception to ADR 0032's
+    # zero-duplicate-loaders rule: the standalone/target-repo case where no
+    # validator is locatable. Semantics MUST stay identical to
+    # validate_manifest.load_manifest (YAML 1.2 core schema, safe + pure —
+    # same Norway guard as the validator: `no`/`on` stay strings). Fix loader
+    # bugs there first, then mirror here.
     from ruamel.yaml import YAML
+    from ruamel.yaml.error import YAMLError
 
     yaml = YAML(typ="safe", pure=True)
     yaml.version = (1, 2)  # 1.2 core schema — same Norway guard as the validator
-    with path.open("r", encoding="utf-8") as fh:
-        return yaml.load(fh)
+    try:
+        with path.open("r", encoding="utf-8") as fh:
+            return yaml.load(fh)
+    except YAMLError as exc:
+        # same error shape as the located branch (load_manifest -> ValueError)
+        raise ValueError(f"{path}: YAML parse error: {exc}") from exc
 
 
 # ── comparison lattices (§12) ─────────────────────────────────────────────────

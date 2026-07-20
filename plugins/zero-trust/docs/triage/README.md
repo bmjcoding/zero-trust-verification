@@ -49,10 +49,11 @@ and `references/backends.md`.
 
 ## Install & standalone
 
-Independently installable: ships its own `.claude-plugin/plugin.json` and vendors the
-canonical `validate_manifest` toolchain + manifest schema (byte-identical, lint V1/V3)
-and the spec-gen `profile_resolve.py` / `resume_projection.py`. The host adapter is
-reused via `$TRIAGE_HOST` (default: the sibling autopilot `host.sh`); Python runs
+Historical: the standalone plugin era ended with ADR 0025 (the V1/V3 vendoring
+lints retired with the copies) — triage now ships inside the zero-trust plugin and
+uses the canonical `validate_manifest` toolchain, schema, and
+`profile_resolve.py` / `resume_projection.py` directly. The host adapter is
+reused via `$TRIAGE_HOST` (default: the autopilot skill's `host.sh`); Python runs
 through `uv` against the plugin's `pyproject.toml` (the ONE uv project, ADR 0031),
 falling back to an ambient `python3`
 with the deps (ADR 0015).
