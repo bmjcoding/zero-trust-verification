@@ -12,7 +12,7 @@
 #   - Non-vacuous: a real seeded SQLite index backs every query; the MCP tool truly
 #     shells out to query.sh (byte-identical output proven); the manifest class truly
 #     routes through the canonical validator (exit 4/5 -> unparseable, not dropped).
-#   - Python (jsonschema/ruamel via the repo pyproject) runs through `uv run`; the
+#   - Python (jsonschema/ruamel via the plugin pyproject) runs through `uv run`; the
 #     dependency-free logic (MCP stdio server, JSON parsing) runs on plain python3.
 #
 # Usage: bash plugins/zero-trust/scripts/self_test_org_memory.sh
@@ -23,7 +23,7 @@ set -u
 export LC_ALL=C
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ROOT="$(cd "$HERE/../../.." && pwd)"          # repo root (has pyproject.toml)
+PLUGIN="$(cd "$HERE/.." && pwd)"              # the ONE uv project (ADR 0031)
 EXTRACT="$HERE/extract_memory.sh"
 CRAWL="$HERE/crawl.sh"
 INDEX="$HERE/index_build.sh"
@@ -251,7 +251,7 @@ nrec=$(grep -c . "$SANDBOX/records.jsonl")
 assert_eq       OWM-02 "crawl produced records" "1" "$([ "$nrec" -gt 0 ] && echo 1 || echo 0)"
 
 # every record validates against schema/org-memory/v1.schema.json via jsonschema (ADR 0014 toolchain)
-schema_bad="$(uv run --project "$ROOT" python3 -c '
+schema_bad="$(uv run --project "$PLUGIN" python3 -c '
 import sys, json
 from jsonschema import Draft202012Validator
 v = Draft202012Validator(json.load(open(sys.argv[1])))
@@ -346,8 +346,8 @@ echo "== OWM-05 index =="
 bash "$INDEX" "$SANDBOX/records.jsonl" "$SANDBOX/idx.db" >/dev/null 2>&1
 assert_eq       OWM-05 "index_build produced a db file" "1" "$([ -s "$SANDBOX/idx.db" ] && echo 1 || echo 0)"
 bash "$INDEX" "$SANDBOX/records.jsonl" "$SANDBOX/idx2.db" >/dev/null 2>&1
-uv run --project "$ROOT" python3 "$HERE/owm.py" dump "$SANDBOX/idx.db"  > "$SANDBOX/dump1.txt" 2>/dev/null
-uv run --project "$ROOT" python3 "$HERE/owm.py" dump "$SANDBOX/idx2.db" > "$SANDBOX/dump2.txt" 2>/dev/null
+uv run --project "$PLUGIN" python3 "$HERE/owm.py" dump "$SANDBOX/idx.db"  > "$SANDBOX/dump1.txt" 2>/dev/null
+uv run --project "$PLUGIN" python3 "$HERE/owm.py" dump "$SANDBOX/idx2.db" > "$SANDBOX/dump2.txt" 2>/dev/null
 assert_eq       OWM-05 "rebuild is byte-comparable on the canonical dump" "" "$(diff "$SANDBOX/dump1.txt" "$SANDBOX/dump2.txt")"
 fts="$(bash "$QUERY" search "durable queue" --db "$SANDBOX/idx.db" --all)"
 fts_count="$(printf '%s' "$fts" | jget 'd["count"]')"
@@ -530,7 +530,7 @@ assert_not_contains OWM-11 "refusal returns NO record body"          "Beta's own
 assert_contains OWM-11 "refusal carries a reason"                    "outside the configured allow-list" "$oos_text"
 
 # self-exclusion proof (OWM-11b): OWM's own coverage-report path is absent from the index
-assert_eq       OWM-11 "self-exclusion: OWM output path not in the index" "0" "$(uv run --project "$ROOT" python3 -c '
+assert_eq       OWM-11 "self-exclusion: OWM output path not in the index" "0" "$(uv run --project "$PLUGIN" python3 -c '
 import sys, sqlite3
 c = sqlite3.connect(sys.argv[1])
 print(c.execute("SELECT COUNT(*) FROM records WHERE path LIKE ?", ("%owm-coverage%",)).fetchone()[0])

@@ -4,7 +4,7 @@
 
 One Claude Code plugin — **`zero-trust`** — whose six domains cover the ADLC left to right — *generate a spec → implement it → audit it → merge it* — plus a read-only org-memory index and a production-telemetry triage source, all integrated through a shared, machine-readable **Verification Manifest** (six plugins consolidated into one by ADR 0025). Every claim the system makes about your code is backed by deterministic evidence: a test that runs, a mutant that dies, a git-log entry, a build status. Agent judgment is used everywhere; agent judgment blocks a merge nowhere without that evidence.
 
-> **Status:** `v2.0.0-rc.1` — **feature-complete, field-hardened, consolidated.** All six future-scope capabilities designed in v1.0.0 are shipped (mutation testing, remediation loop, production-telemetry triage, outcome measurement, org-wide memory, system-design coverage), the first production e2e drain's field retros are absorbed (autopilot 3.1.0), and the six plugins are now ONE plugin (ADR 0025 Wave 1 — see the migration note under Install). Self-hosting on GitHub, provably green in one command with zero skips.
+> **Status:** `v2.1.0-rc.1` — **feature-complete, field-hardened, consolidated.** All six future-scope capabilities designed in v1.0.0 are shipped (mutation testing, remediation loop, production-telemetry triage, outcome measurement, org-wide memory, system-design coverage), the first production e2e drain's field retros are absorbed (autopilot 3.1.0), and the six plugins are now ONE plugin (ADR 0025 Wave 1 — see the migration note under Install). Self-hosting on GitHub, provably green in one command with zero skips.
 
 ---
 
@@ -116,7 +116,7 @@ Prefixes you will meet in self-test output, lints, registers, and changelogs —
 | Prefix | Meaning | Home |
 |---|---|---|
 | `V<n>` | root cross-domain lint rule (V2, V6, V9–V13 live; V1/V3–V5/V7/V8 retired with the vendored copies, ADR 0025 — ids never renumber) | `scripts/lint_consistency.sh` |
-| `L<n>` | autopilot lint rule (L1–L23; L24 pending in PR #47) | `plugins/zero-trust/skills/autopilot/scripts/lint_consistency.sh` — the spec-gen substrate lint (`plugins/zero-trust/scripts/lint_consistency.sh`) also uses L1–L8 ids (rename pending, ADR 0031) |
+| `L<n>` | autopilot lint rule (L1–L23; L24 pending in PR #47) | `plugins/zero-trust/skills/autopilot/scripts/lint_consistency.sh` — the spec-gen substrate lint (`plugins/zero-trust/scripts/lint_spec_gen.sh`) also uses L1–L8 ids (distinct file since the ADR 0031 rename) |
 | `T` / `HD` / `HG` / `H50` / `W345-*` | autopilot self-test assertion families (see the legend in its header) | `plugins/zero-trust/skills/autopilot/scripts/self_test.sh` |
 | `AV3-x.n` | autopilot v3 register assertion ids — they resolve to self-test assertions (the standalone v3 register doc was retired) | `plugins/zero-trust/skills/autopilot/scripts/self_test.sh` |
 | `AP-x` | autopilot adversarial-review finding ids, cited as behavior anchors (origin register retired; historical) | `plugins/zero-trust/skills/autopilot/references/lifecycle.md` |
@@ -152,7 +152,7 @@ The design record lives in the open:
 │   ├── skills/autopilot/      #   Autopilot drain (SKILL + references + scripts, incl. D6.5 mutation gate)
 │   ├── skills/cleanup-audit/  #   Audit + PR Gate (+ /remediate, outcome-emit, system-design coverage)
 │   ├── skills/triage/         #   Production-telemetry triage → incident-Spec source
-│   ├── scripts/               #   canonical manifest validator + marshal / org-memory / triage substrate
+│   ├── scripts/               #   canonical manifest validator + marshal / org-memory / triage / outcome substrate
 │   ├── schema/                #   Verification Manifest v1 + outcome / org-memory / triage schemas (canonical)
 │   ├── references/            #   shared references (escalation criterion, host + telemetry contracts, …)
 │   ├── mcp/ + .mcp.json       #   org-memory read-only MCP query server

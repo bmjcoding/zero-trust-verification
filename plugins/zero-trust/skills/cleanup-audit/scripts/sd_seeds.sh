@@ -32,10 +32,19 @@ EXC=(--exclude-dir=.git --exclude-dir=.claude --exclude-dir=node_modules \
      --exclude-dir=build --exclude-dir=target --exclude-dir=vendor \
      --exclude-dir=dist --exclude-dir=__pycache__)
 
-# TEST_PATH_RE mirrors debt_patterns.sh (production-only gating for the tz seed).
-TEST_PATH_RE='(^|/)(tests?|__tests__|spec)/|(^|/)test_[^/:]*\.py(:|$)|(^|/)conftest\.py(:|$)|_test\.(py|go)(:|$)|\.(test|spec)\.(ts|tsx|js|jsx|mjs|cjs)(:|$)'
-# VITAL_RE mirrors run_audit.sh (money/business verbs) — money-as-float ∩ VITAL.
-VITAL_RE='(^|[^A-Za-z0-9_])([A-Za-z0-9]+_)*(transfer|refund|charge|payout|payment|pay|deposit|withdraw|disburse|settle|invoice|billing|loan|approve|credit|debit|auth|authorize|subscribe|checkout)(_[A-Za-z0-9]+)*\('
+# Shared regexes — SINGLE-SOURCED, never re-declared here (simp review §3.6):
+#   TEST_PATH_RE          canonical in debt_patterns.sh (sourced when not in env);
+#   VITAL_RE, TX_RETRY_RE canonical in run_audit.sh, which exports all three when
+#                         it invokes this script. A standalone run (sd_self_test)
+#                         extracts the same single copies from run_audit.sh; if
+#                         either cannot be resolved, fail LOUDLY — never guess.
+SD_HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [ -z "${TEST_PATH_RE:-}" ]; then . "$SD_HERE/debt_patterns.sh"; fi
+[ -n "${VITAL_RE:-}" ]    || VITAL_RE="$(sed -n "s/^VITAL_RE='\(.*\)'\$/\1/p" "$SD_HERE/run_audit.sh")"
+[ -n "${TX_RETRY_RE:-}" ] || TX_RETRY_RE="$(sed -n "s/^TX_RETRY_RE='\(.*\)'\$/\1/p" "$SD_HERE/run_audit.sh")"
+: "${TEST_PATH_RE:?sd_seeds: TEST_PATH_RE unresolved (canonical: debt_patterns.sh)}"
+: "${VITAL_RE:?sd_seeds: VITAL_RE unresolved (canonical: run_audit.sh)}"
+: "${TX_RETRY_RE:?sd_seeds: TX_RETRY_RE unresolved (canonical: run_audit.sh)}"
 
 label() { sed 's/^/[candidate] /'; }   # every line is a CANDIDATE, not a verdict
 
@@ -67,7 +76,6 @@ grep -rIEn "${EXC[@]}" "$TIMEOUT_CLIENT_RE" "$TARGET" 2>/dev/null \
 
 # ── 4. jitter-absence over retry sites (SD §2 Pack-5 thundering-herd sliver): a
 #      retry construct with no jitter/randomization. jittered forms -> excluded.
-TX_RETRY_RE='\bfor [A-Za-z_]*(attempt|retr)[A-Za-z_]* in range\(|\bwhile [A-Za-z_]*(attempt|retr)|@retry\b|\bretrying\.|tenacity|backoff\.on_exception|max_retries|jest\.retryTimes\('
 grep -rIEn "${EXC[@]}" "$TX_RETRY_RE" "$TARGET" 2>/dev/null \
   | grep -viE 'jitter|full_jitter|\brandom\b|uniform' | label > "$OUT/sd_jitter_absence.txt" || true
 

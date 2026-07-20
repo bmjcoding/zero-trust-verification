@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# lint_consistency.sh — cross-file contract lint for the spec-gen domain of the
+# lint_spec_gen.sh — cross-file contract lint for the spec-gen domain of the
 # zero-trust plugin (SG-6; single plugin since ADR 0025).
 #
 # The /spec orchestrator is an LLM that loads SKILL.md + references/ as ground
@@ -116,8 +116,8 @@ fi
 (( l8_bad == 0 )) && ok L8
 
 if (( FAIL == 1 )); then
-  echo "lint_consistency: FAIL" >&2
+  echo "lint_spec_gen: FAIL" >&2
   exit 1
 fi
-echo "lint_consistency: PASS (8 rules)"
+echo "lint_spec_gen: PASS (8 rules)"
 exit 0
