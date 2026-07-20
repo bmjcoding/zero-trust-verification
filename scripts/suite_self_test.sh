@@ -413,6 +413,33 @@ dr="$SANDBOX/v13p2"; seed_hl "$dr"
 printf '\n# note: this gate deliberately has no write_text call anywhere\n' >> "$dr/$HL_CA_REL/scripts/wave_gate.py"
 expect_no_fail V13 "$dr" "prose comment in wave_gate.py naming write_text (no call)"
 
+# V13-e — stale default-path regression (simplification review 2026-07-17 §1):
+# a host/secret DEFAULT reverts to the pre-consolidation plugins/autopilot path.
+# The default-resolution pin lives in the plugin.json-keyed cross-domain block,
+# so this seed carries a plugin.json (unlike seed_hl's deliberately bare ones).
+seed_paths() {
+  local d="$1"
+  seed_hl "$d"
+  mkdir -p "$d/plugins/zero-trust/.claude-plugin" "$d/plugins/zero-trust/scripts/backends" \
+           "$d/plugins/zero-trust/skills/autopilot/scripts"
+  cp "$ZT/.claude-plugin/plugin.json" "$d/plugins/zero-trust/.claude-plugin/"
+  cp "$ZT/scripts/marshal.sh" "$ZT/scripts/outcome_capture.sh" "$ZT/scripts/outcome_digest.sh" \
+     "$ZT/scripts/resume_handoff.sh" "$ZT/scripts/loop_guard.py" "$d/plugins/zero-trust/scripts/"
+  cp "$ZT/scripts/backends/cloudwatch.sh" "$ZT/scripts/backends/dynatrace.sh" \
+     "$d/plugins/zero-trust/scripts/backends/"
+  cp "$ZT/skills/autopilot/scripts/host.sh" "$ZT/skills/autopilot/scripts/secret_get.sh" \
+     "$d/plugins/zero-trust/skills/autopilot/scripts/"
+}
+dr="$SANDBOX/v13e"; seed_paths "$dr"
+sed 's|skills/autopilot/scripts/host.sh|../../autopilot/scripts/host.sh|' \
+  "$dr/plugins/zero-trust/scripts/marshal.sh" > "$dr/m.tmp" && mv "$dr/m.tmp" "$dr/plugins/zero-trust/scripts/marshal.sh"
+expect_fail V13 "$dr" "marshal.sh MARSHAL_HOST default reverted to the pre-consolidation autopilot path"
+
+# V13-e false-positive guard — the clean full-tree seed (plugin.json present,
+# consolidated defaults) stays green on V13.
+dr="$SANDBOX/v13ep"; seed_paths "$dr"
+expect_no_fail V13 "$dr" "clean full-tree seed with consolidated default paths"
+
 if [ "$RED_FAIL" -eq 0 ]; then
   echo "  -> lint-red-tests PASS (every surviving lint caught its planted violation; no false positives)"; record "lint-red-tests" PASS
 else

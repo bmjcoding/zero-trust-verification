@@ -74,7 +74,7 @@ subtasks_mode() {
   # List branches matching autopilot/<slug>/<subtask-id>.
   local branches
   branches=$(git for-each-ref --format='%(refname:short)' "refs/heads/autopilot/${SLUG}/*" \
-    | grep -v -E "/(setup|tracker)$" || true)
+    | grep -v -E "/(setup|tracker|runbook)$" || true)
 
   if [[ -z "$branches" ]]; then
     exit 0

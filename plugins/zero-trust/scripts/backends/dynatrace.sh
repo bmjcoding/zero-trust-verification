@@ -17,7 +17,7 @@ set -u
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SCRIPTS="$(cd "$HERE/.." && pwd)"
 PY="${TRIAGE_PYTHON:-python3}"
-SECRET_GET="${TRIAGE_SECRET_GET:-$SCRIPTS/../../autopilot/scripts/secret_get.sh}"
+SECRET_GET="${TRIAGE_SECRET_GET:-$SCRIPTS/../skills/autopilot/scripts/secret_get.sh}"
 
 die() { echo "dynatrace.sh: REFUSE: $*" >&2; exit 1; }
 

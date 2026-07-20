@@ -19,8 +19,8 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SCRIPTS="$(cd "$HERE/.." && pwd)"
 PY="${TRIAGE_PYTHON:-python3}"
 # The secret resolver chain (used ONLY on the live [drain] path). Defaults to the
-# sibling autopilot copy — the suite's single credential surface (ADR 0013).
-SECRET_GET="${TRIAGE_SECRET_GET:-$SCRIPTS/../../autopilot/scripts/secret_get.sh}"
+# autopilot skill's resolver — the suite's single credential surface (ADR 0013).
+SECRET_GET="${TRIAGE_SECRET_GET:-$SCRIPTS/../skills/autopilot/scripts/secret_get.sh}"
 
 die() { echo "cloudwatch.sh: REFUSE: $*" >&2; exit 1; }
 
