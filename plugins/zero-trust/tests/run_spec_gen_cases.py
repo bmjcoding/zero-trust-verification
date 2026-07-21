@@ -86,6 +86,12 @@ mtol.setdefault("observability", {})["profile"] = "payments"
 check("observability.profile tolerated-and-ignored -> exit 0 (ADR 0033)",
       V.validate_mapping(mtol)[0] == 0)
 
+# The observability block itself stays schema-required (may be {}): absent -> exit 4.
+mabs = copy.deepcopy(base)
+del mabs["observability"]
+check("observability block absent -> exit 4 (block required, may be {})",
+      V.validate_mapping(mabs)[0] == 4)
+
 # rule-8 mutation (CORE confirmed without a resolved_by:human confirmed_by ref).
 m8 = copy.deepcopy(base)
 m8["journeys"][0].pop("confirmed_by")
