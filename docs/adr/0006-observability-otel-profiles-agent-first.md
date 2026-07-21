@@ -13,3 +13,8 @@ Shipped observability defaults are vendor-neutral: structured JSON, OpenTelemetr
 
 - The manifest's `observability:` block references a profile by name; the profile supplies the concrete field names, event taxonomy, and alert-seam targets the implementer emits against and the audit grades against.
 - A profile is data (config), never code — adding an LOB requires writing a profile file, not forking a tier.
+
+> **Narrowed by ADR 0033 (2026-07-21):** the config-profile clause is retired —
+> no profile ever shipped, and the tailoring seam is removed for suite-wide
+> simplification. The vendor-neutral OTEL core and the agent-first principle
+> in this ADR stand untouched.

@@ -13,7 +13,7 @@ status lines — do not "fix" either to match the other.
 | [0003](0003-rot-enforcement-and-pr-gate-placement.md) | Three-point rot enforcement; PR Gate is a mode of the audit, not a fourth checker | agent-decided | |
 | [0004](0004-pr-gate-ratcheted-blocking.md) | PR Gate: ratcheted blocking on new debt, never on inherited debt | accepted | |
 | [0005](0005-bdd-semantics-no-gherkin-runtime.md) | Given/When/Then-shaped behaviors; no Gherkin runtime | agent-decided | |
-| [0006](0006-observability-otel-profiles-agent-first.md) | OTEL-standard vendor-neutral core, LOB config profiles, agent-first triage | accepted | |
+| [0006](0006-observability-otel-profiles-agent-first.md) | OTEL-standard vendor-neutral core, LOB config profiles, agent-first triage | accepted | Config-profile clause retired by ADR 0033; the OTEL core and agent-first doctrine stand. |
 | [0007](0007-pr-per-story-granularity.md) | PRs are Stories, Subtasks are commits | accepted | |
 | [0008](0008-manifest-bearing-specs-drain-straight-through.md) | Manifest-bearing specs drain straight through | accepted | |
 | [0009](0009-derived-ownership-claims.md) | Derived ownership claims from open PRs — no ledger, no service | accepted | |
@@ -40,3 +40,4 @@ status lines — do not "fix" either to match the other.
 | [0030](0030-single-copy-contracts-h1-pins-survive.md) | Contract prose is single-copy; the H1 anti-laundering pins outlive the copies | agent-decided | |
 | [0031](0031-post-consolidation-residue-one-project-one-version.md) | Post-consolidation residue: outcome family in the plugin; one uv project; one version surface | agent-decided | |
 | [0032](0032-manifest-module-owns-parsing.md) | The manifest module owns parsing end-to-end | agent-decided | |
+| [0033](0033-config-profiles-removed.md) | Config Profiles removed: one vocabulary, no tailoring seam | operator-decided | Narrows ADR 0006; removal wave pending. |
