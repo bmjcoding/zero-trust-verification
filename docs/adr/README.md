@@ -40,4 +40,4 @@ status lines — do not "fix" either to match the other.
 | [0030](0030-single-copy-contracts-h1-pins-survive.md) | Contract prose is single-copy; the H1 anti-laundering pins outlive the copies | agent-decided | |
 | [0031](0031-post-consolidation-residue-one-project-one-version.md) | Post-consolidation residue: outcome family in the plugin; one uv project; one version surface | agent-decided | |
 | [0032](0032-manifest-module-owns-parsing.md) | The manifest module owns parsing end-to-end | agent-decided | |
-| [0033](0033-config-profiles-removed.md) | Config Profiles removed: one vocabulary, no tailoring seam | operator-decided | Narrows ADR 0006; removal wave pending. |
+| [0033](0033-config-profiles-removed.md) | Config Profiles removed: one vocabulary, no tailoring seam | operator-decided | Narrows ADR 0006; removal wave landed 2026-07-21. |

@@ -10,8 +10,7 @@ spec:
 completeness: incomplete
 incomplete_fields:
   - "journeys[J-pay-001].steps[0].required_emission"
-observability:
-  profile: payments
+observability: {}
 environments: [dev, prod]
 journeys:
   - id: J-pay-001

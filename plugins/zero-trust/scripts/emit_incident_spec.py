@@ -143,7 +143,6 @@ def _build_manifest(source: dict, corr: dict, primary: dict, incident_id: str) -
     if not behaviors:  # never mint one; a genuinely undeclared behavior is a prose note
         behaviors = []
 
-    profile = ((source.get("observability") or {}).get("profile")) or "default"
     envs = source.get("environments") or ["prod"]
 
     manifest = {
@@ -155,7 +154,7 @@ def _build_manifest(source: dict, corr: dict, primary: dict, incident_id: str) -
         },
         "completeness": "incomplete",
         "incomplete_fields": ["rule-0: bootstrap (reconciled below)"],
-        "observability": {"profile": profile},
+        "observability": {},
         "environments": list(envs),
         "interrogation": {"log": []},
         "journeys": [journey],

@@ -34,9 +34,7 @@ TELEMETRY="$HERE/telemetry.sh"
 LOOP_GUARD="$HERE/loop_guard.py"
 CORRELATE="$HERE/correlate.py"
 EMIT="$HERE/emit_incident_spec.py"
-PROFILE="$HERE/profile_resume.sh"
 HANDOFF="$HERE/resume_handoff.sh"
-RESOLVER="$HERE/profile_resolve.py"
 WIN_SCHEMA="$PLUGIN/schema/triage/incident-window.schema.json"
 CORR_SCHEMA="$PLUGIN/schema/triage/correlation.schema.json"
 MOCK_HOST="$PLUGIN/fixtures/host/mock_pr_host.sh"
@@ -306,26 +304,6 @@ assert_rc       TR-03 "[det-cond] wrong-shaped --journeys (top-level array) neve
 assert_eq       TR-03 "[det-cond] wrong-shaped --journeys -> status skipped" "skipped" "$(printf '%s' "$wsh" | jget 'd["backref_cross_check"]["status"]')"
 assert_contains     TR-03 "[det-cond] wrong-shape note names the expected shape" "wrong-shaped" "$wsh"
 assert_not_contains TR-03 "[det-cond] wrong-shaped --journeys emits no traceback" "Traceback" "$(cat "$SANDBOX/wrongshape.err")"
-
-# =============================================================================
-# TR-04 — config-profile resume (reuse; floor-not-ceiling severity)
-# =============================================================================
-echo "== TR-04 profile resume =="
-
-pr="$(bash "$PROFILE" resolve --manifest "$JOIN_MANIFEST")"
-assert_eq TR-04 "payments manifest resolves via the VENDORED resolver" "payments" "$(printf '%s' "$pr" | jget 'd["profile"]')"
-assert_eq TR-04 "resume resolution does not re-escalate" "False" "$(printf '%s' "$pr" | jget 'str(d["escalate"])')"
-assert_eq TR-04 "resume source is the manifest (reuse, zero new resolver code)" "manifest" "$(printf '%s' "$pr" | jget 'd["source"]')"
-# unresolvable profile falls to default + a loud escalation note (never a silent assume, ADR 0002)
-# — the VENDORED resolver's fresh-mode fixture behavior, reused verbatim.
-fr="$(tri_py "$RESOLVER" --mode fresh --config "$SANDBOX/no-such-config.yaml")"
-assert_eq       TR-04 "no configured profile degrades to default" "default" "$(printf '%s' "$fr" | jget 'd["profile"]')"
-assert_eq       TR-04 "no configured profile ESCALATES (never silently assumed)" "True" "$(printf '%s' "$fr" | jget 'str(d["escalate"])')"
-# profile is a severity FLOOR, never a ceiling past the ladder cap (CH-08 floor-not-ceiling).
-assert_eq TR-04 "profile floor cannot raise severity past the ladder cap" "error" \
-  "$(bash "$PROFILE" severity --base info --floor critical --cap error)"
-assert_eq TR-04 "profile floor DOES raise a low base up to the cap" "warn" \
-  "$(bash "$PROFILE" severity --base info --floor warn --cap critical)"
 
 # =============================================================================
 # TR-05 — incident-Spec emitter (incomplete BY CONSTRUCTION; mints no ID)

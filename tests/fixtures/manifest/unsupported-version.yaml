@@ -6,8 +6,7 @@ spec:
   spec_hash: "sha256:0000000000000000000000000000000000000000000000000000000000000000"
 completeness: complete
 incomplete_fields: []
-observability:
-  profile: payments
+observability: {}
 environments: [dev, test, prod]
 interrogation:
   adrs: []

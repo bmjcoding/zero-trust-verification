@@ -660,33 +660,22 @@ else
   echo "  [skip] validate_manifest.sh absent — CH-03 §12 comparator truth tables skipped (blocked-on the spec-gen validator drain)"
 fi
 
-echo "== 17. CH-08 config-profile awareness for absence-severity (ADR 0006) =="
-# The profile is a bare NAME string; the deterministic layer reads the name and
-# degrades unknown -> default. It NEVER lifts the severity ceiling — the 1.4.0
-# absence-severity cap holds regardless of profile (question floor, not ceiling).
+echo "== 17. CH-08 absence-severity is purely evidence-derived (ADR 0033) =="
+# Severity comes from the trace evidence alone: a DARK emission on an UNtraced
+# (derived-SUPPORTING) step caps at MED under the 1.4.0 rubric gate. The SAME
+# step on a traced CORE money path is HIGH, asserted in CH-03 — proving it is
+# the trace, and nothing in the manifest, that authorizes HIGH.
 if have_validator; then
   JOINSH="$SKILL_SCRIPTS/manifest_join.sh"; MREF="$JOIN_FIX/manifest.yaml"; JREF="$JOIN_FIX/journeys.json"
-  # payments (recognized) is read by name off the reference manifest.
-  bash "$JOINSH" "$MREF" "$JREF" > "$WORK/prof_known.out" 2>&1
-  assert_grep "$WORK/prof_known.out" '^PROFILE payments recognized' "CH-08: comparator reads the profile name ('payments' recognized)"
-  # unknown profile -> default + loud [note], no crash, no silent default.
-  sed 's/profile: payments/profile: acme-nonexistent/' "$MREF" > "$WORK/m_unkprof.yaml"
-  bash "$JOINSH" "$WORK/m_unkprof.yaml" "$JREF" > "$WORK/prof_unknown.out" 2>&1
-  assert_grep "$WORK/prof_unknown.out" '^PROFILE acme-nonexistent unknown->default' "CH-08: unknown profile degrades to default"
-  assert_grep "$WORK/prof_unknown.out" "\[note\] observability.profile 'acme-nonexistent' not recognized" "CH-08: unknown profile emits a loud [note] (no silent default)"
-  assert_grep "$WORK/prof_unknown.out" '^ROW '  "CH-08: unknown profile does NOT crash — rows still emitted"
-  # cap-holds: a DARK emission on an UNtraced (derived-SUPPORTING) step caps at
-  # MED even under the payments profile — the profile cannot push an untraced
-  # absence above the 1.4.0 rubric gate. (The SAME step on a traced CORE money
-  # path is HIGH, asserted in CH-03 — proving it is the trace, never the profile,
-  # that authorizes HIGH.)
   "${PYRUN[@]}" -c "import json; d=json.load(open('$JREF')); j=d['journeys'][0]; j['criticality']='SUPPORTING'; j['steps'][0]['emission_grade']='DARK'; json.dump(d,open('$WORK/j_untraced.json','w'))"
   bash "$JOINSH" "$MREF" "$WORK/j_untraced.json" > "$WORK/cap.out" 2>&1
-  assert_grep     "$WORK/cap.out" '^ROW emission FAIL sev=MED'  "CH-08 cap: DARK on an untraced step under the payments profile stays MED"
+  assert_grep     "$WORK/cap.out" '^ROW emission FAIL sev=MED'  "CH-08 cap: DARK on an untraced step stays MED"
   assert_grep     "$WORK/cap.out" '^ROW emission FAIL sev=MED .*needs-verification' "CH-08: an untraced/unconfirmed capped MED absence carries needs-verification (rubric)"
-  assert_not_grep "$WORK/cap.out" '^ROW emission FAIL sev=HIGH' "CH-08 cap: the profile cannot lift an untraced absence to HIGH (1.4.0 rubric gate holds)"
+  assert_not_grep "$WORK/cap.out" '^ROW emission FAIL sev=HIGH' "CH-08 cap: an untraced absence never reaches HIGH (1.4.0 rubric gate holds)"
+  assert_grep     "$WORK/cap.out" '^ROW '     "CH-08: evidence-derived grading emits rows (no crash)"
+  assert_not_grep "$WORK/cap.out" '^PROFILE ' "CH-08: the comparator emits no PROFILE line (ADR 0033)"
 else
-  echo "  [skip] validate_manifest.sh absent — CH-08 profile-awareness checks skipped (blocked-on the spec-gen validator drain)"
+  echo "  [skip] validate_manifest.sh absent — CH-08 evidence-derived-severity checks skipped (blocked-on the spec-gen validator drain)"
 fi
 
 echo "== 18. CH-04 PR Gate diff-scoped mode (ADR 0003; MS §13.10) =="

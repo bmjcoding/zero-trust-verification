@@ -25,8 +25,8 @@ Fingerprints — two scopes (CH-AMEND-A):
 
 Severity obeys the severity-rubric.md 1.4.0 amendment: an emission/idempotency
 absence reaches HIGH ONLY on a traced CORE money/auth path; everything else
-hard-caps at MED (needs-verification when untraced). A config profile (CH-08)
-never lifts that ceiling — it only decides which steps are money/auth-class.
+hard-caps at MED (needs-verification when untraced). Severity is purely
+evidence-derived.
 """
 from __future__ import annotations
 
@@ -35,11 +35,6 @@ import json
 import os
 import sys
 from pathlib import Path
-
-# Profile names this deterministic layer recognizes. The profile PAYLOAD (vitals
-# taxonomy, event vocabulary, alert seams) is data, not vendored here (ADR 0006);
-# the deterministic layer only reads the NAME and degrades unknown -> default.
-KNOWN_PROFILES = {"default", "payments"}
 
 SLUG_EMISSION = "manifest-emission-drift"
 SLUG_SEAM = "manifest-seam-drift"
@@ -184,7 +179,7 @@ def idempotency_verdict(required: bool, guard) -> str:
 def emission_severity(journey_crit, vital_class, grade) -> str:
     """HIGH only for DARK on a traced CORE money/auth path (the wire-transfer
     exemplar). LOG-ONLY vital even on CORE caps at MED (HIGH is DARK-only).
-    Everything else caps at MED. A profile cannot lift this ceiling (CH-08)."""
+    Everything else caps at MED."""
     traced_core = journey_crit == "CORE" and vital_class in ("money", "auth")
     if traced_core and grade == "DARK":
         return "HIGH"
@@ -223,16 +218,7 @@ def run(manifest_path: Path, journeys_path: Path, audited_env: str) -> int:
         return 0
     journeys_doc = json.loads(journeys_path.read_text(encoding="utf-8"))
 
-    # CH-08: read the profile NAME; degrade unknown -> default with a loud note.
-    profile = ((manifest.get("observability") or {}).get("profile")) or "default"
-    if profile in KNOWN_PROFILES:
-        emit(f"PROFILE {profile} recognized")
-    else:
-        emit(f"PROFILE {profile} unknown->default")
-        emit(f"[note] observability.profile '{profile}' not recognized — proceeding with default profile (CH-08; MS §11 unknown-profile row)")
-        profile = "default"
-
-    # audited env: the profile's env under audit, else default (seam collapse key).
+    # audited env: the environment under audit, else default (seam collapse key).
     emit(f"ENV {audited_env}")
 
     m_journeys = manifest.get("journeys", []) or []

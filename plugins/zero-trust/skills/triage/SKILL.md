@@ -35,14 +35,14 @@ human-authored incident report already can.
   (`references/telemetry-contract.md`); CloudWatch/Dynatrace are backend
   SELECTIONS, never a branch in your reasoning. A telemetry vendor is an external
   fact — if none is configured, ESCALATE; do not guess.
-- **degrade to less action.** No manifest / unknown profile / empty window / a
-  backend returning nothing → say so, do LESS, escalate the gap. Never fabricate a
+- **degrade to less action.** No manifest / empty window / a backend returning
+  nothing → say so, do LESS, escalate the gap. Never fabricate a
   join; never guess an incident-Spec from an un-joined signal.
 - **report-only first (ADR 0020).** The incident-Spec is a PROPOSAL: a DRAFT PR for
   human review. Autonomous emission-to-drain is a per-deployment opt-in after a
   soak. Nothing you produce is merge-blocking or auto-merging.
 
-## The run (probe → window → loop-guard → correlate → profile → emit → hand off)
+## The run (probe → window → loop-guard → correlate → emit → hand off)
 
 1. **probe / backend** — `telemetry.sh backend` (external-fact escalation if unset)
    and `telemetry.sh probe` for reachability.
@@ -54,12 +54,10 @@ human-authored incident report already can.
    to `journeys[].steps[].event_name` (the §12 key) and DERIVES the journey (NOT a
    backref). Class-drift and unmapped-in-prod are surfaced; DARK-in-prod is bucketed,
    never dropped; a CORE step absent from the window is informational only.
-5. **profile** — `profile_resume.sh resolve --manifest <m>` resumes the profile the
-   spec-gen way. The profile is a severity FLOOR, never a ceiling past the ladder cap.
-6. **emit** — from a CONFIDENT join, `emit_incident_spec.py` writes an incident-Spec
+5. **emit** — from a CONFIDENT join, `emit_incident_spec.py` writes an incident-Spec
    that references EXISTING behavior IDs and mints NONE (§6). It REFUSES from a
    no-join correlation and honors the open-incident dedupe.
-7. **hand off** — `resume_handoff.sh --manifest <m> --prose <md> --incident-id <id>
+6. **hand off** — `resume_handoff.sh --manifest <m> --prose <md> --incident-id <id>
    --key <incident_key> --branch <b>` proves the manifest is resumable-incomplete
    (validator exit 3) and opens the DRAFT PR proposal. `--key` (the emit step's
    `incident_key`) records the open incident in the loop-guard ledger so a re-fire
@@ -68,8 +66,8 @@ human-authored incident report already can.
 ## Where you apply judgment (and where you must NOT)
 
 You judge **incident vs noise** and **real class-drift vs a benign rename** — the
-soft calls the deterministic layer cannot make. You do NOT decide severity past the
-mechanical ladder cap, invent a join, or author a fix. When a decision turns on
+soft calls the deterministic layer cannot make. You do NOT decide severity (it is
+evidence-derived), invent a join, or author a fix. When a decision turns on
 values/risk or an external fact, escalate:
 
 <!-- vendored:escalation-criterion:begin (ADR 0002 pointer — byte-identical across all sites; do NOT edit one copy; the criterion itself lives in the canonical file) -->

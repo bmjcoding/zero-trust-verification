@@ -11,7 +11,6 @@ Grill-first (ADR 0026): hydrate quickly and start the S2 human interview
 within a couple of minutes — no subagent dispatch before the conversation.
 Mode is inferred from the arguments per the skill's invocation table:
 `--resume` / `--amend` / `--from-findings` / `@draft.md` or bare intent
-(Fresh; `--profile <name>` overrides Config-Profile resolution). Use the
-deterministic `scripts/` (validator, ID allocator, resume projection,
-profile resolver, emission-shape gate) rather than reasoning their logic
-out by hand.
+(Fresh). Use the deterministic `scripts/` (validator, ID allocator, resume
+projection, emission-shape gate) rather than reasoning their logic out by
+hand.

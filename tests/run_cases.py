@@ -199,8 +199,14 @@ check("union with disjoint ids -> 0", code2 == 0)
 b3 = copy.deepcopy(b2)
 b3["observability"]["profile"] = "trading"
 pb3 = write_tmp(b3, "union_b3.yaml")
-code3, lines3 = V.validate_union([pa, pb3])
-check("union with profile mismatch -> non-zero", code3 != 0 and any("UNION-MISMATCH" in ln for ln in lines3))
+code3, _ = V.validate_union([pa, pb3])
+check("union ignores differing profile values (ADR 0033) -> 0", code3 == 0)
+
+b4 = copy.deepcopy(b2)
+b4["environments"] = ["staging"]
+pb4 = write_tmp(b4, "union_b4.yaml")
+code4, lines4 = V.validate_union([pa, pb4])
+check("union with environments mismatch -> non-zero", code4 != 0 and any("UNION-MISMATCH" in ln for ln in lines4))
 
 
 print(f"\n== run_cases: {passed} passed, {failed} failed ==")

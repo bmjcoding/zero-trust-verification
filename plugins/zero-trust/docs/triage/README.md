@@ -14,7 +14,7 @@ human-authored incident report already can. Prod telemetry becomes a first-class
 
 ```
 telemetry.sh window (BOUNDED) → loop_guard exclude-self → correlate (§12 event_name)
-   → profile_resume → emit_incident_spec (completeness: incomplete) → resume_handoff (DRAFT PR)
+   → emit_incident_spec (completeness: incomplete) → resume_handoff (DRAFT PR)
 ```
 
 An emitted vital is correlated to the Verification Manifest's journey + behavior IDs
@@ -36,8 +36,8 @@ as a DRAFT PR **proposal** for human review.
   window (never a full-retention or whole-fleet scan).
 - **no self-ingestion** — self-emitted events are excluded; a second incident-Spec is
   suppressed while a prior one's PR is still open.
-- **degrade to less action** — no manifest / unknown profile / empty window → say so,
-  escalate the gap, never fabricate a join.
+- **degrade to less action** — no manifest / empty window → say so, escalate the
+  gap, never fabricate a join.
 
 ## Backends
 
@@ -52,7 +52,7 @@ and `references/backends.md`.
 Historical: the standalone plugin era ended with ADR 0025 (the V1/V3 vendoring
 lints retired with the copies) — triage now ships inside the zero-trust plugin and
 uses the canonical `validate_manifest` toolchain, schema, and
-`profile_resolve.py` / `resume_projection.py` directly. The host adapter is
+`resume_projection.py` directly. The host adapter is
 reused via `$TRIAGE_HOST` (default: the autopilot skill's `host.sh`); Python runs
 through `uv` against the plugin's `pyproject.toml` (the ONE uv project, ADR 0031),
 falling back to an ambient `python3`

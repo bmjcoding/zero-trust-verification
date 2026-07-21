@@ -14,8 +14,7 @@ incomplete_fields:
   # list (the file may be stale after a crash — spec-gen §3 S1). resume_projection
   # projects the VALIDATOR output, never this field.
   - "rule-1: journeys[J-wire-001].steps[1].alert_seam.default"
-observability:
-  profile: payments
+observability: {}
 environments: [dev, test, prod]
 interrogation:
   adrs: []

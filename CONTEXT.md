@@ -40,10 +40,6 @@ _Avoid_: quality gate (ambiguous — D6 is autopilot's internal gate), pre-PR ch
 Repo-resident memory (glossary, ADRs, as-built docs, journey maps, manifest) that the code no longer agrees with — a term describing deleted symbols, a journey step through a removed path, an ADR the code now violates. Detected incrementally at the PR Gate (diff-scoped) and ambiently by scheduled audits; never silently tolerated.
 _Avoid_: stale docs, doc drift
 
-**Config Profile**:
-A named observability preset layered over the vendor-neutral defaults, encoding one line of business's vitals taxonomy, event vocabulary, and alert seams (e.g., a payments profile for a payment-processing workflow). Pure data — adding an LOB means writing a profile, never forking a tier.
-_Avoid_: LOB config, template
-
 **Vital**:
 A business-significant emission point on a Journey: a money movement, state transition, external side effect, or auth event. Graded by the Audit as OBSERVED, LOG-ONLY, or DARK. Written primarily for agent triage of logs; dashboards are a human compatibility layer.
 _Avoid_: metric, KPI, business event
