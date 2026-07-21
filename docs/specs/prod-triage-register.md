@@ -350,3 +350,22 @@ change to five, or V6 documents a lie (flagged as a required edit, not left impl
 > - The §12 join itself now also has a live caller on the audit side: `pr_gate.sh`
 >   dispatches CH-01 (MODE gate) → CH-03 (`manifest_join.sh`) when a manifest and a prior
 >   journeys.json are present (ADR 0029; warn-only posture unchanged).
+## G. Correction note — 2026-07-21 (ADR 0033): TR-04's vendored-resolver acceptance is retired
+
+> **Dated correction (2026-07-21), append-only — the entries above are history and are not
+> rewritten.** ADR 0033 removes Config Profiles from the suite entirely: `profile_resolve.py`
+> is deleted, `observability.profile` becomes an accepted-and-ignored no-op on the manifest
+> (optional; `schema_version` stays 1; a future v2 may drop the key), and CONTEXT.md no
+> longer carries the Config Profile term. Post-0033 truth for this register:
+>
+> - TR-04 (Config-profile resume) is RETIRED in full: the vendored-resolver reuse, the
+>   unknown-profile degrade-to-`default` acceptance, and the profile-severity-cap mirror of
+>   CH-08 all pointed at machinery that no longer exists. There is no profile to resume —
+>   the vendor-neutral defaults are THE vocabulary; a manifest's `observability.profile`
+>   value, if present, is ignored without a `[note]`.
+> - The TR-01 → … → TR-08 landing order reads with TR-04 as a historical no-op hop; no
+>   surviving item consumed its output beyond passing the resolved name through.
+> - Telemetry ADAPTER selection stands untouched (ADR 0020): TR-01's backend detection
+>   (env/config-selected per deployment, refuse-on-absence) is a vendor seam, not a
+>   vocabulary seam — ADR 0033 explicitly amends only the profile indirection in front of
+>   it, never the adapter surface.

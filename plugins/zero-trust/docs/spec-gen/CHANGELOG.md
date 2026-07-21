@@ -6,6 +6,35 @@ frontmatter. Per the M3 process gate (spec-gen §7.5), **every behavioral claim
 below cites a self-test assertion** (`run_cases.py` group / `lint_consistency.sh`
 rule) or is marked `[doc-only]`.
 
+## Unreleased — Config Profiles removed (2026-07-21, ADR 0033)
+
+Config Profiles are removed from the suite entirely; the vendor-neutral
+defaults are THE vocabulary. Spec-gen's S-flow asks nothing about profiles.
+
+### Removed
+
+- **Profile resolution** (was SG-4/§2): `scripts/profile_resolve.py`, the
+  three-way precedence (flag → `spec-gen.config.yaml` → default+escalate) and
+  its escalate-on-unknown S5 question; `run_cases.py` group D and the
+  profile_resolve malformed-YAML robustness case (group H) deleted with it.
+  Remaining group letters are unchanged (E–H keep their names).
+- **`--profile <name>` flag** on `/spec` fresh sessions; the S1 resolved-profile
+  hydration input; the S5 default-fall-through first question
+  (`s5-presenter.md` residue item 4) `[doc-only]`.
+- **`profile:` line** in the killed-mid-s4 resume fixture (`observability` is
+  now an empty block) — the fixture still validates as incomplete-not-invalid:
+  `run_cases.py` group A `[det]`.
+
+### Changed
+
+- **`observability.profile` is a tolerated, documented no-op**: optional and
+  ignored, every previously-valid manifest stays valid, `schema_version` stays
+  1 — asserted by the new group A tolerance case (`observability.profile`
+  present → still exit 0) `[det]`.
+- S3 proposes `event_name` / `vital_class` / `alert_seam.default` from the
+  vendor-neutral defaults taxonomy (ADR 0006, narrowed by ADR 0033)
+  `[doc-only]`.
+
 ## [0.1.0] — 2026-07-05
 
 Initial cut of the Spec Generation tier (spec of record:

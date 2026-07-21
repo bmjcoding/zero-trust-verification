@@ -1,46 +1,45 @@
 schema_version: 1
 manifest_revision: 1
 spec:
-  path: ./loan-pricing.md
-  title: "Loan pricing engine"
+  path: ./payment-authorization.md
+  title: "Payment authorization engine"
   spec_hash: "sha256:0000000000000000000000000000000000000000000000000000000000000000"
 completeness: complete
 incomplete_fields: []
-observability:
-  profile: payments
+observability: {}
 environments: [dev, test, prod]
 interrogation:
   adrs: []
   log:
     - id: DL-001
-      summary: "Duplicate lock -> reject-and-alert, not silent dedupe"
+      summary: "Duplicate hold -> reject-and-alert, not silent dedupe"
       resolved_by: human
       dissent: ""
       exchange_ref: "PR#42#interrogation"
 journeys:
   - id: J-pricing-001
-    name: "Rate lock end-to-end"
+    name: "Authorization hold end-to-end"
     lifecycle: active
     criticality: CORE
-    criticality_reason: "Money movement; customer-facing rate commitment"
+    criticality_reason: "Money movement; customer-facing payment commitment"
     confirmation: confirmed
     confirmed_by: DL-001
     steps:
-      - name: "Lock request accepted"
+      - name: "Hold request accepted"
         vital_class: money
         required_emission: OBSERVED
-        event_name: rate_lock.accepted
+        event_name: auth_hold.accepted
         alert_seam:
           default: dashboard-only
           prod: paged
         idempotency:
           required: true
           mechanism: idempotency-key
-          justification: "Client retries on timeout; duplicate lock = double commitment"
+          justification: "Client retries on timeout; duplicate hold = double commitment"
         compensation:
           ref: J-pricing-002
   - id: J-pricing-002
-    name: "Rate lock reversal"
+    name: "Authorization hold reversal"
     lifecycle: active
     criticality: SUPPORTING
     criticality_reason: "Secondary corrective flow"
@@ -49,18 +48,18 @@ journeys:
       - name: "Reversal recorded"
         vital_class: state-transition
         required_emission: LOG-ONLY
-        event_name: rate_lock.reversed
+        event_name: auth_hold.reversed
         alert_seam:
           default: dashboard-only
 behaviors:
   - id: B-pricing-001
-    title: "Rejects expired rate lock"
+    title: "Rejects expired authorization hold"
     lifecycle: active
     journey: J-pricing-001
     criticality: CORE
     confirmation: confirmed
     confirmed_by: DL-001
-    given: "A rate lock created 46 days ago with a 45-day term"
-    when: "The borrower requests to exercise the lock"
-    then: "The request is rejected with RateLockExpired and vital rate_lock.expired is emitted"
-    test_name_hint: "test_rejects_expired_rate_lock"
+    given: "An authorization hold placed 8 days ago with a 7-day term"
+    when: "The payer requests capture against the hold"
+    then: "The request is rejected with AuthHoldExpired and vital auth_hold.expired is emitted"
+    test_name_hint: "test_rejects_expired_auth_hold"

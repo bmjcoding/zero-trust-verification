@@ -7,8 +7,6 @@
 #   * Journey/Behavior IDs are unique across the union (main's-lineage reservation
 #     is the PR Gate's job; THIS is the plan-time single-drain collision guard)
 #         -> [GENERATE-FAILED: manifest-id-collision: <id>]
-#   * observability.profile is identical across unioned manifests
-#         -> [GENERATE-FAILED: manifest-union-mismatch: profile]
 #   * environments is identical (as a set) across unioned manifests
 #         -> [GENERATE-FAILED: manifest-union-mismatch: environments]
 #
@@ -51,21 +49,6 @@ extract_union_ids() {  # <file>
     | grep -oE '[JB]-[a-z0-9]+(-[a-z0-9]+)*-[0-9]{3}' | sort -u
 }
 
-# observability.profile value — the `profile:` UNDER `observability:` (not a decoy
-# `profile:` under some other block that happens to appear first).
-extract_profile() {  # <file>
-  awk '
-    /^observability:[[:space:]]*(#.*)?$/ { inobs=1; next }
-    inobs {
-      if ($0 ~ /^[[:space:]]+profile:[[:space:]]*/) {
-        p=$0; sub(/^[[:space:]]+profile:[[:space:]]*/,"",p); sub(/[[:space:]]*#.*/,"",p);
-        gsub(/["'\'']/,"",p); sub(/[[:space:]]*$/,"",p); print p; exit
-      }
-      if ($0 ~ /^[A-Za-z_]/) inobs=0
-    }
-  ' "$1" 2>/dev/null
-}
-
 # environments as a normalized sorted set (order-insensitive; §3 calls it "the
 # primitive" — a set). Handles BOTH the inline `[a, b, c]` form AND the YAML
 # block-list form (`environments:` then `  - a` lines) — a block list must not
@@ -94,11 +77,9 @@ extract_environments() {  # <file>
 dupe="$( { for f in "$@"; do extract_union_ids "$f"; done; } | sort | uniq -d | head -1 )"
 [[ -z "$dupe" ]] || fail manifest-id-collision "$dupe"
 
-# --- observability.profile + environments must be identical across the union. --
-first_profile="$(extract_profile "$1")"
+# --- environments must be identical across the union. -------------------------
 first_envs="$(extract_environments "$1")"
 for f in "$@"; do
-  [[ "$(extract_profile "$f")" == "$first_profile" ]] || fail manifest-union-mismatch "profile"
   [[ "$(extract_environments "$f")" == "$first_envs" ]] || fail manifest-union-mismatch "environments"
 done
 

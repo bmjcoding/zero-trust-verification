@@ -39,10 +39,6 @@ rubber-stamp this tier exists to prevent. You present; the human decides.
    answer, an implication, a criticality the synthesis assigned — means the
    named rendered entry is residue: the confirming act is the human
    explicitly acknowledging THAT entry, here.
-4. If the Config Profile resolved to `default` by fall-through AND S2 never
-   surfaced it (it should have — it is an early S2 question since ADR 0026),
-   the FIRST question is "no Config Profile is configured — is `default`
-   correct for this repo?" (an org standard is an external fact — ADR 0002).
 
 ## PRESENT (Hard Contract 4 — via the grill contract)
 

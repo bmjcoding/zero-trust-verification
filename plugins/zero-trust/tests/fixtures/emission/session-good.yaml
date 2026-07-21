@@ -9,7 +9,7 @@ manifest_path: docs/specs/wire-transfer.manifest.yaml
 adrs:
   - docs/adr/DRAFT-wire-transfer-duplicate-wire-reject-and-alert.md
 commits:
-  - {boundary: S1, subject: "spec(wire-transfer): S1 hydrate — reserve IDs, resolve profile"}
+  - {boundary: S1, subject: "spec(wire-transfer): S1 hydrate — reserve IDs"}
   - {boundary: S2, subject: "spec(wire-transfer): S2 domain pass — glossary edits"}
   - {boundary: S3, subject: "spec(wire-transfer): S3 skeleton — journeys + behaviors proposed"}
   - {boundary: S4, subject: "spec(wire-transfer): S4 adversarial round — agent-decided ADRs"}

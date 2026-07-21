@@ -122,3 +122,25 @@ Every `[det]` acceptance lands as a fixture + self_test assertion (red-first). T
 - Grading rotation, isolation-correctness, entitlement breadth, or stampede risk from static code (SD §3 — honest `unknown`).
 - A second comparator or a fourth checker (ADR 0003; reuses CH-03 + run_sibling).
 - Merge-blocking on any out-of-scope-by-declaration line (ADR 0004).
+
+## Correction note — 2026-07-21 (ADR 0033): Config Profiles removed
+
+> **Dated correction (2026-07-21), append-only — the entries above are history and are not
+> rewritten.** ADR 0033 removes Config Profiles from the suite; every profile clause above
+> reads historically:
+>
+> - Defaulted question (A)'s "the Config Profile narrows per LOB" scoping mechanism no
+>   longer exists — all in-repo-assessable SD principles stay in scope by default with no
+>   per-LOB narrowing seam; narrowing, if ever wanted, needs a new ADR.
+> - SD-00's / SD-01's "ADR 0006 profile supplies the (enum) vocabulary" clauses are
+>   retired: the `locus` enum vocabulary is fixed by ADR 0021 and the vendored schema
+>   itself, which is where it already lived in the shipped code — no profile ever
+>   supplied it.
+> - SD-01's Config-Profile credential inventory and SD-08's/SD-09's "rotation_seam is
+>   Config-Profile data" framing lose their carrier: no profile exists to hold a
+>   credential inventory. SD-08's posture is UNCHANGED — rotation compliance is never
+>   graded from code, and every rotation report stays out-of-scope-by-declaration or the
+>   honest `unknown` degrade; that guarantee never depended on profile data. A credential
+>   inventory, if it ever ships, enters by its own contract under a future ADR.
+> - The declare-then-verify mechanics (SD-00 law, SD-03 report class, SD-04 comparator
+>   rows, the [det]/[audit-run] split) are untouched — none of them read a profile.

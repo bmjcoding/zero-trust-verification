@@ -8,6 +8,11 @@
 > front door; synthesis (S3) and the adversarial round (S4, background) follow it;
 > S5 shrinks to the residue. S1–S7 numbering, all §4 hard contracts, §5 rigor, the
 > completeness rules, the scripts, and the machine doors are unchanged.
+> **Amended 2026-07-21 by ADR 0033 (Config Profiles removed):** every profile clause
+> below reads historically — the `--profile` flag, §2's profile resolution order and
+> its fall-through question, S1's resolved-profile hydrate, S3's profile taxonomy, and
+> SG-4's profile-resolution helper are retired (see the §2 retirement note). The S-flow
+> asks nothing about profiles; vitals are proposed from the vendor-neutral defaults.
 > Governing decisions: ADR 0002 (escalation criterion — vendored here as in every tier),
 > ADR 0005 (GWT behaviors), ADR 0006 (profiles), ADR 0008 (its output gates autonomous
 > drains), ADR 0009 (Spec lifecycle: Pickup is the Claim event).
@@ -50,6 +55,15 @@ agents don't assume it (ADR 0002). ⟨ADR-0026⟩ It is asked as an EARLY S2 gri
 question; S5 asks it first only if the S2 conversation somehow never did (pre-0026 it
 was S5's mandated first escalation). Resume/amend sessions take the profile from the
 manifest.
+
+> Retirement note (2026-07-21, ADR 0033): Config Profiles are removed from the suite.
+> The `--profile` flag, the resolution order above (flag → repo config → `default`),
+> the fall-through grill question, S1's resolved-profile hydrate, S3's
+> profile-taxonomy vitals proposal, and SG-4's profile-resolution helper are all
+> retired — the S-flow asks nothing about profiles, and `observability.profile` on a
+> resumed/amended manifest is accepted and ignored (manifest spec §3/§11). The
+> vendor-neutral defaults are THE vocabulary. Text above and in §3/§8 stands as
+> written per this doc's history convention.
 
 One session produces at most one Spec + one manifest (multi-doc unions are autopilot's
 concern, not this tier's).

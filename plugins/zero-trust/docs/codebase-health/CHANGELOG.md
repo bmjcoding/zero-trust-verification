@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased — Config Profiles removed (2026-07-21, ADR 0033)
+
+CH-08 loses its profile branch: absence severity is purely evidence-derived —
+the trace, and nothing in the manifest, authorizes HIGH, and the untraced cap
+at MED holds unchanged. The comparator no longer reads `observability.profile`
+or emits `PROFILE` lines; the manifest field is accepted and ignored
+(ADR 0033).
+
 ## Unreleased — §12 join wired into the PR Gate (2026-07-17, ADR 0029)
 
 `pr_gate.sh` now dispatches CH-01 → CH-03 when a manifest is present: the

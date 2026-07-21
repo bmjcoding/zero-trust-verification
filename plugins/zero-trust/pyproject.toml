@@ -1,7 +1,7 @@
 [project]
 name = "zero-trust"
 version = "2.1.0rc1"
-description = "Zero-Trust Verification plugin — deterministic Python substrate (canonical manifest validator + ID allocator, resume projection, profile resolution, emission-shape gate, triage correlators, OWM engine; ADR 0015/0025)"
+description = "Zero-Trust Verification plugin — deterministic Python substrate (canonical manifest validator + ID allocator, resume projection, emission-shape gate, triage correlators, OWM engine; ADR 0015/0025)"
 requires-python = ">=3.10"
 # Runtime deps of the CANONICAL manifest validator (scripts/validate_manifest.py,
 # the suite's single copy per ADR 0025): `validate_manifest.sh` runs

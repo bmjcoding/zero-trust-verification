@@ -16,7 +16,7 @@
    shared-understanding confirmation — read it all. An S2-answered decision
    is SETTLED: reproduce it faithfully; never propose an alternative to it.
    Fill only the gaps the conversation left, with concrete proposals.
-2. The resolved Config Profile: vitals taxonomy, event vocabulary, alert-seam
+2. The vendor-neutral defaults: vitals taxonomy, event vocabulary, alert-seam
    targets (ADR 0006). Propose `event_name` / `vital_class` from THIS taxonomy
    only, so downstream joins stay mechanical.
 3. CONTEXT.md — including the terms captured inline during the S2 grill;
@@ -49,11 +49,11 @@
      naming an observable trigger and outcome, with a `test_name_hint`.
    - **Proposed vitals**: for every non-null `vital_class` step,
      `required_emission`, `event_name`, and `alert_seam.default` from the
-     profile; for every money / external-side-effect step, an `idempotency`
-     proposal (`required` + `mechanism`) and a `compensation`. Where the S2
-     conversation answered the duplicate-policy or seam question, carry that
-     answer; where it did not, pose a proposal — S5 owns the unanswered
-     residue.
+     vendor-neutral defaults; for every money / external-side-effect step,
+     an `idempotency` proposal (`required` + `mechanism`) and a
+     `compensation`. Where the S2 conversation answered the duplicate-policy
+     or seam question, carry that answer; where it did not, pose a proposal —
+     S5 owns the unanswered residue.
 
 The orchestrator applies confirmations AFTER S4/S5 by referencing recorded
 human answers (`confirmed_by: DL-<nnn>`); you still emit everything

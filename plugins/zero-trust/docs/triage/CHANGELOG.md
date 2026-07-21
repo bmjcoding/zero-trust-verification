@@ -2,6 +2,15 @@
 
 All notable changes to this plugin are documented here.
 
+## Unreleased — Config Profiles removed (2026-07-21, ADR 0033)
+
+TR-04's vendored-resolver acceptance path is deleted with the Config Profile
+seam (ADR 0033): the run has no profile step, no `profile_resolve.py` /
+`profile_resume.sh` calls, and no profile severity floor — incident severity
+is purely evidence-derived (CH-08). Telemetry *adapter* selection (TR-01,
+env/config-selected per deployment, ADR 0020) is unchanged.
+`observability.profile` in a manifest is accepted and ignored.
+
 ## Unreleased — backref cross-check runs when given the audit artifact (2026-07-17, ADR 0029)
 
 The 0.1.0 entry below records "CH-02 unbuilt" — false at its own merge (CH-02
