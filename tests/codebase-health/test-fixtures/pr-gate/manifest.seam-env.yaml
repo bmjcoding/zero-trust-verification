@@ -10,8 +10,7 @@ spec:
   spec_hash: "sha256:1111111111111111111111111111111111111111111111111111111111111111"
 completeness: complete
 incomplete_fields: []
-observability:
-  profile: payments
+observability: {}
 environments: [dev, prod]
 interrogation:
   log:

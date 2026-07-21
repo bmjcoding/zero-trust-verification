@@ -4,8 +4,13 @@
 > attackers — corpus-consistency and consumer-simulation lenses — all P0/P1 closed,
 > P2/P3 closed or explicitly recorded) · 2026-07-03
 > Governing decisions: ADR 0001 (manifest contract, vendoring), ADR 0002 (escalation),
-> ADR 0003 (PR Gate consumes coverage), ADR 0005 (GWT behaviors), ADR 0006 (profiles,
-> environment as primitive), ADR 0007 (Story granularity), ADR 0008 (straight-through drains).
+> ADR 0003 (PR Gate consumes coverage), ADR 0005 (GWT behaviors), ADR 0006 (environment
+> as primitive; its profile clause retired by ADR 0033), ADR 0007 (Story granularity),
+> ADR 0008 (straight-through drains), ADR 0033 (Config Profiles removed).
+> **Amended 2026-07-21 by ADR 0033 (Config Profiles removed):** `observability.profile`
+> is OPTIONAL and IGNORED — accepted for v1 compatibility as a documented no-op, read by
+> no consumer. This is a loosening (every previously-valid manifest stays valid), so
+> `schema_version` stays 1; a future schema v2 may drop the key.
 > Vocabulary: CONTEXT.md is normative for every capitalized term.
 
 ## 1. Purpose and position
@@ -44,9 +49,10 @@ the Spec; task decomposition lives in the runbook; test-ID bindings live downstr
 - **Location & name:** colocated with its Spec as `<spec-basename>.manifest.yaml`.
 - **One Spec → one manifest.** For multi-doc invocations (`--generate @a.md @b.md`):
   IDs (§6) MUST be unique across the union; a union-time collision is
-  `[GENERATE-FAILED: manifest-id-collision]`. `observability.profile` and `environments`
-  MUST be identical across unioned manifests; mismatch is
-  `[GENERATE-FAILED: manifest-union-mismatch]`. (Induced autopilot requirement — §13.)
+  `[GENERATE-FAILED: manifest-id-collision]`. `environments` MUST be identical across
+  unioned manifests; mismatch is `[GENERATE-FAILED: manifest-union-mismatch]`.
+  (`observability.profile` is ignored, so it never participates in the union check —
+  ADR 0033.) (Induced autopilot requirement — §13.)
 
 ## 3. Top-level structure
 
@@ -56,8 +62,8 @@ manifest_revision: 1         # integer; REQUIRED; first finalized revision is 1;
                              # monotonicity is verified by the PR Gate against the
                              # previously committed revision (not by the validator)
 spec:
-  path: ./loan-pricing-adr.md   # relative to the manifest file
-  title: "Loan pricing engine"
+  path: ./payment-authorization-adr.md   # relative to the manifest file
+  title: "Payment authorization engine"
   spec_hash: "sha256:<64 lowercase hex>"   # §9 defines the exact input bytes; REQUIRED iff
                                            # completeness: complete — MAY be absent while
                                            # incomplete (mid-session, the Spec prose may not
@@ -65,8 +71,10 @@ spec:
 completeness: complete       # complete | incomplete   (top-level; per-entry state is
                              # `lifecycle:` — deliberately different field names)
 incomplete_fields: []        # non-empty iff incomplete; entry grammar §10
-observability:
-  profile: payments           # Config Profile name (ADR 0006); "default" = vendor-neutral
+observability: {}             # REQUIRED block, may be empty; its `profile` key is
+                              #   optional, accepted and IGNORED (ADR 0033 — no-op, any
+                              #   non-empty string; slated for removal in a future
+                              #   schema v2)
 environments: [dev, test, prod]  # the primitive; env-keyed maps use exactly the reserved
                                  # key `default` plus zero or more keys from this list
 interrogation:               # the spec-time record (see note below on Decision Log)
@@ -82,10 +90,13 @@ behaviors: []                # §5
 ```
 
 **Required/optional table (top-level):** `schema_version`, `manifest_revision`, `spec`
-(with `path`, `title`; `spec_hash` required iff complete), `completeness`, `observability.profile`,
+(with `path`, `title`; `spec_hash` required iff complete), `completeness`,
 `environments` (≥1 entry), `journeys`, `behaviors` are REQUIRED (empty lists legal —
 but see §10 rule 0). `incomplete_fields` REQUIRED iff incomplete. `interrogation`
-optional; when present, per-entry fields as annotated above.
+optional; when present, per-entry fields as annotated above. The `observability` block
+itself is REQUIRED (an empty `{}` satisfies it); its sole key `profile` is OPTIONAL and
+ignored (ADR 0033) — tolerated for compatibility with pre-0033 manifests, never read; a
+future schema v2 may drop the key.
 
 **Decision Log note:** the Decision Log's canonical homes are the tracker + PR body
 during drains (CONTEXT.md) and the manifest's `interrogation.log` during spec sessions —
@@ -96,28 +107,28 @@ the CONTEXT.md definition is extended accordingly in this change.
 ```yaml
 journeys:
   - id: J-pricing-001        # §6 grammar
-    name: "Rate lock end-to-end"
+    name: "Authorization hold end-to-end"
     lifecycle: active        # active | withdrawn; withdrawn REQUIRES withdrawn_reason
     criticality: CORE        # CORE | SUPPORTING | DEV — same three values as the audit
                              # ladder, but DECLARED here (with criticality_reason), not
                              # derived; the audit derives its own, and intent-vs-derived
                              # drift is an audit finding
-    criticality_reason: "Money movement; customer-facing rate commitment"
+    criticality_reason: "Money movement; customer-facing payment commitment"
     confirmation: confirmed  # confirmed | proposed (criticality-scoped rigor; §10 rule 4)
     confirmed_by: DL-001     # REQUIRED for effectively-CORE entries with confirmation:
                              # confirmed — references an interrogation.log entry with
                              # resolved_by: human (§10 rule 8); optional otherwise
     steps:
-      - name: "Lock request accepted"
+      - name: "Hold request accepted"
         vital_class: state-transition   # REQUIRED on every step; one of
                                         # money | state-transition | external-side-effect
                                         # | auth | null (explicit null; absent key = invalid)
         # When vital_class is null: required_emission, alert_seam, and event_name MUST be
         # absent (schema-enforced); idempotency MAY appear.
         required_emission: OBSERVED     # OBSERVED | LOG-ONLY. DARK is never a valid intent.
-        event_name: rate_lock.accepted  # REQUIRED when vital_class is non-null; the
+        event_name: auth_hold.accepted  # REQUIRED when vital_class is non-null; the
                                         # intended-vs-discovered join key (§12); named per
-                                        # the profile's taxonomy
+                                        # the vendor-neutral default taxonomy (ADR 0006)
         alert_seam:                     # env-keyed map: `default` REQUIRED, other keys ⊆ environments
           default: dashboard-only       # paged | dashboard-only | none  (§12 maps these
           prod: paged                   #   to the audit's discovered values)
@@ -126,7 +137,7 @@ journeys:
           required: true
           mechanism: idempotency-key    # idempotency-key | duplicate-guard | upsert |
                                         # transactional-outbox | not-needed
-          justification: "Client retries on timeout; duplicate lock = double commitment"
+          justification: "Client retries on timeout; duplicate hold = double commitment"
         compensation:                   # REQUIRED when idempotency is required; structured:
           ref: J-pricing-003            #   {ref: <journey id>} XOR {none_reason: "<why>"}
 ```
@@ -136,7 +147,7 @@ journeys:
 ```yaml
 behaviors:
   - id: B-pricing-001        # §6 grammar
-    title: "Rejects expired rate lock"
+    title: "Rejects expired authorization hold"
     lifecycle: active        # active | withdrawn (+ withdrawn_reason)
     journey: J-pricing-001   # optional (pure-library specs may omit); MUST reference an
                              # existing journey; referencing a withdrawn journey is legal
@@ -146,10 +157,10 @@ behaviors:
                              # EFFECTIVE criticality (after inheritance).
     confirmation: confirmed  # §10 rule 4 applies to effective criticality
     confirmed_by: DL-001     # as on journeys: REQUIRED when effectively-CORE + confirmed (§10 rule 8)
-    given: "A rate lock created 46 days ago with a 45-day term"
-    when: "The borrower requests to exercise the lock"
-    then: "The request is rejected with RateLockExpired and vital rate_lock.expired is emitted"
-    test_name_hint: "test_rejects_expired_rate_lock"   # hint only; binding lives downstream (§7)
+    given: "An authorization hold placed 8 days ago with a 7-day term"
+    when: "The payer requests capture against the hold"
+    then: "The request is rejected with AuthHoldExpired and vital auth_hold.expired is emitted"
+    test_name_hint: "test_rejects_expired_auth_hold"   # hint only; binding lives downstream (§7)
 ```
 
 GWT fields are prose but MUST use CONTEXT.md canonical terms, and each MUST name an
@@ -272,7 +283,7 @@ GENERATE+pause path).
 | Unsupported `schema_version` | Refuse `[MANIFEST-UNSUPPORTED]`. |
 | Schema-invalid (exit 4) | Refuse; report the schema error; never degrade to manifest-less. |
 | `spec_hash` mismatch | Deterministic rot finding (§9, comment-only initially); consumers proceed on the manifest, flag the Spec. |
-| Unknown `observability.profile` | Proceed with `default` profile + loud `[note]`; the finding is comment-only. |
+| `observability.profile` present (any non-empty string) | Ignore silently — the key is a documented no-op (ADR 0033); no note, no finding. An empty or non-string value is schema-invalid like any other type error (exit 4). |
 | Unknown fields (same major) | Ignore silently. |
 | ID reuse/renumber vs prior revision | PR Gate blocking-class finding (deterministic, git-history-based). |
 
@@ -310,7 +321,8 @@ Single-file, hermetic; history checks belong to the PR Gate.
 5. Mode inference (ADR 0008): valid+complete manifest → straight-through; else pause path.
 6. G2/G3: planner maps every Subtask to active Behavior IDs; `[GENERATE-FAILED:
    unmapped-subtask]` when it can't.
-7. G4: union ID-collision + profile/environments-mismatch refusals (§2).
+7. G4: union ID-collision + environments-mismatch refusals (§2; profile dropped from
+   the union check by ADR 0033).
 8. D1: `manifest_revision` drift check (§6, external-fault class).
 9. D7.3/D7.4: Behavior-ID → test-ID binding section in Story PR body + tracker; D6
    verifies bindings from git log/test run.

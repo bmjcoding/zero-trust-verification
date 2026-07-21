@@ -101,8 +101,7 @@ spec:
   spec_hash: "sha256:1111111111111111111111111111111111111111111111111111111111111111"
 completeness: complete
 incomplete_fields: []
-observability:
-  profile: payments
+observability: {}
 environments: [dev, prod]
 interrogation:
   adrs: []
@@ -188,7 +187,7 @@ Quotes go through a queue so a slow rate feed never blocks a request.
 MD
 cat > "$FX/gamma/docs/journeys/quote.md" <<'MD'
 # Quote request journey
-A borrower requests a quote; the engine returns an async-computed rate.
+A customer requests a quote; the engine returns an async-computed rate.
 MD
 
 # --- the config-first repo list (OWM-03) + allow-list (OWM-11) ---

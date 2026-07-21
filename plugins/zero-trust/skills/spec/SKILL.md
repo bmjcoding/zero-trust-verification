@@ -20,9 +20,9 @@ front door (S2), synthesis and adversarial attack come after it, and you
 **refuse to finalize** while any completeness rule fails — a wire-transfer
 flow cannot reach `completeness: complete` without an idempotency answer
 (manifest rule 2). Governing ADRs: 0002 (escalation), 0005 (GWT, no Gherkin
-runtime), 0006 (Config Profiles), 0008 (complete manifests gate autonomous
-drains), 0009 (Spec lifecycle), 0026 (grill-first inversion). `CONTEXT.md` is
-normative for every capitalized term.
+runtime), 0006 (vendor-neutral observability defaults), 0008 (complete
+manifests gate autonomous drains), 0009 (Spec lifecycle), 0026 (grill-first
+inversion). `CONTEXT.md` is normative for every capitalized term.
 
 ### Escalation boundary (ADR 0002)
 
@@ -42,17 +42,11 @@ the S2 grill; only the conversation seed differs.
 
 | Invocation | Mode | Input class | Driven by |
 |---|---|---|---|
-| `/spec <intent...>` | Fresh | Raw intent (paragraph, meeting notes, Jira) | You — the daily default (`--profile <name>` accepted; config resolution below usually covers it) |
+| `/spec <intent...>` | Fresh | Raw intent (paragraph, meeting notes, Jira) | You — the daily default |
 | `/spec @draft.md` | Fresh | Draft Spec — interrogated, not trusted; it seeds the S2 agenda | You, when a doc already exists |
 | `/spec --from-findings @<register>` | Fresh | Findings register (remediation-loop entry, ADR 0017) — reuses the Fresh path; the register is the S2 conversation seed, interrogated like a Draft Spec, not trusted | `/remediate` — machine door, rarely typed by hand |
 | `/spec --resume @<spec>.manifest.yaml` | Resume | `completeness: incomplete` from a prior (possibly crashed) session — re-enters S2 grilling with the agenda = the validator's remaining unmet rules via `resume_projection.py` (its partition governs: escalate-class gaps are grilled, mechanical-class gaps are filled silently) | Crash recovery (session-death-safe, HC5) and `/triage`'s incident-Spec re-entry |
 | `/spec --amend @<spec>.manifest.yaml <intent...>` | Amend | Amendment against a merged Spec → `manifest_revision` N+1; S2 re-opens scoped to the amendment intent | You, revising a shipped Spec — ID-stable so autopilot's revision-drift gate (AV3-04) keys on it |
-
-**Profile (fresh sessions):** run `scripts/profile_resolve.py` (order:
-`--profile` flag → repo `spec-gen.config.yaml` → `default`). A fall-through to
-`default` is an unconfirmed external fact — raise it as an EARLY S2 question
-(it was S5's first question pre-0026; S5 asks it only if S2 never did).
-Resume/amend read the profile from the manifest.
 
 One session produces at most one Spec + one manifest.
 
@@ -66,7 +60,7 @@ S2 and S5 is ONE shared reference: `references/grill-contract.md`.
 
 ### S1 — Hydrate (quick — minutes, not an expedition)
 
-Read `CONTEXT.md`, the ADR index, the resolved profile, the committed manifest
+Read `CONTEXT.md`, the ADR index, the committed manifest
 for this Spec path on main, and the claim surface of open spec-session
 branches touching the same manifest path (overlapping sessions are blessed —
 ADR 0009 — so ID allocation must see them). Feed the union of reserved IDs to
@@ -74,8 +68,8 @@ ADR 0009 — so ID allocation must see them). Feed the union of reserved IDs to
 On `--resume`/`--amend`: run `scripts/validate_manifest.sh` FIRST and trust
 its exit-3 output over the stored `incomplete_fields` (the file may be stale
 after a crash); project it into work slots with
-`scripts/resume_projection.py`. Done when: reserved-ID set, resolved profile,
-and (resume/amend) projected slots are in hand. Escape valve: if hydration
+`scripts/resume_projection.py`. Done when: reserved-ID set and (resume/amend)
+projected slots are in hand. Escape valve: if hydration
 runs long, start grilling with what you have and finish the remaining reads
 at the first S2 checkpoint — the time-box loses to the human's calendar,
 never the other way around.
@@ -117,7 +111,7 @@ Done when: the human **confirms shared understanding** (the confirmation
 gate) — ask for it explicitly; do not proceed to synthesis without it. On
 resume/amend the grill agenda is the S1-projected slots, partitioned by
 `resume_projection.py`: escalate-class gaps are grilled; mechanical-class
-gaps (facts fillable from the profile, codebase, or glossary) are FILLED
+gaps (facts fillable from the codebase or glossary) are FILLED
 silently, never asked.
 
 ### S3 — Synthesize
@@ -126,7 +120,7 @@ Dispatch a `general-purpose` agent with `references/s3-proposer.md`, whose
 primary input is now the S2 conversation record. It EXTENDS the S2 manifest
 stub — preserving the S2 `interrogation.log` verbatim — and writes the draft
 `<spec>.md` plus the skeleton — journey map, Given/When/Then behaviors,
-per-step vitals from the profile taxonomy — FROM the conversation: everything
+per-step vitals from the vendor-neutral defaults — FROM the conversation: everything
 `confirmation: proposed`, every NEW ID allocator-minted (on resume/amend it
 extends the existing manifest and never re-mints IDs for existing entries —
 §12 joins and AV3-04 revision keying depend on it), S2-answered decisions

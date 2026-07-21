@@ -5,8 +5,8 @@
 # violation check proving the lint actually goes red.
 #
 #   1. tests/run_spec_gen_cases.py — validator reuse, ID allocator, resume projection,
-#      profile resolution, emission shape, and the S4 output-schema field (81+
-#      assertions; every SG-2/3/4/5 acceptance).
+#      emission shape, and the S4 output-schema field (80+ assertions; every
+#      surviving SG-2/3/4/5 acceptance).
 #   2. lint_spec_gen.sh — the 8 cross-file contract rules (expect PASS).
 #   3. planted violation — remove the canonical schema from a sandbox copy and
 #      assert the canonical-presence lint (L3) reports it (expect FAIL).

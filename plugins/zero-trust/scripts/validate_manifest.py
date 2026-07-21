@@ -219,9 +219,9 @@ def validate_mapping(data):
 
 
 def validate_union(paths: list[Path]):
-    """Validate each, then cross-file ID collision + profile/environments match."""
+    """Validate each, then cross-file ID collision + environments match."""
     lines, worst = [], EXIT_COMPLETE
-    per_ids, profiles, envs = [], set(), set()
+    per_ids, envs = [], set()
     for p in paths:
         # ONE parse per file (ADR 0032): load once, validate the mapping, and
         # reuse the same data for the cross-file checks below.
@@ -241,10 +241,9 @@ def validate_union(paths: list[Path]):
                     lines.append(f"[MANIFEST-ID-COLLISION: {', '.join(sorted(dup))}]")
                     worst = max(worst, EXIT_SCHEMA_INVALID)
             per_ids.append(ids)
-            profiles.add((data.get("observability") or {}).get("profile"))
             envs.add(tuple(data.get("environments") or []))
-    if len(profiles) > 1 or len(envs) > 1:
-        lines.append("[MANIFEST-UNION-MISMATCH: observability.profile or environments differ]")
+    if len(envs) > 1:
+        lines.append("[MANIFEST-UNION-MISMATCH: environments differ]")
         worst = max(worst, EXIT_SCHEMA_INVALID)
     return worst, lines
 
