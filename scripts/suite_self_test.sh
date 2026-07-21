@@ -252,28 +252,24 @@ printf '\nSome extra prose AFTER the re-vendored telemetry-contract block.\n' >>
 expect_no_fail V9 "$dr" "prose appended outside the telemetry-contract markers (synthesized carrier)"
 
 # V9 resume-helper re-vendor pin (ADR 0001 §18, post-0025 shape): the resume
-# helpers live exactly once under plugins/zero-trust/scripts/; a SECOND copy that
+# helper lives exactly once under plugins/zero-trust/scripts/; a SECOND copy that
 # reappears anywhere must be byte-identical to the canonical. Drift the copy ->
-# V9 fires. Seed the canonical pair (and telemetry-contract.md so V9 runs).
+# V9 fires. Seed the canonical (and telemetry-contract.md so V9 runs).
 dr="$SANDBOX/v9s"
 mkdir -p "$dr/plugins/zero-trust/scripts" "$dr/plugins/extra/scripts" "$dr/plugins/zero-trust/references"
 cp "$ZT/references/telemetry-contract.md" "$dr/plugins/zero-trust/references/"
-cp "$ZT/scripts/profile_resolve.py"   "$dr/plugins/zero-trust/scripts/"
 cp "$ZT/scripts/resume_projection.py" "$dr/plugins/zero-trust/scripts/"
-cp "$ZT/scripts/profile_resolve.py"   "$dr/plugins/extra/scripts/"
 cp "$ZT/scripts/resume_projection.py" "$dr/plugins/extra/scripts/"
-printf '\n# drift\n' >> "$dr/plugins/extra/scripts/profile_resolve.py"
-expect_fail V9 "$dr" "re-vendored resume helper drifted (profile_resolve.py != canonical)"
+printf '\n# drift\n' >> "$dr/plugins/extra/scripts/resume_projection.py"
+expect_fail V9 "$dr" "re-vendored resume helper drifted (resume_projection.py != canonical)"
 
 # V9 re-vendor false-positive guard — an unmodified second copy stays GREEN.
 dr="$SANDBOX/v9sp"
 mkdir -p "$dr/plugins/zero-trust/scripts" "$dr/plugins/extra/scripts" "$dr/plugins/zero-trust/references"
 cp "$ZT/references/telemetry-contract.md" "$dr/plugins/zero-trust/references/"
-cp "$ZT/scripts/profile_resolve.py"   "$dr/plugins/zero-trust/scripts/"
 cp "$ZT/scripts/resume_projection.py" "$dr/plugins/zero-trust/scripts/"
-cp "$ZT/scripts/profile_resolve.py"   "$dr/plugins/extra/scripts/"
 cp "$ZT/scripts/resume_projection.py" "$dr/plugins/extra/scripts/"
-expect_no_fail V9 "$dr" "unmodified second resume-helper copies (byte-identical to canonical)"
+expect_no_fail V9 "$dr" "unmodified second resume-helper copy (byte-identical to canonical)"
 
 # V10 (ADR 0017/0018 / register RL-13) — the remediation loop's two lint-pinned
 # tables. Plant a drift in EACH (escalate-class table + slug_provenance §12/taxonomy)

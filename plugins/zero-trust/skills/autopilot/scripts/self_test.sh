@@ -1131,8 +1131,7 @@ assert_eq "AV3-07.7" "orphan cites the subtask-id" "[GENERATE-FAILED: subtask-mi
 cat > "$SANDBOX/manifest.yaml" <<'Y'
 schema_version: 1
 manifest_revision: 1
-observability:
-  profile: payments
+observability: {}
 environments: [dev, prod]
 behaviors:
   - id: B-x-001
@@ -1248,37 +1247,34 @@ assert_eq "AV3-01.7" "unknown intent is usage error 64" "64" "$rc"
 echo "== validate_manifest_union.sh --union (AV3-03 multi-doc union) =="
 
 VMU="$HERE/validate_manifest_union.sh"
-# write a minimal manifest: <path> <profile> <environments-inline> <journey-id> <behavior-id>
+# write a minimal manifest: <path> <environments-inline> <journey-id> <behavior-id>
 write_manifest() {
   cat > "$1" <<Y
 schema_version: 1
 manifest_revision: 1
-observability:
-  profile: $2
-environments: [$3]
+environments: [$2]
 journeys:
-  - id: $4
+  - id: $3
     lifecycle: active
     steps:
       - name: "s"
         vital_class: null
 behaviors:
-  - id: $5
+  - id: $4
     lifecycle: active
     given: g
     when: w
     then: t
 Y
 }
-write_manifest "$SANDBOX/u_a.yaml"        payments "dev, prod"       J-a-001 B-a-001
-write_manifest "$SANDBOX/u_b.yaml"        payments "dev, prod"       J-b-001 B-b-001
-write_manifest "$SANDBOX/u_collide.yaml"  payments "dev, prod"       J-a-001 B-c-001
-write_manifest "$SANDBOX/u_prof.yaml"     fraud   "dev, prod"       J-d-001 B-d-001
-write_manifest "$SANDBOX/u_env.yaml"      payments "dev, test, prod" J-e-001 B-e-001
-write_manifest "$SANDBOX/u_order.yaml"    payments "prod, dev"       J-f-001 B-f-001
+write_manifest "$SANDBOX/u_a.yaml"        "dev, prod"       J-a-001 B-a-001
+write_manifest "$SANDBOX/u_b.yaml"        "dev, prod"       J-b-001 B-b-001
+write_manifest "$SANDBOX/u_collide.yaml"  "dev, prod"       J-a-001 B-c-001
+write_manifest "$SANDBOX/u_env.yaml"      "dev, test, prod" J-e-001 B-e-001
+write_manifest "$SANDBOX/u_order.yaml"    "prod, dev"       J-f-001 B-f-001
 vmu() { bash "$VMU" "$@"; }
 
-# AV3-03.1 — two coherent manifests (disjoint IDs, same profile+environments).
+# AV3-03.1 — two coherent manifests (disjoint IDs, same environments).
 out=$(vmu --union "$SANDBOX/u_a.yaml" "$SANDBOX/u_b.yaml" 2>&1); rc=$?
 assert_eq "AV3-03.1" "coherent union exits 0" "0" "$rc"
 assert_eq "AV3-03.1" "coherent union prints OK" "OK" "$out"
@@ -1287,11 +1283,6 @@ assert_eq "AV3-03.1" "coherent union prints OK" "OK" "$out"
 out=$(vmu --union "$SANDBOX/u_a.yaml" "$SANDBOX/u_collide.yaml" 2>&1); rc=$?
 assert_eq "AV3-03.2" "id collision refused" "1" "$rc"
 assert_eq "AV3-03.2" "collision cites the id" "[GENERATE-FAILED: manifest-id-collision: J-a-001]" "$out"
-
-# AV3-03.3 — mismatched observability.profile across the union.
-out=$(vmu --union "$SANDBOX/u_a.yaml" "$SANDBOX/u_prof.yaml" 2>&1); rc=$?
-assert_eq "AV3-03.3" "profile mismatch refused" "1" "$rc"
-assert_eq "AV3-03.3" "profile mismatch token" "[GENERATE-FAILED: manifest-union-mismatch: profile]" "$out"
 
 # AV3-03.4 — mismatched environments across the union.
 out=$(vmu --union "$SANDBOX/u_a.yaml" "$SANDBOX/u_env.yaml" 2>&1); rc=$?
@@ -1312,8 +1303,6 @@ assert_eq "AV3-03.6" "a union of one is usage error 64" "64" "$rc"
 # fooled by legal YAML variants the canonical emitter doesn't use.
 # (a) block-list `environments:` must NOT extract to empty and pass a real mismatch.
 cat > "$SANDBOX/u_blk_dev.yaml" <<'Y'
-observability:
-  profile: payments
 environments:
   - dev
   - prod
@@ -1322,8 +1311,6 @@ behaviors:
     lifecycle: active
 Y
 cat > "$SANDBOX/u_blk_stg.yaml" <<'Y'
-observability:
-  profile: payments
 environments:
   - staging
 behaviors:
@@ -1335,8 +1322,6 @@ assert_eq "AV3-03.7" "block-list environments mismatch is caught (not empty-vs-e
 assert_eq "AV3-03.7" "block-list mismatch token" "[GENERATE-FAILED: manifest-union-mismatch: environments]" "$out"
 # block-list, same set different order -> coherent.
 cat > "$SANDBOX/u_blk_rev.yaml" <<'Y'
-observability:
-  profile: payments
 environments:
   - prod
   - dev
@@ -1348,8 +1333,6 @@ out=$(vmu --union "$SANDBOX/u_blk_dev.yaml" "$SANDBOX/u_blk_rev.yaml" 2>&1); rc=
 assert_eq "AV3-03.7" "block-list set-equality (order-insensitive) is coherent" "0" "$rc"
 # (b) a prose *mention* of a foreign ID must NOT register a false collision.
 cat > "$SANDBOX/u_prose.yaml" <<'Y'
-observability:
-  profile: payments
 environments: [dev, prod]
 behaviors:
   - id: B-ship-002

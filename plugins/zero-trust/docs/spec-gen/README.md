@@ -18,7 +18,7 @@ skills-dir clone (ADR 0027 — see the root `README.md`). Surface: one skill
 (`/spec`).
 
 ```
-/spec [--profile <name>] <intent...>          # fresh session from raw intent
+/spec <intent...>                             # fresh session from raw intent
 /spec @draft.md                               # interrogate a draft Spec
 /spec --resume @<spec>.manifest.yaml          # resume a prior/crashed session
 /spec --amend  @<spec>.manifest.yaml <intent> # amend a merged Spec (revision N+1)
@@ -51,7 +51,6 @@ The LLM interrogation cannot be self-tested; the deterministic seam can and is.
 | `scripts/validate_manifest.sh` | Manifest validator, **vendored byte-identical** from the repo root (ADR 0001). Exit 0/3/4/5. |
 | `scripts/id_alloc.py` | Manifest §6 ID allocation: next-ID, 999→new-slug, main-lineage + open-branch reuse refusal. |
 | `scripts/resume_projection.py` | Validator exit-3 → escalate-class (rules 1,2,4) S5 slots vs mechanical (0,3,5,6,7,8) S3/S4 fix queue. |
-| `scripts/profile_resolve.py` | Config-Profile resolution order (flag → `spec-gen.config.yaml` → default+escalate). |
 | `scripts/emission_check.py` | S7 emission-shape gate (one-branch-one-PR, manifest colocation, per-boundary commits, `exchange_ref` resolvability, provisional-ADR filenames). |
 
 Run the hermetic self-test (bootstraps deps via `uv run`, ADR 0015; then the 8-rule
@@ -64,8 +63,9 @@ bash scripts/self_test.sh
 ## Governing decisions
 
 ADR 0001 (manifest contract, vendoring), ADR 0002 (escalation criterion),
-ADR 0005 (GWT behaviors, no Gherkin runtime), ADR 0006 (Config Profiles),
-ADR 0008 (a complete manifest gates autonomous drains), ADR 0009 (Spec lifecycle),
-ADR 0015 (shell + Python-on-uv substrate). Vocabulary: `CONTEXT.md` is normative.
+ADR 0005 (GWT behaviors, no Gherkin runtime), ADR 0006 (vendor-neutral
+observability defaults), ADR 0008 (a complete manifest gates autonomous drains),
+ADR 0009 (Spec lifecycle), ADR 0015 (shell + Python-on-uv substrate),
+ADR 0033 (Config Profiles removed). Vocabulary: `CONTEXT.md` is normative.
 
 Spec of record: [`docs/specs/spec-gen-tier-v1.md`](../../docs/specs/spec-gen-tier-v1.md).

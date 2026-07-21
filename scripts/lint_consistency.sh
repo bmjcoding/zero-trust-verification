@@ -21,9 +21,9 @@
 #   V9  — the triage telemetry-adapter observable contract (ADR 0006/0013;
 #         register TR-08): references/telemetry-contract.md is the single source
 #         of the <!-- vendored:telemetry-contract --> block; any copy carrying
-#         the block is byte-identical. Plus: the resume helpers
-#         (profile_resolve.py / resume_projection.py) exist exactly once under
-#         scripts/ — any re-vendored second copy must be byte-identical.
+#         the block is byte-identical. Plus: the resume helper
+#         (resume_projection.py) exists exactly once under scripts/ — any
+#         re-vendored second copy must be byte-identical.
 #   V10 — the remediation loop's two lint-pinned tables (ADR 0017/0018; register
 #         RL-02/03/13): classify_fix.sh's escalate-class table (ADR-0002-citing,
 #         superset of the Category-TX catalog) + slug_provenance.tsv (§12
@@ -200,13 +200,13 @@ else
       ok V9 "vendored telemetry-contract copy byte-identical: $rel"
     fi
   done < <(find "$ROOT" -path "$ROOT/.git" -prune -o -path "$ROOT/.claude" -prune -o -name node_modules -prune -o -name '*.md' -print 2>/dev/null | sort)
-  # (2) the resume helpers triage shares with the spec tier (profile_resolve.py,
-  #     resume_projection.py; register TR-04/TR-07) live exactly ONCE, under the
-  #     plugin's scripts/ (ADR 0025 collapsed the vendored pair into one file).
-  #     If a second same-named copy ever reappears anywhere in the tree, it must
-  #     be byte-identical to the canonical — an UNPINNED re-vendored copy is the
-  #     drift-fork this lint exists to prevent (ADR 0001 §18 mandate, post-0025).
-  for v9base in profile_resolve.py resume_projection.py; do
+  # (2) the resume helper triage shares with the spec tier (resume_projection.py;
+  #     register TR-07) lives exactly ONCE, under the plugin's scripts/ (ADR 0025
+  #     collapsed the vendored copies into one file). If a second same-named copy
+  #     ever reappears anywhere in the tree, it must be byte-identical to the
+  #     canonical — an UNPINNED re-vendored copy is the drift-fork this lint
+  #     exists to prevent (ADR 0001 §18 mandate, post-0025).
+  for v9base in resume_projection.py; do
     v9c="$ZT/scripts/$v9base"
     while IFS= read -r c; do
       [ -n "$c" ] || continue
@@ -221,7 +221,7 @@ else
       fi
     done < <(find "$ROOT" -path "$ROOT/.git" -prune -o -path "$ROOT/.claude" -prune -o -name node_modules -prune -o -name __pycache__ -prune -o -name "$v9base" -print 2>/dev/null | sort)
   done
-  [ "$v9_bad" -eq 0 ] && ok V9 "triage single-source artifacts (telemetry-contract block + resume helpers) pinned (register TR-04/07/08, ADR 0001/0025)"
+  [ "$v9_bad" -eq 0 ] && ok V9 "triage single-source artifacts (telemetry-contract block + resume helper) pinned (register TR-07/08, ADR 0001/0025)"
 fi
 
 # ── V10: the remediation loop's two lint-pinned tables (ADR 0017 / 0018; register

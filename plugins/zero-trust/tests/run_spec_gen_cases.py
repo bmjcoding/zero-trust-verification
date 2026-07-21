@@ -9,7 +9,6 @@ seam can and is (spec-gen §7). Case groups map 1:1 to the deliverable acceptanc
                           + a rule-8 mutation + the mid-session manifest       (SG-3)
   B. ID allocator ....... §6 grammar: next-id, 999→new-slug, reuse refusal      (SG-4/§7.3)
   C. Resume projection .. validator exit-3 → escalate(1,2,4) / mechanical slots (SG-4/§7.2)
-  D. Profile resolution . flag → repo-config → default+escalate; resume=manifest(SG-4/§2)
   E. Emission shape ..... one-branch-one-PR, colocation, per-boundary, refs, ADR(SG-4/§7.4)
   F. S4 schema field .... the S4 role prompts REQUIRE dissent + escalation_check (SG-2)
   G. Kill-mid-S4 resume . lossless resume from branch state alone               (SG-5)
@@ -34,7 +33,6 @@ sys.path.insert(0, str(SCRIPTS))
 import validate_manifest as V          # noqa: E402  (the canonical copy, ADR 0025)
 import id_alloc                         # noqa: E402
 import resume_projection                # noqa: E402
-import profile_resolve                  # noqa: E402
 import emission_check                   # noqa: E402
 
 passed = 0
@@ -81,6 +79,12 @@ check("repo norway-enum -> exit 4 (schema-invalid)", V.validate_file(RFIX / "nor
 
 base = load(RFIX / "valid-complete.yaml")
 check("base fixture is genuinely complete", V.validate_mapping(base)[0] == 0)
+
+# observability.profile is a tolerated no-op (ADR 0033): present -> still exit 0.
+mtol = copy.deepcopy(base)
+mtol.setdefault("observability", {})["profile"] = "payments"
+check("observability.profile tolerated-and-ignored -> exit 0 (ADR 0033)",
+      V.validate_mapping(mtol)[0] == 0)
 
 # rule-8 mutation (CORE confirmed without a resolved_by:human confirmed_by ref).
 m8 = copy.deepcopy(base)
@@ -181,42 +185,6 @@ check("bare rule line parsed", any(s["rule"] == 3 for s in p2["mechanical"]))
 check("non-rule lines dropped", len(p2["escalate"]) + len(p2["mechanical"]) == 2)
 
 
-# ---- D. Profile resolution order (SG-4, §2) --------------------------------------
-print("== D. profile resolution order ==")
-import tempfile  # noqa: E402
-
-r_flag = profile_resolve.resolve_fresh(flag="trading", config_path=None)
-check("--profile flag wins", r_flag["profile"] == "trading" and r_flag["source"] == "flag" and not r_flag["escalate"])
-
-with tempfile.TemporaryDirectory() as td:
-    cfg = Path(td) / "spec-gen.config.yaml"
-    cfg.write_text("profile: payments\n")
-    r_cfg = profile_resolve.resolve_fresh(flag=None, config_path=cfg)
-    check("repo config used when no flag", r_cfg["profile"] == "payments" and r_cfg["source"] == "repo-config")
-    # flag still beats a present config.
-    r_both = profile_resolve.resolve_fresh(flag="trading", config_path=cfg)
-    check("flag beats repo config", r_both["profile"] == "trading" and r_both["source"] == "flag")
-    # blank profile: key in config is treated as absent -> default + escalate.
-    cfg.write_text("profile: '   '\n")
-    r_blank = profile_resolve.resolve_fresh(flag=None, config_path=cfg)
-    check("blank config profile falls through to default+escalate",
-          r_blank["profile"] == "default" and r_blank["escalate"] is True)
-
-r_def = profile_resolve.resolve_fresh(flag=None, config_path=Path("/nonexistent/spec-gen.config.yaml"))
-check("no flag + no config -> default", r_def["profile"] == "default" and r_def["source"] == "default")
-check("default resolution ESCALATES (external fact, ADR 0002)", r_def["escalate"] is True)
-check("default escalation carries the exact S5 question", "no Config Profile is configured" in r_def.get("escalation", ""))
-
-# resume/amend take the profile from the manifest, no re-escalation.
-r_res = profile_resolve.resolve("resume", manifest_path=RFIX / "valid-complete.yaml")
-check("resume takes profile from manifest", r_res["profile"] == "payments" and r_res["source"] == "manifest" and not r_res["escalate"])
-try:
-    profile_resolve.resolve("resume", manifest_path=mid_path)  # mid-session has a profile too
-    check("resume from a profiled mid-session manifest works", True)
-except Exception as exc:  # noqa: BLE001
-    check("resume from a profiled mid-session manifest works", False, f"({exc})")
-
-
 # ---- E. Emission shape (SG-4, §7.4) ----------------------------------------------
 print("== E. emission-shape gate ==")
 good = load(PLUGIN / "tests/fixtures/emission/session-good.yaml")
@@ -308,6 +276,7 @@ check("a completed session's emission bundle is well-shaped (per-boundary commit
 # ---- H. Malformed-input robustness (hand-editable files degrade cleanly) ----------
 print("== H. malformed-input robustness ==")
 import subprocess  # noqa: E402
+import tempfile  # noqa: E402
 
 def run_cli(mod, args, stdin=None):
     """Run a helper's CLI under uv and return (exit_code, stdout, stderr)."""
@@ -316,12 +285,6 @@ def run_cli(mod, args, stdin=None):
     return p.returncode, p.stdout, p.stderr
 
 with tempfile.TemporaryDirectory() as td:
-    bad_cfg = Path(td) / "spec-gen.config.yaml"
-    bad_cfg.write_text("profile: [unclosed\n")            # malformed YAML
-    rc, out, err = run_cli("profile_resolve.py", ["--mode", "fresh", "--config", str(bad_cfg)])
-    check("profile_resolve on malformed YAML: clean exit 3, no traceback",
-          rc == 3 and '"error"' in out and "Traceback" not in err, f"(rc={rc}, err={err[:80]})")
-
     bad_bundle = Path(td) / "bundle.yaml"
     bad_bundle.write_text("branch: [unclosed\n")
     rc, out, err = run_cli("emission_check.py", [str(bad_bundle)])
